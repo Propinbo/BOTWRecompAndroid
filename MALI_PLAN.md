@@ -4,6 +4,8 @@ Approved in chat on 2026-10-30. This is the authoritative milestone plan. The or
 
 Upstream: https://github.com/mamcjr/BOTWRecompAndroid
 
+Current source baseline after the explicitly authorized bounded synchronization on 2026-10-30: **`3d66ac0482ae9d99546a579170675dd6eb3c047c`**, upstream `v0.2.5-beta` / main. Fork main and local source were advanced fast-forward from `4acbf40c9312618e16e1153f3696c64e125d2a2f`. Completed milestones 1-3 and 3a remain complete; historical evidence and 3a environment/validation are preserved. The synchronization authorizes neither 3b nor 4.
+
 Planned test hardware: MediaTek Dimensity 9400+, Arm Immortalis-G925 MC12. Hardware and device results must be verified from real device evidence during the authorized device milestones.
 
 Execution authorization: `Приступай к шагу N` authorizes only milestone N. Dependencies and completing a milestone do not authorize other milestones. Do not automatically advance. Project/source commits, source pushes, publishing raw evidence, and PR submission require separate explicit authorization. The documentation-only checkpoint exception below does not authorize project milestones. Preserve existing work. Use only lawfully provided game data; never acquire or redistribute proprietary game assets.
@@ -17,6 +19,8 @@ Reassess remaining milestones as evidence emerges, prioritizing the project obje
 On 2026-10-30 the user authorized a documentation/checkpoint task only, plus standing documentation-only updates after future explicitly authorized milestones: commit and publish exactly `AGENTS.md`, `MALI_PLAN.md`, and `MALI_PROGRESS.md` to `codex/mali-workspace` in the existing fork https://github.com/Propinbo/BOTWRecompAndroid. No project milestone is authorized by that task. Review the three files for credentials, proprietary assets, sensitive logs, and private information before publication. Raw evidence and other working notes remain local.
 
 Do not push to upstream, open a PR, merge branches, change the default branch, force-push, or publish source changes under this authorization. Keep checkpoint documentation out of future upstream PRs: never merge this branch into a contribution branch; carry only the independently authorized source patch. On source branches keep the three documentation files locally excluded from staging, along with `.mali/`. A clean clone of the checkpoint branch contains the documentation; a clone of `main` needs explicit recovery. See MALI_PROGRESS.md for retrieval steps and verified persistence limits.
+
+The bounded synchronization separately authorized importing upstream commits into fork main only by fast-forward. It did not expand standing source-publication permission. The documentation branch intentionally retains its historical application tree and is updated with documents only; its application tree is not the current build baseline. Recover documents into a current main checkout without merging checkpoint history into source.
 
 ## 1. Prepare the fork, workspace, and checkpoints.
 
@@ -73,6 +77,8 @@ Do not push to upstream, open a PR, merge branches, change the default branch, f
 **Stopping condition:** Environment/configuration verification is ready, or the exact blocker is checkpointed. Do not run dependency-build scripts, assemble/package the APK, generate game code, run device tests, repair source/tests, or proceed to 3b. Source commits/publication still need separate authorization.
 
 ## 3b. Build native dependencies and the unchanged baseline APK.
+
+**Synchronization addendum, 2026-10-30:** Use the new baseline `3d66ac0482ae9d99546a579170675dd6eb3c047c` (0.2.5-beta). Milestone 3a remains COMPLETE and is not reopened: Gradle/AGP/JDK/SDK/NDK/CMake/dependency-script/submodule requirements are unchanged, and existing installation records match. No environment delta or reinstall is required by this source update. New-source configuration/native-build validation belongs to 3b; the historical 3a Gradle success remains tied to its original SHA. Keep the agreed full FFmpeg/builder composition and previously planned WSL/Linux build prerequisites. Preserve M3-v1 and add current-baseline/cache/known-issue metadata when preparing the new APK, without repeating completed triage. In later device/investigation stages, account for upstream GPU-memory-table/reset/exit changes linked to #89, surface-recovery fix #108 and shader material-ID rounding #112; do not assume a Mali result or select a duplicate fix. This addendum is planning only, not execution authorization.
 
 **Scope:** After separate explicit execution authorization, prepare open-source native dependencies using the pinned scripts and verified archive SHA-256 values. Record a full baseline composition including FFmpeg and the on-device Recompiled builder; distinguish building that open-source builder from generating game code. Use the verified 3a environment to build the unchanged application at the recorded source SHA. Reuse the completed milestone-3 protocol and diagnostic inspection, updating minor practical details only with recorded reasons.
 
