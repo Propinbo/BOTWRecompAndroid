@@ -1,6 +1,6 @@
 # BOTWRecompAndroid Mali contribution plan
 
-Approved in chat on 2026-10-30. This is the authoritative milestone plan. All nine approved milestone definitions are preserved; actual execution status, evidence, decisions, blockers, and relevant commit SHAs belong in MALI_PROGRESS.md.
+Approved in chat on 2026-10-30. This is the authoritative milestone plan. The original nine milestone definitions remain preserved. On 2026-10-30 the user approved splitting the remaining baseline preparation into milestones 3a and 3b after the completed milestone-3 investigation. Actual execution status, evidence, decisions, blockers, and relevant commit SHAs belong in MALI_PROGRESS.md.
 
 Upstream: https://github.com/mamcjr/BOTWRecompAndroid
 
@@ -46,6 +46,8 @@ Do not push to upstream, open a PR, merge branches, change the default branch, f
 
 ## 3. Build an unchanged baseline and prepare the measurement protocol.
 
+**Historical completion:** The original investigation is complete through its precise-build-blocker acceptance alternative, with protocol M3-v1 and evidence retained under `.mali/milestone-3/`. No baseline APK was produced. The original definition below is preserved; the approved remaining preparation is now 3a then 3b. Completing the investigation does not satisfy the actual APK gate for device testing.
+
 **Scope:** Check the pinned Android toolchain and dependencies, then build the unchanged application at a recorded SHA. Inspect existing diagnostic hooks, the Android probe, and relevant tests before introducing tooling. Keep game-code generation separate and perform it only if necessary using your lawfully supplied data.
 
 **Deliverables:** Build commands, toolchain/dependency versions, build log, APK hash, and a concise device-testing protocol.
@@ -56,6 +58,32 @@ Do not push to upstream, open a PR, merge branches, change the default branch, f
 
 **Stopping condition:** Baseline build and protocol are ready. If dependency preparation becomes substantial, checkpoint it and propose smaller substeps before continuing.
 
+## 3a. Prepare and verify the pinned build environment.
+
+**Approval and authorization:** On 2026-10-30 the user approved the proposed 3a/3b split and explicitly instructed execution of milestone 3a only. This English execution instruction is explicit authorization for 3a; approval of the split alone does not authorize 3b or any later milestone.
+
+**Scope:** Select a compatible JDK 17 for the build process without changing the user's global Java settings or the project's Gradle/AGP pins. Prepare exactly Android NDK 30.0.16248370 and SDK CMake 3.30.4, verify SDK 36 and required Build Tools, and initialize/verify libadrenotools at the recorded gitlink with its required pinned submodules. Preserve existing installations and source work. Verify Gradle configuration without assembling an APK or building native dependencies.
+
+**Deliverables:** Reproducible setup/configuration commands and logs; JDK distribution/version and archive verification; exact SDK package versions; submodule SHAs and cleanliness; Gradle configuration result; updated checkpoint with local raw evidence retained separately.
+
+**Acceptance criteria:** A compatible JDK 17 and exact pinned NDK/CMake can be invoked, SDK prerequisites and submodule pins are verified, and unchanged-project Gradle configuration succeeds, or a precise environment/configuration blocker is documented. Inspect actual package availability before substitution. If an exact pinned package is unavailable, stop and seek agreement before any replacement or source-pin change; no silent use of an installed alternative. Distinguish package/network/access failures from application defects.
+
+**Dependencies:** Preserved completed milestones 1-3; explicit execution authorization for 3a; access to official toolchain distributions.
+
+**Stopping condition:** Environment/configuration verification is ready, or the exact blocker is checkpointed. Do not run dependency-build scripts, assemble/package the APK, generate game code, run device tests, repair source/tests, or proceed to 3b. Source commits/publication still need separate authorization.
+
+## 3b. Build native dependencies and the unchanged baseline APK.
+
+**Scope:** After separate explicit execution authorization, prepare open-source native dependencies using the pinned scripts and verified archive SHA-256 values. Record a full baseline composition including FFmpeg and the on-device Recompiled builder; distinguish building that open-source builder from generating game code. Use the verified 3a environment to build the unchanged application at the recorded source SHA. Reuse the completed milestone-3 protocol and diagnostic inspection, updating minor practical details only with recorded reasons.
+
+**Deliverables:** Dependency versions/hashes and build commands/logs, explicit APK composition, baseline APK with SHA-256 and signing-certificate identity, applicable check results and limitations, preserved protocol/evidence and updated checkpoint.
+
+**Acceptance criteria:** Produce a traceable unchanged-source APK with the agreed full composition and applicable verification, or document the precise dependency/build blocker. Recheck existing host-test blockers with the pinned toolchain; source/test repairs and pinned-package substitutions require separate agreement. Keep any necessary game-code generation separate, using only lawfully supplied data; do not perform device measurements in this milestone.
+
+**Dependencies:** Milestone 3a provides a usable verified environment; separately authorized execution of 3b and available dependency sources. A checkpointed blocker in 3a does not imply its environment is ready.
+
+**Stopping condition:** Baseline APK/hash/signature and protocol are ready, or an exact blocker is recorded. No automatic advance to milestone 4, device test, implementation, source commit/push, or PR.
+
 ## 4. Collect reproducible baseline evidence from your physical device.
 
 **Scope:** Establish actual device access through authorized ADB or your supplied test results. Record phone model, Android/build, reported GPU, Vulkan driver, application SHA/APK hash, game version, settings, and test conditions. Run the selected scenarios and compare Native/Recompiled modes where available.
@@ -64,7 +92,7 @@ Do not push to upstream, open a PR, merge branches, change the default branch, f
 
 **Acceptance criteria:** Evidence identifies a repeatable symptom and its frequency, or documents bounded unsuccessful reproduction attempts and missing information. Distinguish cold shader compilation, sustained slowdown, visual corruption, and crashes. Every claimed device result must have corresponding real evidence.
 
-**Dependencies:** Milestone 3, device access or supplied results, and your lawful game data.
+**Dependencies:** Completed milestone-3 protocol, a usable baseline APK produced by milestone 3b after verified milestone 3a, device access or supplied results, and your lawful game data. A recorded build blocker does not satisfy the APK prerequisite.
 
 **Stopping condition:** Baseline evidence package is complete, or a specific access/data blocker is recorded. No inferred hardware results or fix implementation.
 

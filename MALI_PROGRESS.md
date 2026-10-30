@@ -1,18 +1,20 @@
 # Mali contribution execution checkpoint
 
-Checkpoint ID: MALI-M3-2026-10-30 (milestone 3; previous checkpoint: MALI-WORKFLOW-2026-10-30).
+Checkpoint ID: MALI-M3A-2026-10-30 (milestone 3a; previous checkpoint: MALI-M3-2026-10-30).
 
 Updated: 2026-10-30, Europe/Moscow (UTC+03:00).
 
 ## Authorization and status
 
-Current authorization: the user explicitly commanded `Приступай к шагу 3`, asked for only milestone 3, an updated checkpoint, and a stop. Milestones 1-2 remain complete. Milestone 3 reached its acceptance alternative of a precise build blocker and a prepared measurement protocol; no APK was produced. Milestones 4-9 remain unauthorized. Project/source commits and pushes still require separate authorization; the standing exception covers only the three reviewed checkpoint documents on the fork's checkpoint branch. Historical sections below describe their own earlier tasks and do not override this current status.
+Current authorization: on 2026-10-30 the user approved the proposed split of remaining baseline preparation into 3a and 3b, explicitly asked to update this plan/progress while preserving milestone-3 evidence, then instructed: `Then execute milestone 3a only.` This is explicit execution authorization for 3a despite being expressed in English. Milestones 1-3 remain complete, with milestone 3 completed through its precise-build-blocker alternative and protocol M3-v1; no APK was produced. Milestone 3b and milestones 4-9 remain unauthorized for execution. Project/source commits and pushes still require separate authorization; the standing exception covers only the three reviewed checkpoint documents on the fork's checkpoint branch. Historical sections below retain their earlier authorization context.
 
 | Milestone | Status |
 | --- | --- |
 | 1. Prepare the fork, workspace, and checkpoints | COMPLETE; preserved and reverified |
 | 2. Triage the reports against current upstream | COMPLETE; stopped after triage |
 | 3. Build an unchanged baseline and prepare the measurement protocol | COMPLETE via precise-build-blocker alternative; protocol ready, APK gate unresolved |
+| 3a. Prepare and verify the pinned build environment | COMPLETE; exact toolchain/submodules verified, Gradle configuration passed |
+| 3b. Build native dependencies and the unchanged baseline APK | Plan approved; not started, execution awaits explicit authorization |
 | 4. Collect reproducible baseline evidence from your physical device | Not started; awaiting explicit authorization |
 | 5. Investigate one symptom with a bounded diagnostic experiment | Not started; awaiting explicit authorization |
 | 6. Select one narrowly scoped contribution | Not started; awaiting explicit authorization |
@@ -20,9 +22,26 @@ Current authorization: the user explicitly commanded `Приступай к ша
 | 8. Validate the candidate on your device | Not started; awaiting explicit authorization |
 | 9. Prepare a reviewable upstream PR package locally | Not started; awaiting explicit authorization |
 
-All nine approved milestone definitions and their order remain unchanged in MALI_PLAN.md. The earlier documentation task added workflow/persistence guidance; milestone 3 has not revised the plan. The original complete milestone-1 checkpoint and its manifest remain at `.mali/milestone-1/MALI_PROGRESS.md` and `.mali/milestone-1/checkpoint-manifest.json`. The pre-documentation-task plan, milestone-2 progress, manifest, and exclusion rules are preserved under `.mali/workflow-persistence/`. These local historical records are not included on GitHub; their manifests describe the historical file versions.
+The user-approved revision adds 3a and 3b after the completed original milestone-3 definition and makes milestone 4 depend on a usable APK from 3b. Original milestones 1-9, completed investigations and historical decisions are preserved. Reason: milestone 3 found incompatible JBR 25 plus missing pinned NDK/CMake/submodule/native dependencies; substantial preparation requires bounded steps. Before this revision all 72 entries of the milestone-3 manifest matched SHA-256/size. Pre-revision AGENTS/plan/progress/manifest are archived under `.mali/milestone-3a/`; milestone-3 evidence itself remains unchanged under `.mali/milestone-3/`. Earlier historical checkpoints remain in `.mali/milestone-1/` and `.mali/workflow-persistence/`. These raw records are local, not published.
 
-## Milestone 3 outcome and current stopping point
+## Milestone 3a outcome and current stopping point
+
+Plan revision approved and applied before environment preparation. Source baseline remains `4acbf40c9312618e16e1153f3696c64e125d2a2f`, branch `main`; the preceding remote checkpoint is `4b80d38e2c238d2d990f539db939007cfa4f004c`. The completed milestone-3 report/protocol/test failures below are preserved historical findings; their earlier unapproved proposal is superseded only by the approved revision above.
+
+- Verified all 72 previous manifest entries before editing. Archived the pre-revision three documents and manifest under `.mali/milestone-3a/`. After the environment work, all 20 manifested files under `.mali/milestone-3/` still matched their original SHA-256 and byte count. No investigation/protocol/test result was discarded, reset or repeated.
+- Official SDK discovery (`sdkmanager.bat --list --verbose`, exit 0) explicitly listed exact `ndk;30.0.16248370` and `cmake;3.30.4`. Installed only those packages alongside existing versions (`sdkmanager.bat --install ...`, exit 0). SDK 36 revision 2 and Build Tools 35.0.0 were already present. Source properties and actual executables verify NDK r30 / clang 21.0.0, SDK CMake 3.30.4 and bundled Ninja 1.10.2. Package metadata and tool binary hashes are retained locally. Original SDK download archive hashes were not separately retained; do not confuse this metadata check with the independent JDK archive check below.
+- Prepared portable Eclipse Temurin JDK **17.0.20.1+1**, java/javac 17.0.20.1, from official Adoptium API/release metadata. Downloaded Windows x64 HotSpot ZIP size 190817615 bytes and SHA-256 `e53a79c3c3d86865bd7e787903884331068e71321714ffd44f145785affc7cb0` matched the published API value before extraction. The archive and separate installation stay in the user's local toolchain directory; no private absolute path is published. Use the recorded immutable release/checksum for reproduction, not an assumption about the moving latest-JDK API response.
+- Used JDK 17 only through temporary process JAVA_HOME assignments restored afterward. Process/user JAVA_HOME still selects existing Android Studio JBR 25; machine JAVA_HOME remains unset. No global Java/PATH setting, Gradle/AGP pin, application source or local.properties was changed.
+- Initialized `third_party/libadrenotools` at gitlink **8fae8ce254dfc1344527e05301e43f37dea2df80** and nested `lib/linkernsbypass` at its gitlink **aa3975893d83ef1bc84c321ec60c65fbf1287887** with `git submodule update --init --recursive -- third_party/libadrenotools`. Both checkouts are clean; no `--remote`, source patch or library build. No nested AGENTS.md was found in these newly initialized sources. Root Git configuration now registers the submodule, and its pinned contents are present; the source/index/gitlinks remain unchanged.
+- From `android/botwrecompandroid`, with the temporary JDK 17, ran `./gradlew.bat help --no-daemon --console=plain --stacktrace`: **exit 0, BUILD SUCCESSFUL in 27s, only task :help executed**. Separate `--version` readback confirms Gradle 8.14.3 and actual launcher/daemon JVM 17.0.20.1. The previous JBR-25 Kotlin DSL blocker is resolved for this build process. This verifies Gradle project configuration, not native CMake configuration, compilation, linking, packaging or runtime correctness.
+- Local report: `.mali/milestone-3a/ENVIRONMENT.md`. Supporting records: resume/preserved-evidence hashes; JDK metadata/install/script/logs; SDK discovery/install logs and exit records; recursive submodule setup/state; Gradle configuration/version logs and exit record; actual tool versions and installed metadata in `environment-final.json`. No credentials, game data or raw logs are published.
+- No remaining **3a** blocker. Native dependencies (`android/deps/out`), full baseline composition and APK/hash/signature remain for **3b**; no dependency-build script, assemble task, game-code generation, host-regression rerun, probe, device test or measurement was performed. The earlier host-test failures remain unresolved historical observations. Source branch/HEAD/index and pre-existing recovery clone are preserved; no source commit/push, upstream write, PR, branch switch/merge or default-branch change.
+
+Checkpoint publication changes only MALI_PLAN.md and MALI_PROGRESS.md within the standing three-document checkpoint; AGENTS.md is unchanged. The containing SHA and remote readback checks are recorded in `.mali/milestone-3a/publication.json` and the final task report. Local manifest and a separate same-disk evidence backup are verified after publication; backup receipts remain local. The backup preserves documentation/evidence, not large SDK/JDK installations or archives; reinstall those from the recorded pinned setup if needed. GitHub still does not preserve raw evidence.
+
+**STOP after 3a.** The next eligible execution command is for **3b**, which remains unauthorized. The approved split does not authorize dependencies/APK work or milestone 4. No further plan revision is proposed by this successful environment preparation.
+
+## Milestone 3 outcome and stopping point (historical; investigation preserved)
 
 - Baseline source remains `4acbf40c9312618e16e1153f3696c64e125d2a2f`, branch `main`; live origin/main and upstream/main matched at resume. Checkpoint branch before this update: `ad9225fea60ccdea474379da900d7378423bcbee`. All 52 entries of the previous local manifest matched byte count and SHA-256. Prior progress/manifest were archived under `.mali/milestone-3/` before editing.
 - Tracked source and index are unchanged. The pre-existing untracked `BOTWRecompAndroid-checkpoint/` is a clean recovery clone at `ad9225f`; it was preserved. The three guidance documents and `.mali/` remain locally excluded on the source checkout. No source commit, source publication, upstream write, PR, branch switch/merge, or device operation was performed.
@@ -46,7 +65,7 @@ Protocol M3-v1, fixed before measurements:
 - Diagnostic runs are separate IDs/tables, max 120 s × 2 per mode, using existing LOG_PACE/VK_PROF/TIMING_TRACE/scale hooks as needed; their timings are not pooled with performance. Probe/capability reports are separate. Memory/thermal before/after and supported 10-s samples are labelled by source and overhead; CPU wait is not GPU utilization.
 - Stability: one 20-min warm-cache run per mode (max 40 min gameplay total), route loops and menu every 5 min, then one return to launcher/reboot, transitions bounded at 180 s. Freeze candidate is 30 s without new game frames/input response; evidence collection bounded by another 60 s. Preserve crash/ANR/logcat/exit info and separate teardown, gameplay, OS/cleaner exits and operator force-stops. Report actual duration/frequency, including incomplete runs, rather than promises of crash freedom. Visual corruption needs separately timed captures outside performance windows.
 
-### Current blockers, proposed plan adjustment, and next authorization
+### Blockers, proposed plan adjustment, and next authorization (historical milestone 3)
 
 The exact build blocker satisfies milestone 3's alternative acceptance criterion, but **the usable baseline APK prerequisite for milestone 4 remains unresolved**. No device tests or measurements may be claimed from this checkpoint.
 
