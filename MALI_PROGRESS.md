@@ -1,12 +1,12 @@
 # Mali contribution execution checkpoint
 
-Checkpoint ID: MALI-M4-PREPARATION-2026-10-31 (continued authorized milestone 4; previous published checkpoint: db718c198dd84969e28664c939d5056cc6f551fb).
+Checkpoint ID: MALI-M4-TEARDOWN-HANG-2026-10-31 (continued authorized milestone4; preceding published preparation checkpoint: 7e68401eb9c34b7da4a1c37bafe042ddda2298d3).
 
 Updated: 2026-10-31, Europe/Moscow (UTC+03:00).
 
 ## Authorization and status
 
-Current authorization: milestone 4 remains explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Controlled performance/stability evidence is still being prepared; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
+Current authorization: milestone 4 remains explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Controlled collection has started: eleven gameplay-window records and a confirmed Native teardown hang are retained, while the full matrix and long stability sessions remain unfinished; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
 
 | Milestone | Status |
 | --- | --- |
@@ -16,7 +16,7 @@ Current authorization: milestone 4 remains explicitly authorized. After the init
 | 3a. Prepare and verify the pinned build environment | COMPLETE; exact toolchain/submodules verified, Gradle configuration passed |
 | Bounded upstream synchronization before 3b | COMPLETE; source/main fast-forwarded to 0.2.5-beta, 3a preserved |
 | 3b. Build native dependencies and the unchanged baseline APK | COMPLETE; full baseline APK/hash/signature verified, known host-test harness limitation retained |
-| 4. Collect reproducible baseline evidence from your physical device | IN PROGRESS; data, Great Plateau seed and both-mode game loads/prewarm verified; controlled baseline pending |
+| 4. Collect reproducible baseline evidence from your physical device | IN PROGRESS; eleven window records and Native teardown hang retained; full comparison/stability incomplete |
 | 5. Investigate one symptom with a bounded diagnostic experiment | Not started; awaiting explicit authorization |
 | 6. Select one narrowly scoped contribution | Not started; awaiting explicit authorization |
 | 7. Implement the selected fix and perform local verification | Not started; awaiting explicit authorization |
@@ -24,6 +24,42 @@ Current authorization: milestone 4 remains explicitly authorized. After the init
 | 9. Prepare a reviewable upstream PR package locally | Not started; awaiting explicit authorization |
 
 The user-approved revision adds 3a and 3b after the completed original milestone-3 definition and makes milestone 4 depend on a usable APK from 3b. Original milestones 1-9, completed investigations and historical decisions are preserved. Reason: milestone 3 found incompatible JBR 25 plus missing pinned NDK/CMake/submodule/native dependencies; substantial preparation requires bounded steps. Before this revision all 72 entries of the milestone-3 manifest matched SHA-256/size. Pre-revision AGENTS/plan/progress/manifest are archived under `.mali/milestone-3a/`; milestone-3 evidence itself remains unchanged under `.mali/milestone-3/`. Earlier historical checkpoints remain in `.mali/milestone-1/` and `.mali/workflow-persistence/`. These raw records are local, not published.
+
+## Confirmed Native teardown hang, 2026-10-31 (local live update)
+
+User reported a frozen game. The coordinator had already stopped on GP-N-S1-warm-2 helper failure; no measurement/helper processes were still running, but the app itself remained alive. Its120s S1/warm Native gameplay window had completed3600 actual-present frames. During the subsequent requested launcher return, the log repeatedly reported waiting for two guest SDK threads and never logged game teardown completion. The automation's nonzero-exit path had left the hanging process running for roughly half an hour before this user-triggered audit: that is a failure of the bounded-cleanup workflow, not compliant freeze handling.
+
+Preserved the live state before intervention. A normal PLUS hold produced no visible response across30seconds; before/after screenshots are byte-identical, and the exact SurfaceFlinger layer returned no new actual-present timestamps (empty histories in this observation, not a new valid frame-time dataset). Logs continued waiting for the same two threads. This confirms a visible teardown hang, not a root-cause diagnosis. Package was then explicitly operator-force-stopped; PID absence verified. Private evidence: current-freeze-audit-path.txt and its freeze-observation directory under `.mali/milestone-4-resume-1/`.
+
+Eleven full gameplay-window records now exist; they must not be described as eleven fully successful runs, because this last teardown failed. No new gameplay crash, rendering-corruption cause, or source fix is established. Long stability sessions and the rest of the requested matrix remain incomplete. Step4 remains in progress; no automatic step5.
+
+Preserved/hash-verified automationv2 before preparing v3. V3 polls teardown completion for up to30s rather than an immediate2s check, and on a nonzero helper exit preserves bounded failure evidence then attempts force-stop of only the test package. This is excluded test orchestration, not an app/runtime patch. Syntax checked; not yet verified through a new in-game failure, and helper timeout handling is not claimed fully validated. Battery was43percent at audit, below protocol start minimum. User reconnected charging; no automatic restart of tests. Future measurements require charge conditioning, disconnection and cooling first.
+
+## Guarded resumption verified (local live update)
+
+GP-N-S2-warm-1-resume completed120seconds/3600 actual-present frames with no ring loss, explicit Awake/unlocked checks before and after, and graceful teardown. End capture reviewed: same rainy clearing, full health, no visible corruption. This completes the eighth collected logical cell; first7 retain v1 evidence. The interrupted S2/warm first pair spans v1/v2 rest display conditions and remains explicitly qualified in its resumed summary.
+
+Remaining repetitions2/3 are resumed through matrix-resume-v2, with fail-closed screen checks, full frame-history checks, automatic end-game visibility screening and per-pair temperature checks. Automated visibility screening is not human visual review. The coordinator stops before a new pair below53percent battery to leave reserve; it does not charge/waive conditions automatically. All long stability sessions, final analysis, system restoration and final checkpoint remain pending; do not call milestone4 complete.
+
+## Continuation after screen-lock audit (local live update)
+
+User instructed continuation. Original six automation scripts were hash-verified against v1 and archived before changes. V2 adds fail-closed Awake/keyguard=false boundary verification and an end-state record, with no additional queries during the measured window. Live device Awake/unlocked was accepted; synthetic asleep/locked/missing-field cases rejected. V2 also removes forced screen sleep during app-stopped300s rest, keeping fixed display settings and all original thermal/power/battery checks. This changes idle display power relative to v1 and must remain explicit in comparisons; it is an operational adjustment within milestone4, not a runtime/source fix.
+
+Interrupted GP-N-S2-warm-1 preparation is preserved. Only its replacement GP-N-S2-warm-1-resume is now running; old coordinator remains stopped. Confirm new boundary/capture evidence before further queueing. First7 collected windows retain their v1 provenance; no retrospective screen-state guarantee. Step4 remains in progress.
+
+## Screen-lock concern audit, 2026-10-31 (local live update)
+
+After the user questioned screen locking, the operator stopped the background coordinator and its active helper processes. Seven120-second windows have complete actual-present histories and end captures of gameplay, all visually reviewed; this is not final acceptance of every protocol criterion. Sleep was issued only for the app-stopped cooling interval; the launch helper sent Wakeup before boot. Automationv1 did not independently assert awake/unlocked state at the measurement boundary. Current power/window snapshots show Awake and no keyguard, but are not retrospective proof for every instant. No evidence presently supports saying most windows failed because of a lock screen.
+
+GP-N-S2-warm-1 was interrupted during cooling, before a gameplay window; label this operator interruption, not a crash. Queue is STOPPED, not still running as the earlier live record described. Before resuming, require explicit awake/keyguard verification and recorded automation provenance; retain original v1 evidence. Audit/contact sheet under `.mali/milestone-4-resume-1/screen-lock-audit/`. Step4 remains incomplete; no source fix or step5 authorized.
+
+## Resumed controlled collection, 2026-10-31 (in progress)
+
+Wireless access restored after the long interruption; external power was actually absent, battery70percent. First S1/app-cold R and N windows each collected3600 actual-present buffers across120seconds, with no ring loss or operator-induced termination inside the window; graceful teardown confirmed for each. End captures show the expected clearing, full health and no visible corruption. This does not exclude transient corruption or establish long stability.
+
+Actual R/N start battery temperatures20.1/21.5C: original <=1C pairing check failed at1.4C. User explained that the tablet had been brought indoors from outside and explicitly instructed accepting this first pair. MALI_PLAN.md now records this specific approved exception; raw numeric values and original failure are preserved. No waiver applies to later pairs. The initial Native cadence has longer present intervals despite the same capped mean; do not infer cause or comparative superiority from one excepted pair.
+
+The S1/warm first pair is active; a local coordinator waits for it and then executes the remaining planned matrix pairs sequentially, stopping on any helper error. Raw state is under `.mali/milestone-4-resume-1/matrix-continuation/`; completed captures still require review and temperature checks. Two20min stability sessions and final analysis/restoration/checkpoint remain pending. Step4 is not complete; no step5 or source changes authorized. The published preparation checkpoint7e68401 and verified1939-entry private backup remain the preceding immutable recovery point; this new collection is not yet in that archive or remote summary.
 
 ## Continued milestone 4 preparation (intermediate checkpoint; baseline result pending)
 
