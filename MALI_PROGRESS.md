@@ -1,10 +1,29 @@
 # Mali contribution execution checkpoint
 
-Checkpoint ID: MALI-M4-MATRIX-24-2026-11-01 (continued authorized milestone4; preceding documentation checkpoint: b9dda86b9bb13d14abaaba9aa440c0a58142d262).
+Checkpoint ID: MALI-M4-COMPLETE-2026-11-01 (milestone 4 complete; preceding documentation checkpoints: d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
 
 Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
 
+## Milestone 4 outcome: COMPLETE, 2026-11-01 (Claude Code session)
+
+- The user instructed "Finish step 4". The local final report is `.mali/milestone-4-resume-1/M4_FINAL_REPORT.md`; its private manifest is `session-2026-11-01-final-manifest.json` (303 files) alongside the earlier 2426-file session manifest. Source is still `main` 3d66ac0 and clean; no source, test or app change; no upstream write.
+- **Stability sessions** (M3-v1: about 20 min warm, S2 route, menu every 5 min, launcher return plus repeated boot). The user approved 1 Hz read-only root GPU/thermal sampling for these sessions only, labelled separately from the matrix.
+  - **Native STAB-N-3 completed**: 29.86 FPS, p99 50.0 ms, 231 intervals >50 ms, 0 >100 ms. All 3 menu transitions passed; launcher return took 2.2 s, the repeated boot reached the world in 24.7 s, and the second return took 2.2 s. Thermal status peaked at 2.
+  - **Recompiled reached Android thermal status SEVERE, so the protocol guard stopped it.** This happened at 802 s in STAB-R-1 (started 2.6 C warmer; pairing failed) and, after the user chose a matched re-run, at **1187 s in STAB-R-3 (start within 0.5 C of Native)**, so 2 of 2 sessions.
+  - **Matched comparison.** GPU GED clock (≈546-598 MHz), utilization (86-89%) and the gpu0 sensor are similar in both modes. The difference is the big CPU cluster: about 100 C sustained from about 7.5 min in Recompiled, against a single 94 C spike in Native. SoC median was 68.8 vs 62.9 C. Battery heating was not higher in Recompiled. Recompiled pacing was smoother: p99 33.6 ms and 116 intervals >50 ms. The cause is not established.
+  - Automation-caused aborted attempts are retained with notes and are not app failures. STAB-N-1 and STAB-N-2 were false-negative menu checks; screenshots show the menu working. STAB-R-2 was a PLAY tap the launcher did not register. Fixes: a reference-panel menu check made non-fatal, and PLAY retried until the `[loader]` log line appears. The protocol is unchanged.
+- **Symptom summary.**
+  - Native teardown hang: 1 of 18 Native graceful-return attempts, 0 of 15 Recompiled.
+  - Recompiled sustained-load thermal escalation to SEVERE: 2 of 2 sessions, 0 of 1 Native.
+  - 50 ms pacing bursts at the 30 FPS cap: 7 of 24 short windows (4 Native, 2 Recompiled) and also in stability segments; no throughput loss.
+  - Gameplay crashes: 0. Visible corruption: 0 in end and menu captures; transients not excluded.
+  - Cold versus warm shader-cache stalls are not distinguishable at this cap: no cold window has a >100 ms interval, and the driver cache is uncontrolled.
+- **Restoration.** Display settings were restored from `frame-preflight/system-settings-before.json`: refresh keys deleted (panel back to 120 Hz), brightness 87, auto mode 1; record in `restoration/`. Brightness read **0** (not the protocol's 128) just before restoration, and when it changed is unknown; recorded as an unexplained deviation. **Still pending:** the temporary wireless ADB (TCP 5555) needs the USB cable to restore; this is housekeeping and not evidence.
+- **Next action requiring authorization (proposal only, no plan change yet).** Before milestone 5, a bounded synchronization of source/main to upstream 0.2.6-beta `2a1bf32`, a rebuild with the verified 3a/3b environment, and a short device check that includes a teleport/load. Reason: `24beda8`/`17fae0d` address the #89 copy-path upload blowup on G925 and could make a milestone-5 investigation duplicate upstream work. The alternative is to authorize milestone 5 directly on 3d66ac0 with one of the measured symptoms. Either option needs explicit approval; nothing is authorized automatically.
+
 ## Controlled matrix completed, 2026-11-01 (Claude Code handoff session)
+
+(The "Remaining in milestone 4" bullet at the end of this section is superseded by the outcome above.)
 
 - Handoff: a Claude Code session took over from Codex. It verified that local AGENTS/PLAN/PROGRESS were byte-identical to `origin/mali-workspace` b9dda86 and that source `main` was at 3d66ac0 and clean. The user then said "Continue"; this session treated that as continuation of the already authorized milestone 4 only.
 - Automation v3 hashes matched campaign-tool-manifest-v3. The failure/cleanup path was exercised in isolation with a deliberately failing helper (`validate-cleanup-v3.py`, `cleanup-v3-validation/`): bounded evidence was collected in 2.3 s, force-stop exited 0, and no PID remained. Limitation: the app was not running, so this was not tested against a live hang.
@@ -30,7 +49,7 @@ Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
 
 ## Authorization and status
 
-Current authorization: milestone 4 remains explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Controlled collection has completed all 24 matrix windows (see the 2026-11-01 section) and a confirmed Native teardown hang is retained, while the two long stability sessions, analysis and restoration remain unfinished; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
+Current authorization: milestone 4 remains explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Milestone 4 is COMPLETE (see the outcome section): 24 matrix windows, the stability sessions and the final analysis are done, and only the ADB transport restore is pending as housekeeping; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
 
 | Milestone | Status |
 | --- | --- |
@@ -40,7 +59,7 @@ Current authorization: milestone 4 remains explicitly authorized. After the init
 | 3a. Prepare and verify the pinned build environment | COMPLETE; exact toolchain/submodules verified, Gradle configuration passed |
 | Bounded upstream synchronization before 3b | COMPLETE; source/main fast-forwarded to 0.2.5-beta, 3a preserved |
 | 3b. Build native dependencies and the unchanged baseline APK | COMPLETE; full baseline APK/hash/signature verified, known host-test harness limitation retained |
-| 4. Collect reproducible baseline evidence from your physical device | IN PROGRESS; all 24 matrix windows collected and end-captures reviewed, Native teardown hang retained; two 20-min stability sessions, analysis and restoration remain |
+| 4. Collect reproducible baseline evidence from your physical device | COMPLETE; 24-window matrix, stability sessions (Recompiled thermal SEVERE 2/2, Native teardown hang 1/18), final report local; ADB transport restore pending cable |
 | 5. Investigate one symptom with a bounded diagnostic experiment | Not started; awaiting explicit authorization |
 | 6. Select one narrowly scoped contribution | Not started; awaiting explicit authorization |
 | 7. Implement the selected fix and perform local verification | Not started; awaiting explicit authorization |
