@@ -30,6 +30,7 @@ Release-check record (newest first):
 
 | Checked (UTC) | Newest published release | Tag SHA | Active baseline | Note |
 |---|---|---|---|---|
+| 2026-11-01T18:47Z, rechecked 18:54Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 6 pinned) | No newer release or main commit during milestone 6. |
 | 2026-11-01T18:15Z, rechecked 18:39Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 5b pinned) | No newer release or main commit during milestone 5b. |
 | 2026-11-01T17:44Z, rechecked 18:07Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 5 pinned) | No newer release or main commit during milestone 5. |
 | 2026-11-01T17:36Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (migrated; campaign pinned) | No newer release or untagged main commit after the 0.2.10 regression. |
@@ -193,6 +194,8 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 **Stopping condition:** a supported diagnosis, a rejected hypothesis, or the next missing measurement identified. No source fix, commit or PR. Milestone 6 then selects one contribution using the evidence from milestones 5 and 5b.
 
 ## 6. Select one narrowly scoped contribution.
+
+**Status (2026-11-01): COMPLETE** on `4bad6dc`. Selected: vsync-phase-locked present pacing for the 50 ms bursts (candidate (b)), using `VK_GOOGLE_display_timing` past presentation timing to keep the queue at about half a refresh period before the latch. The pipeline-cache save (candidate (a)) is deferred. The proposal is in MALI_PROGRESS.md; local copy at `.mali/milestone-6/M6_PROPOSAL.md`. Milestone 7 is not authorized; its first step is feasibility gate G0.
 
 **Scope:** Choose a fix supported by the investigation and recheck overlapping upstream changes.
 

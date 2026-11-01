@@ -1,8 +1,53 @@
 # Mali contribution execution checkpoint
 
-Checkpoint ID: MALI-M5B-COMPLETE-2026-11-01 (milestone 5b complete; preceding documentation checkpoints: 51cebfc41500128d35afba5569287b45dd77fbff (milestone 5b added), 48ba5aa6a6b801da5937293c0aa761b36356bf87 (milestone 5), 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
+Checkpoint ID: MALI-M6-COMPLETE-2026-11-01 (milestone 6 complete; preceding documentation checkpoints: baaedbf2d86796cfcba2e1a0852b4f003c5deb87 (milestone 5b), 51cebfc41500128d35afba5569287b45dd77fbff (milestone 5b added), 48ba5aa6a6b801da5937293c0aa761b36356bf87 (milestone 5), 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
 
 Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
+
+## Milestone 6 outcome: COMPLETE, 2026-11-01 (Claude Code session)
+
+- **Authorization.** The user's `Приступай к шагу 6`. Milestone 7 is not authorized.
+- **Start checks.**
+  - Local AGENTS/PLAN/PROGRESS were byte-identical to `origin/mali-workspace` `baaedbf`.
+  - Source `main` = `origin/main` = upstream main = `4bad6dc`, clean.
+  - Releases at 18:47Z and 18:54Z: newest still `v0.2.10-beta` `4bad6dc`. The work was pinned to it.
+- **Selection.**
+  - **Selected: candidate (b),** vsync-phase-locked present pacing for the 50 ms bursts. The milestone 5b cause is confirmed causally. The judder is visible and can last for minutes. The mechanism is display-side and vendor-agnostic.
+  - **Deferred: candidate (a),** the pipeline-cache save on start-screen return. It is small, but its impact is one rare 100-200 ms hitch. It remains a possible later, separate contribution.
+- **Upstream overlap (18:47Z).** No PR in any state touches present pacing; the only PRs are #12, #96, #97 (framepace linking only) and #103. No issue reports the 50/16.7 judder; the maintainer treats #114 as thermal throttling. Public code search of the `mamcjr` repositories finds no `VK_GOOGLE_display_timing` or `Choreographer`. No recent present-path commit changes the grid phase. Recheck at milestone 7 start and before the PR.
+- **Proposal summary** (full text, local: `.mali/milestone-6/M6_PROPOSAL.md`).
+  - **Defect:** the `framepace_on()` grid in `nvnQueuePresentTexture` (`runtime/nvn/objects.c`) has an arbitrary phase against the display. The phase is set at each grid restart. When queueBuffer lands within about 1.5 ms before the latch, frames alternate 50/16.7 ms (60 Hz) or 41.7/25 ms (120 Hz).
+  - **Intended behavior:** each frame is queued about r/2 before the next vsync (8.3 ms at 60 Hz, 4.2 ms at 120 Hz). Cadence, FPS, the game's clock and mean latency are otherwise unchanged.
+  - **Mechanism:**
+    - `VK_GOOGLE_display_timing` gives the refresh period and past `actualPresentTime` (CLOCK_MONOTONIC, the same clock as `plat_now_ns`). On Android the platform swapchain layer provides it, and r49p1 advertises it (M4 preflight `device-gpu.stdout.txt`).
+    - Presents chain `VkPresentTimesInfoGOOGLE` with `desiredPresentTime = 0`, which keeps current scheduling.
+    - The queue lead is measured just before `vkQueuePresentKHR`.
+    - The pacer sets the phase at grid restarts. Otherwise it nudges by at most 0.5 ms a frame, only when the lead moves more than r/4 from r/2 (hysteresis).
+    - Fallback to today's pacing when the extension or timings are missing or implausible, after swapchain recreation until new timings arrive, or with `LARECOMP_PACE_VSYNC=0`.
+  - **Affected code:** about 70-110 lines in `runtime/nvn/vulkan/device.c`, the `framepace_on()` branch of `runtime/nvn/objects.c`, one header declaration, and possibly an `RT_ON_RESET` hook. The `g_vsync_count` path is untouched.
+  - **Exclusions:** `desiredPresentTime` scheduling, AChoreographer, `setFrameRate` or panel-rate selection, present mode, swapchain image count, ADPF, the unexplained 120 Hz background, candidate (a), #174, #89, and any diagnostic code in the patch.
+  - **Risks:** bogus timings (plausibility checks), clock domain (gate G0), oscillation (hysteresis and clamp), adaptive refresh or surface loss (reset and re-query), 60 FPS mode, movies and menus (smoke checks), other vendors (untestable here; stated as a limitation).
+  - **Gate G0, first step of milestone 7 (about 20 min on the device):**
+    - timings enabled without a pacer change;
+    - `actualPresentTime` within ±0.2 ms of SurfaceFlinger actual present in ≥95% of frames;
+    - refresh duration 16.67 / 8.33 ms;
+    - no change in FPS, p99 or bursts.
+
+    If G0 fails, stop and report. The alternatives (AChoreographer, or candidate (a)) need approval.
+  - **Success criteria, defined before coding (milestone 8):**
+    - **Diagnostic,** the M5B sweep on the candidate with M5B-D60/D120 conditions:
+      - **P1:** 60 Hz 50/16.7 share ≤ 0.02 in every 150-frame block (baseline zone 0.11-0.47), with no run of ≥ 6 alternating intervals;
+      - **P2:** at 120 Hz, no block above 0.16 (baseline peak 0.24-0.51);
+      - **P3:** queue lead within r/2 ± r/4 for ≥ 99% of frames;
+      - **P4:** `LARECOMP_PACE_VSYNC=0` reproduces the baseline zone;
+      - **P5:** a Recompiled 60 Hz sweep meets P1.
+    - **Performance,** M3-v1 conditions:
+      - **S1:** S2 cold and warm pair in both modes. FPS within ±0.05 of the 0.2.10 cells, >100 ms count not above baseline + 1, p99 ≤ 33.6 ms;
+      - **S2:** no burst run of ≥ 20 alternating intervals in any cell or in one Native long session with 3 menus and a re-boot;
+      - **S3:** graceful teardown and re-boot, no crash or visual change; smoke checks of 60 FPS mode, a menu, the title screen and a movie.
+  - **Estimates:** milestone 7 about 1.5-2.5 h (G0 about 20 min on the device). Milestone 8 about 3-3.5 h.
+- **Evidence (local only).** `.mali/milestone-6/`: `M6_PROPOSAL.md`, `release-check.txt`, `upstream-prs.json`, `upstream-issues.json`, `code-search.txt`. No device action, source edit, build or upstream write.
+- **Next step (needs explicit authorization; not started).** Milestone 7: `Приступай к шагу 7`. Implement only this proposal, gate G0 first, as an uncommitted patch.
 
 ## Milestone 5b outcome: COMPLETE, 2026-11-01 (Claude Code session)
 
@@ -257,7 +302,7 @@ Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
 
 ## Authorization and status
 
-Current authorization (2026-11-01): nothing is currently authorized. Milestones 4 and 5 and the upstream migration phases 0.2.5→0.2.8 and 0.2.8→0.2.10 are COMPLETE. The user-approved milestone 5b (pacing bursts) comes next and needs `Приступай к шагу 5b`; milestone 6 needs `Приступай к шагу 6`. Earlier status: milestone 4 was explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Milestone 4 is COMPLETE (see the outcome section): 24 matrix windows, the stability sessions and the final analysis are done, and device restoration is complete; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
+Current authorization (2026-11-01): nothing is currently authorized. Milestones 4, 5, 5b and 6 and the upstream migration phases 0.2.5→0.2.8 and 0.2.8→0.2.10 are COMPLETE. Milestone 7 (implement the milestone 6 proposal) needs `Приступай к шагу 7`. Earlier status: milestone 4 was explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Milestone 4 is COMPLETE (see the outcome section): 24 matrix windows, the stability sessions and the final analysis are done, and device restoration is complete; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
 
 | Milestone | Status |
 | --- | --- |
