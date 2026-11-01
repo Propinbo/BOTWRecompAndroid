@@ -1,10 +1,48 @@
 # Mali contribution execution checkpoint
 
-Checkpoint ID: MALI-M5B-ADDED-2026-11-01 (milestone 5 complete, milestone 5b added; preceding documentation checkpoints: 48ba5aa6a6b801da5937293c0aa761b36356bf87 (milestone 5), 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
+Checkpoint ID: MALI-M5B-COMPLETE-2026-11-01 (milestone 5b complete; preceding documentation checkpoints: 51cebfc41500128d35afba5569287b45dd77fbff (milestone 5b added), 48ba5aa6a6b801da5937293c0aa761b36356bf87 (milestone 5), 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
 
 Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
 
-## Plan change: milestone 5b added, 2026-11-01 (approved; not started)
+## Milestone 5b outcome: COMPLETE, 2026-11-01 (Claude Code session)
+
+- **Authorization.** The user's `Приступай к шагу 5b`. Milestone 6 is not authorized.
+- **Release checks.** At 18:15Z and 18:39Z the newest release was still `v0.2.10-beta` = upstream main `4bad6dc`. The work was pinned to that SHA.
+- **Code path.**
+  - The pacer in `nvnQueuePresentTexture` (`runtime/nvn/objects.c`) sleeps the game thread with `clock_nanosleep` to a CLOCK_MONOTONIC grid of 1e9/30 = 33,333,333 ns.
+  - After a frame more than one period late, the grid restarts at that frame.
+  - The present then goes to the render thread (`async.c`) and to `vkQueuePresentKHR` in MAILBOX mode (`device.c`).
+  - The app uses no Choreographer, `setFrameRate`, `VK_GOOGLE_display_timing` or present timestamps, so the grid's phase against the display's vsync is arbitrary.
+  - ADPF and `timing_trace.c` only aggregate durations.
+- **Hypothesis H1:** the grid's phase is set at each grid restart and then barely moves. When queueBuffer lands just before SurfaceFlinger's latch point, sub-millisecond jitter makes frames alternately miss and make the latch, which gives 50/16.7 ms.
+- **Offline evidence** (existing M4/M5 SurfaceFlinger data: queue, ready and present time per frame).
+  - In 2,724 blocks of 150 frames, a median queue lead of 0–1 ms before the vsync gave a burst share of 0.42 (90 of 99 blocks bursty). Any other lead gave 0.00–0.06.
+  - Inside bursts the app's queue cadence stays 33.3 ms, and frames are GPU-ready 0.4–3 ms after queue.
+  - The grid is longer than 2 vsyncs by only 17–39 ns a frame.
+  - In LONG28-N-1 the lead held constant for minutes and changed only at long frames (map, menus). The 515-interval burst began when the third menu moved the lead to 1.7 ms.
+- **Experiment** (diagnostic, not a performance run).
+  - Temporary, env-gated instrumentation `LARECOMP_DIAG_PACE_SWEEP=500,150` moved the grid 0.5 ms later every 150 presents, sweeping the whole phase within the 180 s window. Patch and diagnostic APK `7db1d732…` are kept locally.
+  - Conditions: Native, S1, warm cache, USB-powered (recorded deviation, as in milestone 5). Battery 28.8–29.0 C, thermal status 0.
+
+  | Run | Panel | FPS / p99 | Alternation | Bursts where |
+  |---|---|---|---|---|
+  | M5B-D60 | 60 Hz | 29.997 / 50.0 ms | 50.0 / 16.7 ms | only at a queue lead of 0.4–1.4 ms (share 0.11–0.47), 0.00–0.01 elsewhere; the zone recurred at the same lead one full cycle later |
+  | M5B-D120 | 120 Hz | 29.997 / 41.7 ms | 41.7 / 25.0 ms, no 50/16.7 | peak at a lead of 0.5–1.2 ms (0.24–0.51), twice per 16.7 ms of sweep; 0.01–0.16 background elsewhere |
+
+  Both windows had valid timing and a graceful teardown.
+- **Result.**
+  - **Supported (causal at 60 Hz):** the bursts are a phase effect between the free-running 33.333 ms present grid and the display's latch. They occur when queueBuffer lands about −0.1 to +1.5 ms before the vsync, persist until the next grid restart, and follow the phase, not the content.
+  - At random phase that is roughly a 10% chance per grid restart. At the device's default 120 Hz the same mechanism gives half the amplitude.
+  - **Rejected:** GPU or render-thread overrun, ADPF or thermal causes, and grid drift alone.
+  - **Not explained:** the phase-independent 1–16% background of 41.7/25 intervals at 120 Hz.
+  - **Not measured:** Recompiled under the sweep, the exact latch offset, and `VK_GOOGLE_display_timing` support in the r49p1 driver.
+- **Restoration.** Baseline APK `e4a62881…` reinstalled in place (hash verified on the device). Display settings restored (refresh keys null, brightness 88, auto mode 1). Source reverted to a clean `4bad6dc`; a rebuild gives an APK whose entries are all byte-identical to the baseline.
+- **Evidence (local only).** `.mali/milestone-5b/`: `M5B_REPORT.md`, `m5b-results.json`, analysis scripts, the patch, the diagnostic APK, `runs/M5B-D60`, `runs/M5B-D120`, `driver/`, `setups/`, `cache-operations/`. Nothing was written upstream.
+- **Next step (needs explicit authorization; not started).** Milestone 6 chooses one contribution from:
+  - **(a)** the milestone 5 pipeline-cache save on start-screen return (small, low impact);
+  - **(b)** phase-aware present pacing for the 50 ms bursts: align the grid to the display vsync with a fixed lead (AChoreographer), or use explicit present timestamps (`VK_GOOGLE_display_timing`, if the driver exposes it). Higher player impact, larger change; it needs an upstream overlap check and a measurable criterion such as no 50/16.7 runs at any phase in a sweep.
+
+## Plan change: milestone 5b added, 2026-11-01 (approved; executed above)
 
 - After milestone 5 the user asked what the 50 ms pacing bursts are and selected that symptom ("Выбираю этот симптом"). The session proposed a separate milestone 5b instead of going straight to milestone 6, and the user approved it ("Одобряю 5b").
 - **Reason.** Milestone 5 showed that the compile-wait symptom is a pipeline-cache state effect with small player impact. The pacing bursts are a sustained, visible judder at a steady 30 FPS mean, and their cause is unknown, so milestone 6 could not select a supported fix for them without another bounded investigation.

@@ -30,6 +30,7 @@ Release-check record (newest first):
 
 | Checked (UTC) | Newest published release | Tag SHA | Active baseline | Note |
 |---|---|---|---|---|
+| 2026-11-01T18:15Z, rechecked 18:39Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 5b pinned) | No newer release or main commit during milestone 5b. |
 | 2026-11-01T17:44Z, rechecked 18:07Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 5 pinned) | No newer release or main commit during milestone 5. |
 | 2026-11-01T17:36Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (migrated; campaign pinned) | No newer release or untagged main commit after the 0.2.10 regression. |
 | 2026-11-01T15:17Z, rechecked 15:18Z before publication | `v0.2.10-beta` (published 15:14:53Z); `v0.2.9-beta` `b753dcd` published 12:24:22Z | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.8-beta` `b02302c` (campaign pinned) | Both appeared during the pinned 0.2.8 regression; not switched mid-campaign. Migration proposed below. |
@@ -175,6 +176,8 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 
 **Approval (2026-11-01):** after milestone 5, the user selected this symptom and approved adding this milestone ("Одобряю 5b"). Approval is not execution authorization: execution needs `Приступай к шагу 5b`.
 
+**Status (2026-11-01): COMPLETE** on `4bad6dc`. The bursts are a phase effect between the runtime's free-running 33.333 ms present grid and the display's vsync latch, confirmed causally by a phase-sweep experiment at 60 and 120 Hz. Details are in MALI_PROGRESS.md. Milestone 6 is not authorized.
+
 **Symptom:** at the 30 FPS cap on a 60 Hz panel, the mean holds 30 FPS but frames go to the screen in bursts that alternate 50.0 / 16.7 ms (one vsync late, then one early) instead of 33.3 ms. Examples: 906 of 3,600 intervals were 50 ms in GP-R-S2-cold-1; bursts occurred in 7 of 24 M4 windows; long runs of 515 intervals (0.2.8 Native) and 1,398 intervals (0.2.10 Recompiled). The cause is not established. All measurements so far were at 60 Hz; the device default is 120 Hz.
 
 **Scope:** pin the newest verified release at the start (currently v0.2.10-beta `4bad6dc`). Trace the frame path from game-frame readiness to present: frame limiter (`runtime/framepace.h`), async render and present (`runtime/nvn/vulkan/async.c`, `device.c`), swapchain present mode, and ADPF. Start with existing diagnostics (`timing_trace.c`, `LARECOMP_LOG_POWER`). Add temporary instrumentation only if they are insufficient, isolated and identifiable. Form one explicit hypothesis, for example "frame readiness sits near a vsync boundary". Test it with a discriminating device experiment comparing frame readiness with actual present (SurfaceFlinger) at 60 and 120 Hz, Native and Recompiled where needed. Diagnostic runs stay separate from performance runs. USB power is allowed as a recorded deviation, as in milestone 5. Restore the user's display settings afterwards.
@@ -197,7 +200,7 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 
 **Acceptance criteria:** The proposal addresses one independently reviewable problem, explains why the change should work, and defines measurable success before coding. If evidence is insufficient or upstream already resolves it, record that outcome without inventing a fix.
 
-**Dependencies:** Milestone 5 provides adequate evidence.
+**Dependencies:** Milestone 5 provides adequate evidence. Milestone 5b's evidence (pacing-burst cause) is also available.
 
 **Stopping condition:** One concrete proposal is ready for authorization; no production implementation.
 
