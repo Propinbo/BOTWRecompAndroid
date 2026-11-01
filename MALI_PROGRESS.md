@@ -1,8 +1,45 @@
 # Mali contribution execution checkpoint
 
-Checkpoint ID: MALI-MIGRATION-0210-COMPLETE-2026-11-01 (second upstream migration phase complete; preceding documentation checkpoints: 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
+Checkpoint ID: MALI-M5-COMPLETE-2026-11-01 (milestone 5 complete; preceding documentation checkpoints: 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
 
 Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
+
+## Milestone 5 outcome: COMPLETE, 2026-11-01 (Claude Code session)
+
+- **Authorization.** The user's `Приступай к шагу 5`. Milestone 6 is not authorized. During the milestone the user asked for all communication in Russian, with the expected duration stated for every test run.
+- **Release checks.** At 17:44Z and 18:07Z the newest release was still `v0.2.10-beta` = upstream main `4bad6dc`. The work was pinned to that SHA. Issue #174 gained a second reporter on a Poco F6 (an Adreno GPU), so that defect is not Mali-specific. The follow-up comment drafted at the 0.2.10 checkpoint now appears on #174, posted from the user's account at 17:42Z.
+- **Symptom selected:** the small-batch pipeline-creation wait, candidate (b). The terrain defect was not chosen: upstream has it as #174 and it now reproduces on non-Mali hardware, so upstream can reproduce and fix it themselves.
+- **Code paths.**
+  - "waited" is the render thread blocked in `wait_built` (`runtime/nvn/vulkan/exec.c`).
+  - The pipeline cache is saved on exit, on `WILL_ENTER_BACKGROUND` in `ui_run`, and by a 30 s check that fires only after more than 64 KB of growth (`device.c`).
+  - The in-place return to the start screen (`main.c teardown` → `backend_reset` → `vk_exec_reset`) does not save. It keeps `g_vk.pcache` in memory and clears `pipe_tab`. The launcher loop has no background save.
+- **Evidence before the experiment.**
+  - The 0.2.5 warm cells were seeded from the prewarm bundle `warm-N-S2-v1`, which already contained the batch. The 0.2.8 and 0.2.10 warm cells were seeded from the cold cell's after-bundle, whose window ends before the batch.
+  - The long sessions' seed `vk_pipelines.bin` equals the warm cell's save at t≈209.5 s, taken just before the batch at t≈213 s. The batch never reached disk.
+- **Hypothesis H1:** the 0.2.5→0.2.8 increase is a pipeline-cache state effect, not slower pipeline creation.
+- **Experiment.**
+  - Diagnostic, not a performance run: Native, S2 warm route, USB-powered.
+  - The helpers were copied with only serial and path changes; the charging and battery-level gates were relaxed and recorded as a deviation.
+  - Panel 60 Hz and brightness 128 during the runs, then restored to the user's values (peak/min refresh null, brightness 88, auto mode 1).
+  - Battery 27.4-28.1 C, thermal status 0 throughout.
+
+  | Run | Cache state | Batch wait | Frame max at the batch | FPS / >50 ms / >100 ms |
+  |---|---|---|---|---|
+  | A: fresh process from the after-warm 0.2.10 bundle | SPIR-V present, batch not in the pipeline cache | 14 compiles, **120 ms** | 141 ms | 29.94 / 30 / 3 |
+  | B: second boot in A's process | batch in the pipeline cache in memory | 14 compiles, **15 ms** | 43 ms | 29.97 / 15 / 1 |
+  | C: fresh process from the bundle saved after A+B | batch on disk | 14 compiles, **15 ms** | 42 ms | 29.97 / 20 / 2 |
+
+  A+B's 4113 KB save fired during B's boot, after 76 KB of growth that included A's batch. At A's teardown that growth existed only in memory. C was predicted to wait about 105 ms; that prediction was wrong because B's boot triggered the save. C instead shows that once the batch is on disk it costs 15 ms in a fresh process.
+- **Result.**
+  - **Supported:** the small-batch "regression" is a pipeline-cache state effect. With the batch cached, 0.2.10 waits 15 ms, within 0.2.5's 13-34 ms. There is no evidence of slower pipeline creation in 0.2.8 or later.
+  - **Rejected:** "the 0.2.8 shader changes (`GMAP_MAX` 32, structured skips) made Mali compile this batch about 5× slower."
+  - **Verified small defect:** pipelines compiled after the last periodic save are lost when the session ends with a start-screen return followed by a process kill, or with a kill or crash without a background transition. Growth under 64 KB, or growth within about 30 s of the end, is not saved. A normal exit through Home or recents saves through the background event. Player impact is an occasional single 100-200 ms hitch.
+  - **Not measured:** the fully cold cost of the batch on 0.2.5 versus 0.2.10. On 0.2.10 it is 162-167 ms fully cold and 120 ms with SPIR-V only.
+  - **Protocol lesson:** warm cells must be seeded from a bundle whose `vk_pipelines.bin` contains the route's late pipelines. The 0.2.8 and 0.2.10 warm-cell compile-wait comparison with 0.2.5 is invalid for this batch.
+- **Evidence (local only).** `.mali/milestone-5/`: `M5_REPORT.md`, `m5-results.json`, scripts, `driver/`, `runs/M5-{A,B,C}`, `setups/`, `cache-operations/`. Source and the working tree are unchanged; nothing was written upstream.
+- **Next step (needs explicit authorization; not started).** Milestone 6 has two candidates:
+  - **(a)** save the pipeline cache when a session ends by start-screen return. A one-call change in the in-place reboot path, independently reviewable and Mali-agnostic, but with small player impact.
+  - **(b)** choose a higher-impact symptom instead: the 50 ms pacing bursts at the 30 FPS cap, or #174 if upstream does not fix it in the next release. These need another milestone-5-type investigation first.
 
 ## Upstream migration phase 0.2.8-beta → 0.2.10-beta: COMPLETE, 2026-11-01 (Claude Code session)
 
@@ -174,7 +211,7 @@ Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
 
 ## Authorization and status
 
-Current authorization (2026-11-01): nothing is currently authorized. Milestone 4 and the upstream migration phases 0.2.5→0.2.8 and 0.2.8→0.2.10 are COMPLETE. The next proposed step is milestone 5 on v0.2.10-beta, which needs `Приступай к шагу 5`. Earlier status: milestone 4 was explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Milestone 4 is COMPLETE (see the outcome section): 24 matrix windows, the stability sessions and the final analysis are done, and device restoration is complete; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
+Current authorization (2026-11-01): nothing is currently authorized. Milestones 4 and 5 and the upstream migration phases 0.2.5→0.2.8 and 0.2.8→0.2.10 are COMPLETE. Milestone 6 needs `Приступай к шагу 6`. Earlier status: milestone 4 was explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Milestone 4 is COMPLETE (see the outcome section): 24 matrix windows, the stability sessions and the final analysis are done, and device restoration is complete; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
 
 | Milestone | Status |
 | --- | --- |
@@ -187,7 +224,7 @@ Current authorization (2026-11-01): nothing is currently authorized. Milestone 4
 | 4. Collect reproducible baseline evidence from your physical device | COMPLETE; 24-window matrix, stability sessions (Recompiled thermal SEVERE 2/2, Native teardown hang 1/18), final report local; device settings and ADB transport restored |
 | Upstream migration phase 0.2.5→0.2.8 (between 4 and 5) | COMPLETE; main FF to b02302c, APK c6ab822e installed in place, bounded regression done, policy added; newer 0.2.9/0.2.10 released during the campaign |
 | Upstream migration phase 0.2.8→0.2.10 | COMPLETE; main FF to 4bad6dc, APK e4a62881 installed in place, regression done (Recompiled long session truncated by a Wi-Fi outage), GPU memory halved, no thermal escalation, new Native terrain defect filed as mamcjr/BOTWRecompAndroid#174 |
-| 5. Investigate one symptom with a bounded diagnostic experiment | Not started; awaiting explicit authorization |
+| 5. Investigate one symptom with a bounded diagnostic experiment | COMPLETE; the small-batch compile-wait "regression" is a pipeline-cache state effect (15 ms with the batch cached vs 120 ms without, on 0.2.10); a small unsaved-session-tail defect is verified |
 | 6. Select one narrowly scoped contribution | Not started; awaiting explicit authorization |
 | 7. Implement the selected fix and perform local verification | Not started; awaiting explicit authorization |
 | 8. Validate the candidate on your device | Not started; awaiting explicit authorization |

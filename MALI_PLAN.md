@@ -30,6 +30,7 @@ Release-check record (newest first):
 
 | Checked (UTC) | Newest published release | Tag SHA | Active baseline | Note |
 |---|---|---|---|---|
+| 2026-11-01T17:44Z, rechecked 18:07Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 5 pinned) | No newer release or main commit during milestone 5. |
 | 2026-11-01T17:36Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (migrated; campaign pinned) | No newer release or untagged main commit after the 0.2.10 regression. |
 | 2026-11-01T15:17Z, rechecked 15:18Z before publication | `v0.2.10-beta` (published 15:14:53Z); `v0.2.9-beta` `b753dcd` published 12:24:22Z | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.8-beta` `b02302c` (campaign pinned) | Both appeared during the pinned 0.2.8 regression; not switched mid-campaign. Migration proposed below. |
 | 2026-11-01T09:53Z | `v0.2.8-beta` (published 2026-10-31T21:53:54Z) | `b02302c73fc2a0df7bd70b2e51a56d9d99af9421` | `v0.2.5-beta` `3d66ac0` → migrated to `b02302c` | No newer untagged commits at that time. |
@@ -59,7 +60,7 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 - **Milestone 5 candidates on 0.2.10, re-ranked:**
   1. The Native terrain/grass sinking defect. It is reproducible within ~10 min on this route, Native only, and absent on 0.2.5. Upstream now knows (#174) and ships quickly, so investigate only if #174 stays unfixed in the next release. Otherwise a cheap step is a bisect between 0.2.8 and 0.2.10 or a flag test (`LARECOMP_BC1_ASTC=0`) to give upstream a precise cause.
   2. The Native teardown hang: 1 of 18 on 0.2.5, 0 of 8 Native returns since (4 on 0.2.8, 4 on 0.2.10). Not reproducible cheaply; keep only as an observation.
-  3. Pipeline-creation wait regression: a fixed small batch waits 104-167 ms on 0.2.10 (174-182 ms on 0.2.8, 13-34 ms on 0.2.5). Small, measurable, Mali-specific candidate.
+  3. Pipeline-creation wait regression: a fixed small batch waits 104-167 ms on 0.2.10 (174-182 ms on 0.2.8, 13-34 ms on 0.2.5). Small, measurable, Mali-specific candidate. *Resolved by milestone 5:* this is a pipeline-cache state effect (15 ms on 0.2.10 with the batch cached), not a regression.
   4. 50 ms pacing bursts at the 30 FPS cap (still present, up to ~1,400 intervals in a segment).
   5. Upload volume of ~930 MB per 2 s (#89, #161). The maintainer has said heap import for Mali/Xclipse is the next big piece of work, so this has a high risk of duplicating upstream.
 - **Process proposal (not approved):** with upstream releasing every few hours, use tiered per-release checks:
@@ -157,6 +158,8 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 **Stopping condition:** Baseline evidence package is complete, or a specific access/data blocker is recorded. No inferred hardware results or fix implementation.
 
 ## 5. Investigate one symptom with a bounded diagnostic experiment.
+
+**Status (2026-11-01): COMPLETE** on `4bad6dc`. The selected symptom was the small-batch pipeline-creation wait. It is explained by pipeline-cache state, not by slower compiles, and a small unsaved-session-tail defect was verified. Details are in MALI_PROGRESS.md. Milestone 6 is not authorized.
 
 **Scope:** Trace the selected symptom through relevant code. Follow evidence into NVN command translation, Vulkan allocation/cache management, synchronization and resource lifetime, shader/texture compatibility, or Native/Recompiled differences as warranted. Start with existing diagnostics; isolate any necessary temporary instrumentation.
 
