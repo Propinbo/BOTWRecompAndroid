@@ -1,8 +1,69 @@
 # Mali contribution execution checkpoint
 
-Checkpoint ID: MALI-M4-COMPLETE-2026-11-01 (milestone 4 complete; preceding documentation checkpoints: d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
+Checkpoint ID: MALI-MIGRATION-028-COMPLETE-2026-11-01 (upstream migration phase between milestones 4 and 5 complete; preceding documentation checkpoints: b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
 
 Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
+
+## Upstream migration phase 0.2.5-beta → 0.2.8-beta: COMPLETE, 2026-11-01 (Claude Code session)
+
+- **Authorization.** The user's pasted migration-phase instruction: fast-forward-only main update to the verified latest release, an unchanged rebuild and in-place install, a bounded device regression with read-only root, the rolling-upstream policy, and a three-document checkpoint. It does not authorize milestone 5. Before it started, milestone 4 was verified COMPLETE at documentation checkpoint `b37b036`.
+- **Release check and pin.** At 2026-11-01T09:53Z the newest published release was `v0.2.8-beta` (published 2026-10-31T21:53:54Z, prerelease), tag commit `b02302c73fc2a0df7bd70b2e51a56d9d99af9421`, with no newer untagged commits. The campaign was pinned to that SHA. There are 24 commits from `3d66ac0`. Relevant ones:
+  - #89/#131: GMap 32 slots and learned ranges, the upload ring returning chunks (`24beda8`, `17fae0d`), and arena space reuse with the oldest learned windows freed (`2a9360f`);
+  - Mali host import with the arena off where the driver offers import (`db2451a`, r54p1+; likely not active on r49p1, not verified);
+  - Mali render targets without MUTABLE_FORMAT (AFBC), and a guest yield that skips the host sched_yield (`57fe05b`);
+  - structured shaders, a cached GMap lookup, and clears as load ops (`2fe2737`, `6681b37`).
+
+  No commit touches the Native teardown wait.
+- **Branches.** Local `main` and fork `origin/main` were fast-forwarded `3d66ac0` → `b02302c` with no rebase, force push or merge, and the working tree is clean. `mali-workspace` stayed documentation-only (`b37b036` before this checkpoint). Upstream was not written to.
+- **Build.** `assembleDebug` exited 0 in 35 s with the unchanged verified 3a/3b environment.
+  - APK `BOTWRecompAndroid-0.2.8-beta-b02302c-debug.apk`: SHA-256 `c6ab822e6cddeee685eff038eba8b9697d792967fa609b29fdba37256e1a3340`, 98,273,564 bytes.
+  - Package metadata: versionCode 28 / 0.2.8-beta, arm64-v8a, minSdk 30.
+  - Signing: v2 signature, debug signer certificate SHA-256 `60fa2a5f462fd95d30b37dde54d769de8986d7c8377e13c3ea5773088f20527a` (same signer as the installed build), zipalign OK.
+  - `libmain.so` carries game-library ABI `65da5d95e597ba58`, unchanged from 0.2.5, so the Recompiled library `d9a8bd53…` was kept and not rebuilt.
+
+  The 0.2.5 baseline APK `aabb4ea6…` is preserved.
+- **Install.** In-place `install -r` with no uninstall, downgrade or data clear. The installed `base.apk` hash equals `c6ab822e…`. `firstInstallTime` was preserved, and the saves, seeds and game library are intact. Shader GLSL changed, so the app-managed caches recompiled; nothing was blindly deleted.
+- **Bounded device regression.** Run on the SM-X730 / Immortalis-G925 MC12 (r49p1) under M3-v1 conditions: 30 FPS cap, 1080 output, panel fixed at 60 Hz, wireless ADB during measurements, and charge, temperature-stability and ±1 C start-pairing gates.
+  - **S2 cold pair** (start Δ 0.1 C): Recompiled 30.01 FPS, p99 33.5 ms, 2 intervals >50 ms, 0 >100 ms; Native 30.00 FPS, p99 33.4 ms, 8 >50 ms, 0 >100 ms. About 1,850 pipeline compiles per cell. Graceful teardown in both.
+  - **S2 warm pair** (start Δ 0.2 C): Recompiled 29.97 FPS, p99 33.4 ms, 1 >50 ms, one 200 ms interval; Native 29.96 FPS, p99 33.4 ms, 4 >50 ms, one 216.7 ms interval. Both hitches coincide with a fixed batch of 14 compiles waiting 174-182 ms; all six 0.2.5 warm cells waited 13-34 ms on the same batch.
+  - **Long sessions, about 21 min each** (4×300 s S2-route segments; a teleport from the Great Plateau to the Shrine of Resurrection at the first boundary; menus at the second and third; launcher return plus repeated boot; 1 Hz read-only root GPU/thermal sampling). Native LONG28-N-1 started at 26.0 C; Recompiled LONG28-R-1 at 27.0 C (Δ 1.0 C, the pairing limit).
+
+    | | LONG28-N-1 | LONG28-R-1 |
+    |---|---|---|
+    | Outcome | completed, no stop | completed, **no thermal stop** |
+    | FPS / p99 / >50 ms / >100 ms / max | 29.81 / 50.0 / 689 / 5 / 533 ms | 29.81 / 50.0 / 269 / 6 / 567 ms |
+    | Teleport (confirm→HUD; window max, at map open) | 23.4 s; 533 ms | 23.3 s; 567 ms |
+    | Thermal status first 1 / 2 / 3 | 649 s / – / – | 701 / 1076 s / – |
+    | Big-core median / max; SoC median; gpu0 median | 54.1 / 99.5; 57.9; 52.0 C | 58.7 / 94.4; 60.1; 54.8 C |
+    | GED clock / utilization median | 546 MHz / 88% | 546 MHz / 87% |
+    | Return / re-boot to world / return | 2.27 / 23.2 / 2.28 s | 2.29 / 27.3 / 2.28 s |
+
+    The >100 ms intervals in each session fall in three places: one at about 168-170 s in segment 1, the maximum at the map opening (300.7-301.1 s) that starts the teleport, and two or three at the first menu (640-653 s). None occurs in later gameplay. The Native fourth segment has a 50 ms pacing burst of 515 intervals.
+- **#89 observations.**
+  - GPU memory reached a 2,658 MB plateau, rose to 2,914 MB after the teleport, and stayed bounded to the end (0.2.5: 2,914 MB from about 150 s). There was no unbounded growth in about 21 min.
+  - Upload per 2 s log line was about 925-934 MB in both versions and both modes, unchanged from 0.2.5 (930-932 MB) on this route.
+- **Visual review.** End captures of the four short cells, plus the boot, teleport arrival, menu, end-of-session and re-boot captures of both long sessions, were inspected. World, HUD, text, shadows, interior lighting and the inventory UI rendered correctly, with no visible corruption; transients are not excluded. Rain in the warm-cell captures is in-game weather.
+- **Fixed, unresolved, new.**
+  - **Not shown fixed:**
+    - Native teardown hang: 0 of 4 Native returns on 0.2.8 against 1 of 18 on 0.2.5, too few to claim a fix; no commit addresses it.
+    - Recompiled thermal: no SEVERE this time, maximum status 2. But segments 2-4 ran at the Shrine of Resurrection after the teleport, a different and probably lighter workload than STAB-R-3's open field, so this is **not** evidence of a fix.
+  - **Unresolved:** 50 ms pacing bursts, and the #89 upload volume, unchanged.
+  - **New:** a possible pipeline-creation slowdown. The 14-compile batch waits 126-182 ms in all 6 measured 0.2.8 runs (four short cells plus two long sessions), including after earlier runs had compiled it, which weakens the cold-driver-cache explanation. The cause is unverified.
+  - No crashes. No new visual regressions.
+- **Root and conditions.** `adb shell` runs as uid 0 (KernelSU allowlist, `u:r:ksu:s0`, SELinux Enforcing; no modules). Root use was read-only sysfs/procfs sampling only: `/proc/gpufreqv2`, GED `hal/*`, and thermal zones 2/17/31/32. The temporary display settings (60 Hz, brightness 128 manual) and wireless ADB were restored at 15:15Z: refresh keys deleted, brightness 78 with auto mode 1 (reads 75 after adaptive adjustment), and `adb usb` issued (`upstream-migration/conditions-restore-028.txt`). The USB transport was not re-verified because the cable was not attached.
+- **Charging-control feasibility.** A separate read-only investigation requested by the user: `.mali/charging-feasibility/REPORT.md`. Slate mode, pass-through/bypass, and battery-protection hold do not reproduce battery-only operation, and `dumpsys battery unplug` is simulation only. The recommendation is a LAN-controlled AC-side switch for the charger. Nothing was written.
+- **Evidence (local only).** `.mali/upstream-migration/` (releases, FF, build, APK, signature, install, conditions, teleport calibration), `.mali/milestone-4-resume-1/{regression-028,stability-028,cache-operations/*GP28*}`, and the 0.2.8 scripts. Manifest: `.mali/upstream-migration/migration-028-manifest.json` (1,172 files, about 1.15 GiB, SHA-256 per file).
+- **Release check before this report.** At 2026-11-01T15:17Z (rechecked unchanged at 15:18Z before publication), **`v0.2.9-beta` (`b753dcd`, published 12:24:22Z) and `v0.2.10-beta` (`4bad6dcb0390ae81d0e5d2e174809422d7198d97`, published 15:14:53Z)** had appeared during the pinned campaign. They were not adopted mid-campaign, per policy. The 5 commits, all runtime-only (generator inputs untouched, so the ABI is probably unchanged; to be verified):
+  - Mali BC1 textures as ASTC 4x4 instead of RGBA8, reported to roughly halve GPU memory (#143/#155/#162, related to #89) (`596615e`);
+  - an ADPF 30 fps fixed-rate budget, lowering cluster clocks and power (`b6725c5`);
+  - terrain "curtains" after a fast travel or tower (`8053dc8`);
+  - two version bumps.
+- **Next proposed step (needs explicit authorization; not started).** A bounded migration phase to `v0.2.10-beta` `4bad6dc`, using this phase's procedure:
+  - FF-only main update, unchanged rebuild, in-place install, ABI check;
+  - S2 cold/warm pair;
+  - one long session per mode without the teleport (comparable with STAB-*-3), plus one teleport check.
+
+  It would measure GPU memory under BC1→ASTC, the Recompiled big-core/thermal trend under the ADPF change, the 14-compile batch, and teardown. After that, milestone 5 would take one symptom on the newest baseline. The alternative is to authorize milestone 5 now on 0.2.8, which is not recommended.
 
 ## Milestone 4 outcome: COMPLETE, 2026-11-01 (Claude Code session)
 
@@ -49,7 +110,7 @@ Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
 
 ## Authorization and status
 
-Current authorization: milestone 4 remains explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Milestone 4 is COMPLETE (see the outcome section): 24 matrix windows, the stability sessions and the final analysis are done, and device restoration is complete; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
+Current authorization (2026-11-01): nothing is currently authorized. Milestone 4 and the upstream migration phase 0.2.5→0.2.8 are COMPLETE. The next proposed step is a v0.2.10-beta migration, which needs authorization. Earlier status: milestone 4 was explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Milestone 4 is COMPLETE (see the outcome section): 24 matrix windows, the stability sessions and the final analysis are done, and device restoration is complete; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
 
 | Milestone | Status |
 | --- | --- |
@@ -60,6 +121,7 @@ Current authorization: milestone 4 remains explicitly authorized. After the init
 | Bounded upstream synchronization before 3b | COMPLETE; source/main fast-forwarded to 0.2.5-beta, 3a preserved |
 | 3b. Build native dependencies and the unchanged baseline APK | COMPLETE; full baseline APK/hash/signature verified, known host-test harness limitation retained |
 | 4. Collect reproducible baseline evidence from your physical device | COMPLETE; 24-window matrix, stability sessions (Recompiled thermal SEVERE 2/2, Native teardown hang 1/18), final report local; device settings and ADB transport restored |
+| Upstream migration phase 0.2.5→0.2.8 (between 4 and 5) | COMPLETE; main FF to b02302c, APK c6ab822e installed in place, bounded regression done, policy added; newer 0.2.9/0.2.10 released during the campaign |
 | 5. Investigate one symptom with a bounded diagnostic experiment | Not started; awaiting explicit authorization |
 | 6. Select one narrowly scoped contribution | Not started; awaiting explicit authorization |
 | 7. Implement the selected fix and perform local verification | Not started; awaiting explicit authorization |

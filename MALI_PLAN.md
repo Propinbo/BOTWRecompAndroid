@@ -4,7 +4,7 @@ Approved in chat on 2026-10-30. This is the authoritative milestone plan. The or
 
 Upstream: https://github.com/mamcjr/BOTWRecompAndroid
 
-Current source baseline after the explicitly authorized bounded synchronization on 2026-10-30: **`3d66ac0482ae9d99546a579170675dd6eb3c047c`**, upstream `v0.2.5-beta` / main. Fork main and local source were advanced fast-forward from `4acbf40c9312618e16e1153f3696c64e125d2a2f`. Completed milestones 1-3 and 3a remain complete; historical evidence and 3a environment/validation are preserved. The synchronization authorizes neither 3b nor 4.
+Current active source baseline after the authorized upstream migration phase between milestones 4 and 5 (2026-11-01): **`b02302c73fc2a0df7bd70b2e51a56d9d99af9421`**, upstream `v0.2.8-beta`. Fork main and local `main` were fast-forwarded from `3d66ac0482ae9d99546a579170675dd6eb3c047c` (`v0.2.5-beta`, the milestone 3b/4 baseline), which itself came by fast-forward from `4acbf40c9312618e16e1153f3696c64e125d2a2f` on 2026-10-30. Completed milestones 1-4 and their evidence remain tied to the SHAs they used. Newer published releases exist; see "Rolling upstream baseline" for the last check and the proposed migration.
 
 Planned test hardware: MediaTek Dimensity 9400+, Arm Immortalis-G925 MC12. Hardware and device results must be verified from real device evidence during the authorized device milestones.
 
@@ -21,6 +21,35 @@ The active checkpoint branch is `mali-workspace` in the existing fork https://gi
 Do not push to upstream, open a PR, merge branches, change the default branch, force-push, or publish source changes under this authorization. Keep checkpoint documentation out of future upstream PRs: never merge this branch into a contribution branch; carry only the independently authorized source patch. On source branches keep the three documentation files locally excluded from staging, along with `.mali/`. A clean clone of the checkpoint branch contains the documentation; a clone of `main` needs explicit recovery. See MALI_PROGRESS.md for retrieval steps and verified persistence limits.
 
 The bounded synchronization separately authorized importing upstream commits into fork main only by fast-forward. It did not expand standing source-publication permission. The documentation branch intentionally retains its historical application tree and is updated with documents only; its application tree is not the current build baseline. Recover documents into a current main checkout without merging checkpoint history into source.
+
+## Rolling upstream baseline
+
+User-approved on 2026-11-01; the workflow rule is in `AGENTS.md`. The active target is the latest *verified, published* upstream release (GitHub Releases, betas included). Releases are checked at session start, before each milestone, before selecting or implementing a fix, before preparing the PR, and about every 6 h in long sessions. A campaign pins one SHA and finishes on it. A new release never triggers an automatic rebuild, restart, or retest loop; migration is proposed at the next safe checkpoint boundary and needs authorization. There is no background monitoring.
+
+Release-check record (newest first):
+
+| Checked (UTC) | Newest published release | Tag SHA | Active baseline | Note |
+|---|---|---|---|---|
+| 2026-11-01T15:17Z, rechecked 15:18Z before publication | `v0.2.10-beta` (published 15:14:53Z); `v0.2.9-beta` `b753dcd` published 12:24:22Z | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.8-beta` `b02302c` (campaign pinned) | Both appeared during the pinned 0.2.8 regression; not switched mid-campaign. Migration proposed below. |
+| 2026-11-01T09:53Z | `v0.2.8-beta` (published 2026-10-31T21:53:54Z) | `b02302c73fc2a0df7bd70b2e51a56d9d99af9421` | `v0.2.5-beta` `3d66ac0` → migrated to `b02302c` | No newer untagged commits at that time. |
+
+## 4→5. Upstream migration phase: 0.2.5-beta → 0.2.8-beta (COMPLETE, 2026-11-01)
+
+**Authorization:** The user's pasted migration-phase instruction of 2026-11-01. It authorizes a fast-forward-only update of local and fork `main` to the verified release, an unchanged rebuild with the verified 3a/3b environment, an in-place install, a bounded device regression with read-only root sampling, the rolling-upstream policy, and a three-document checkpoint. It does not authorize milestone 5, source changes, or an upstream PR.
+
+**Outcome:** Main was fast-forwarded to `b02302c`, the APK rebuilt and installed in place, and the bounded regression completed. Results and evidence are in MALI_PROGRESS.md. The game library was not rebuilt because the ABI ID was unchanged.
+
+## Reassessment of milestones 5-9 after the 0.2.8 regression and the 0.2.9/0.2.10 releases (proposal; not approved)
+
+- **Before milestone 5:** migrate to `v0.2.10-beta` with a shorter phase of the same shape, as proposed in MALI_PROGRESS.md. Reason: 0.2.9/0.2.10 change exactly the measured Mali areas. They convert BC1 textures to ASTC 4x4 on Mali (GPU memory reported 1948→992 MB on another Mali device; #89 and the low-memory issues), tune the ADPF hint for a fixed 30 fps (cluster clocks and power; relevant to the Recompiled big-core thermal finding), and fix terrain "curtains" after a fast travel. A milestone 5 on 0.2.8 risks duplicating upstream work.
+- **Milestone 5 symptom candidates, re-ranked on 0.2.8 evidence** (choose on the newest baseline):
+  1. the Native game→launcher teardown hang: no upstream commit addresses it; it occurred 1 of 18 times on 0.2.5 and 0 of 4 on 0.2.8, so its frequency is too low for a cheap repro;
+  2. Recompiled sustained thermal escalation: big-core driven, and must be re-measured on 0.2.10 with an unchanged route before investigating;
+  3. a possible pipeline-creation slowdown since 0.2.8, where one fixed 14-pipeline batch waits 126-182 ms against 13-34 ms on 0.2.5;
+  4. 50 ms pacing bursts at the 30 FPS cap.
+
+  GPU memory and upload volume (#89) are deferred until the BC1→ASTC result is measured.
+- **Milestones 6-9:** definitions unchanged. Milestone 6 must recheck the latest release for overlap, and milestones 8-9 compare against the active baseline at that time, not against 0.2.5.
 
 ## 1. Prepare the fork, workspace, and checkpoints.
 
