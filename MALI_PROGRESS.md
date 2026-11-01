@@ -1,8 +1,72 @@
 # Mali contribution execution checkpoint
 
-Checkpoint ID: MALI-MIGRATION-028-COMPLETE-2026-11-01 (upstream migration phase between milestones 4 and 5 complete; preceding documentation checkpoints: b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
+Checkpoint ID: MALI-MIGRATION-0210-COMPLETE-2026-11-01 (second upstream migration phase complete; preceding documentation checkpoints: 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
 
 Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
+
+## Upstream migration phase 0.2.8-beta → 0.2.10-beta: COMPLETE, 2026-11-01 (Claude Code session)
+
+- **Authorization.** The user answered "Migrate to 0.2.10" to the proposal at checkpoint `6a8678f`. The phase has the same limits as the 0.2.8 phase and does not authorize milestone 5. During the phase the user:
+  - instructed skipping the recharge before the Recompiled long session;
+  - approved filing an upstream issue for a new defect.
+- **Release check and pin.** At 15:19Z the newest release was `v0.2.10-beta`, tag = upstream main = `4bad6dcb0390ae81d0e5d2e174809422d7198d97`. The campaign was pinned to it. A recheck at 17:36Z found no newer release and no newer main commit.
+- **Branches.** Local `main` and fork `origin/main` were fast-forwarded `b02302c` → `4bad6dc` (5 commits, runtime only), with no rebase, force push or merge. The working tree is clean. `mali-workspace` stays documentation-only (`6a8678f` before this checkpoint).
+- **Build.** `assembleDebug` exited 0 in 25 s with the unchanged environment.
+  - APK `BOTWRecompAndroid-0.2.10-beta-4bad6dc-debug.apk`: SHA-256 `e4a62881a954423ea8626628ae4a13d4dc9f9aaf9787c8d64396732c2f6a2c50`, 98,277,296 bytes.
+  - Package metadata: versionCode 30 / 0.2.10-beta, arm64-v8a, minSdk 30.
+  - Signing: v2 signature, same debug signer `60fa2a5f…527a`, zipalign OK.
+  - ABI `65da5d95e597ba58`, unchanged, so the game library `d9a8bd53…` was kept.
+- **Install.** Over USB, in place (`install -r`) with no data loss. The installed `base.apk` equals `e4a62881…`, `firstInstallTime` was preserved, and the game library, saves and seeds are intact. Before the install, the USB-only ADB state left by the 0.2.8 restoration was confirmed (`service.adb.tcp.port` 0).
+- **Bounded regression** (same conditions and gates as 0.2.8; long sessions without the teleport, so they compare with STAB-*-3):
+  - **S2 cold pair** (start Δ 0.1 C):
+
+    | Cell | FPS | p99 | >50 ms | >100 ms | Compiles |
+    |---|---|---|---|---|---|
+    | Recompiled | 29.98 | 33.6 ms | 19 | 1 | 1,841 |
+    | Native | 29.97 | 33.5 ms | 21 | 1 | 1,867 |
+
+    In both cells a large cold batch of about 550 pipelines waited about 3.4 s.
+  - **S2 warm pair** (start Δ 0.3 C):
+
+    | Cell | FPS | p99 | >50 ms | >100 ms |
+    |---|---|---|---|---|
+    | Recompiled | 29.93 | 33.4 ms | 15 | 2 |
+    | Native | 29.93 | 50.0 ms | 50 | 3 |
+
+    The fixed small warm batch (11-14 pipelines) waited 162-167 ms. It was 174-182 ms on 0.2.8 and 13-34 ms on 0.2.5.
+  - All four short cells tore down gracefully. GPU memory peaked at 1,440 MB in each.
+  - **Native teleport check (TP210-N-1).** The fast travel reached the HUD in 22.6 s. GPU memory after the load was 1,440 MB (0.2.8: 2,914 MB). The destination rendered correctly.
+  - **LONG210-N-1** (start 25.4 C, battery 78%): complete, 29.85 FPS, p99 50.0 ms, 232 intervals >50 ms, 3 >100 ms, max 150 ms, 3 menus passed. Launcher return took 2.29 s, the re-boot reached the world in 26.4 s, and the second return was graceful.
+  - **LONG210-R-1** (start 26.1 C, Δ 0.7 C from Native; battery 70%, **no recharge, user instruction**; recorded as a deviation). **Truncated:** Wi-Fi/internet dropped at about 17:27Z (user-confirmed), so wireless ADB was lost about 989 s into play, early in segment 4. The frame and sensor data up to that point are valid (no ring loss; `recomputed-stats.json`): 29,494 frames, 29.82 FPS, p99 50.0 ms, 4 >100 ms, max 150 ms. Segment 3 contains a 50 ms pacing burst of 1,398 intervals. All 3 menus passed. The game kept running while ADB was down. The session was recovered over USB and returned to start gracefully (teardown 239 ms); `recovery/` holds the notes and captures. The repeated boot was not done for this session.
+  - **Thermal**, compared with the 0.2.5 sessions on the same route (no teleport):
+
+    | | Max thermal status | Big-core median | SoC median |
+    |---|---|---|---|
+    | 0.2.10 Native | 0 | 52.1 C | 56.7 C |
+    | 0.2.10 Recompiled (to ~989 s) | 0 | 56.6 C | 59.0 C |
+    | 0.2.5 Native (STAB-N-3) | 2 (from 801 s) | 58.7 C | 62.9 C |
+    | 0.2.5 Recompiled (STAB-R-3) | SEVERE stop at 1,187 s (status 2 from 690 s) | 63.7 C | 68.8 C |
+
+    0.2.10 Recompiled had no thermal escalation by 989 s, where 0.2.5 had already reached status 2 at 690 s. GED clock and utilization are unchanged (546-572 MHz, 87-89%). This is consistent with the ADPF fixed-30-fps change (`b6725c5`) but not proven by an A/B test. The Recompiled session was truncated, so SEVERE at about 1,190 s is not excluded with certainty.
+  - **#89.** GPU memory plateaued at 1,440 MB in every 0.2.10 run, against 2,658-2,914 MB on 0.2.5/0.2.8; this is the expected effect of BC1→ASTC (`596615e`). Upload is unchanged at about 928-930 MB per 2 s log line.
+- **New defect: Native terrain/grass sinking.** The user noticed it live, and captures confirm it.
+  - **What it looks like:** after about 5-10 min of the Native long session, grass disappears from the route field and the ground is drawn above Link's walking surface (knee-deep). It persisted through menus 2 and 3, by day and night.
+  - **Where it does not occur:** it is absent at the same route point and session time on 0.2.5 (STAB-N-3, and STAB-R-3), and in 0.2.10 Recompiled at about 5, 10 and 25 min. Two-minute 0.2.10 cells look normal.
+  - **Versions not checked:** 0.2.8/0.2.9 were not checked at this point and time.
+  - **Cause:** not established. The candidates are `8053dc8` (linear textures checked every frame) or `596615e` (BC1→ASTC); it has not been bisected.
+  - **Upstream report:** with the user's approval, it was filed as **mamcjr/BOTWRecompAndroid#174** from the user's GitHub account, via Claude in Chrome, with 3 screenshots (0.2.5 vs 0.2.10 comparison, close-up, night shot). Draft and record: `.mali/upstream-migration/issue-terrain/`. A follow-up comment with the Recompiled result is drafted, not posted.
+- **Visual review.** The other 0.2.10 captures were inspected: boot, menus/inventory text and icons, rain, interior after teleport, launcher, end of the short cells. Nothing else was abnormal. The coarse look of the captures comes from the protocol settings (1x/1080p output, SGSR1 upscale, no AA). Full-resolution sky crops show no new banding in 0.2.5, 0.2.8 or 0.2.10.
+- **Teardown hang.** Native graceful returns: 4 of 4 on 0.2.10 and 4 of 4 on 0.2.8, so 0 hangs in 8 since the 1 of 18 on 0.2.5. Recompiled: 3 of 3 on 0.2.10.
+- **Restoration (17:35Z).** Refresh keys deleted; brightness 80 (pre-phase value) with auto mode 1 (reads 88 after adaptive adjustment); `adb usb`, after which `service.adb.tcp.port` reads 0 and only the USB transport is listed (`conditions-restore-0210.txt`). The app was left on its start screen.
+- **Evidence (local only).**
+  - `.mali/upstream-migration/` (ff-update-0210, build log, APK, signature, badging, install-0210, conditions-*-0210, TP210-N-1, issue-terrain);
+  - `.mali/milestone-4-resume-1/{regression-0210, stability-0210, runs/GP210-*, cells/GP210-*, cache-operations/*GP210*}`;
+  - the 0210 scripts. Manifest: `.mali/upstream-migration/migration-0210-manifest.json` (1,118 files, about 1.2 GiB, SHA-256 per file; it overlaps the 0.2.8 manifest for shared `upstream-migration/` files).
+- **Next proposed step (needs explicit authorization; not started).** Milestone 5 on the pinned `v0.2.10-beta`, choosing one of:
+  - **(a)** a bounded cause-finding experiment for the Native terrain defect (the `LARECOMP_BC1_ASTC=0` A/B, then 0.2.8 vs 0.2.9 vs 0.2.10 on the same route), feeding #174. Recommended only if upstream has not fixed it in the next release.
+  - **(b)** the small-batch pipeline-creation wait regression on Mali.
+
+  Releases are checked first, per policy. A process change to tiered per-release checks is proposed in MALI_PLAN.md and awaits approval.
 
 ## Upstream migration phase 0.2.5-beta → 0.2.8-beta: COMPLETE, 2026-11-01 (Claude Code session)
 
@@ -110,7 +174,7 @@ Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
 
 ## Authorization and status
 
-Current authorization (2026-11-01): nothing is currently authorized. Milestone 4 and the upstream migration phase 0.2.5→0.2.8 are COMPLETE. The next proposed step is a v0.2.10-beta migration, which needs authorization. Earlier status: milestone 4 was explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Milestone 4 is COMPLETE (see the outcome section): 24 matrix windows, the stability sessions and the final analysis are done, and device restoration is complete; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
+Current authorization (2026-11-01): nothing is currently authorized. Milestone 4 and the upstream migration phases 0.2.5→0.2.8 and 0.2.8→0.2.10 are COMPLETE. The next proposed step is milestone 5 on v0.2.10-beta, which needs `Приступай к шагу 5`. Earlier status: milestone 4 was explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Milestone 4 is COMPLETE (see the outcome section): 24 matrix windows, the stability sessions and the final analysis are done, and device restoration is complete; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
 
 | Milestone | Status |
 | --- | --- |
@@ -122,6 +186,7 @@ Current authorization (2026-11-01): nothing is currently authorized. Milestone 4
 | 3b. Build native dependencies and the unchanged baseline APK | COMPLETE; full baseline APK/hash/signature verified, known host-test harness limitation retained |
 | 4. Collect reproducible baseline evidence from your physical device | COMPLETE; 24-window matrix, stability sessions (Recompiled thermal SEVERE 2/2, Native teardown hang 1/18), final report local; device settings and ADB transport restored |
 | Upstream migration phase 0.2.5→0.2.8 (between 4 and 5) | COMPLETE; main FF to b02302c, APK c6ab822e installed in place, bounded regression done, policy added; newer 0.2.9/0.2.10 released during the campaign |
+| Upstream migration phase 0.2.8→0.2.10 | COMPLETE; main FF to 4bad6dc, APK e4a62881 installed in place, regression done (Recompiled long session truncated by a Wi-Fi outage), GPU memory halved, no thermal escalation, new Native terrain defect filed as mamcjr/BOTWRecompAndroid#174 |
 | 5. Investigate one symptom with a bounded diagnostic experiment | Not started; awaiting explicit authorization |
 | 6. Select one narrowly scoped contribution | Not started; awaiting explicit authorization |
 | 7. Implement the selected fix and perform local verification | Not started; awaiting explicit authorization |

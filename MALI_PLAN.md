@@ -4,7 +4,7 @@ Approved in chat on 2026-10-30. This is the authoritative milestone plan. The or
 
 Upstream: https://github.com/mamcjr/BOTWRecompAndroid
 
-Current active source baseline after the authorized upstream migration phase between milestones 4 and 5 (2026-11-01): **`b02302c73fc2a0df7bd70b2e51a56d9d99af9421`**, upstream `v0.2.8-beta`. Fork main and local `main` were fast-forwarded from `3d66ac0482ae9d99546a579170675dd6eb3c047c` (`v0.2.5-beta`, the milestone 3b/4 baseline), which itself came by fast-forward from `4acbf40c9312618e16e1153f3696c64e125d2a2f` on 2026-10-30. Completed milestones 1-4 and their evidence remain tied to the SHAs they used. Newer published releases exist; see "Rolling upstream baseline" for the last check and the proposed migration.
+Current active source baseline after the second authorized upstream migration phase (2026-11-01): **`4bad6dcb0390ae81d0e5d2e174809422d7198d97`**, upstream `v0.2.10-beta`. Fork main and local `main` were fast-forwarded `3d66ac0` (`v0.2.5-beta`, the milestone 3b/4 baseline) → `b02302c` (`v0.2.8-beta`) → `4bad6dc`; the 0.2.5 baseline itself came by fast-forward from `4acbf40c9312618e16e1153f3696c64e125d2a2f` on 2026-10-30. Completed milestones and phases keep the SHAs they used. See "Rolling upstream baseline" for the last release check.
 
 Planned test hardware: MediaTek Dimensity 9400+, Arm Immortalis-G925 MC12. Hardware and device results must be verified from real device evidence during the authorized device milestones.
 
@@ -30,6 +30,7 @@ Release-check record (newest first):
 
 | Checked (UTC) | Newest published release | Tag SHA | Active baseline | Note |
 |---|---|---|---|---|
+| 2026-11-01T17:36Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (migrated; campaign pinned) | No newer release or untagged main commit after the 0.2.10 regression. |
 | 2026-11-01T15:17Z, rechecked 15:18Z before publication | `v0.2.10-beta` (published 15:14:53Z); `v0.2.9-beta` `b753dcd` published 12:24:22Z | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.8-beta` `b02302c` (campaign pinned) | Both appeared during the pinned 0.2.8 regression; not switched mid-campaign. Migration proposed below. |
 | 2026-11-01T09:53Z | `v0.2.8-beta` (published 2026-10-31T21:53:54Z) | `b02302c73fc2a0df7bd70b2e51a56d9d99af9421` | `v0.2.5-beta` `3d66ac0` → migrated to `b02302c` | No newer untagged commits at that time. |
 
@@ -39,17 +40,35 @@ Release-check record (newest first):
 
 **Outcome:** Main was fast-forwarded to `b02302c`, the APK rebuilt and installed in place, and the bounded regression completed. Results and evidence are in MALI_PROGRESS.md. The game library was not rebuilt because the ABI ID was unchanged.
 
-## Reassessment of milestones 5-9 after the 0.2.8 regression and the 0.2.9/0.2.10 releases (proposal; not approved)
+## 4→5b. Upstream migration phase: 0.2.8-beta → 0.2.10-beta (COMPLETE, 2026-11-01)
 
-- **Before milestone 5:** migrate to `v0.2.10-beta` with a shorter phase of the same shape, as proposed in MALI_PROGRESS.md. Reason: 0.2.9/0.2.10 change exactly the measured Mali areas. They convert BC1 textures to ASTC 4x4 on Mali (GPU memory reported 1948→992 MB on another Mali device; #89 and the low-memory issues), tune the ADPF hint for a fixed 30 fps (cluster clocks and power; relevant to the Recompiled big-core thermal finding), and fix terrain "curtains" after a fast travel. A milestone 5 on 0.2.8 risks duplicating upstream work.
-- **Milestone 5 symptom candidates, re-ranked on 0.2.8 evidence** (choose on the newest baseline):
-  1. the Native game→launcher teardown hang: no upstream commit addresses it; it occurred 1 of 18 times on 0.2.5 and 0 of 4 on 0.2.8, so its frequency is too low for a cheap repro;
-  2. Recompiled sustained thermal escalation: big-core driven, and must be re-measured on 0.2.10 with an unchanged route before investigating;
-  3. a possible pipeline-creation slowdown since 0.2.8, where one fixed 14-pipeline batch waits 126-182 ms against 13-34 ms on 0.2.5;
-  4. 50 ms pacing bursts at the 30 FPS cap.
+**Authorization:** The user's "Migrate to 0.2.10" in answer to the proposal recorded at the 0.2.8 checkpoint. Same shape and limits as the 0.2.8 phase: FF-only main update, unchanged rebuild, in-place install, bounded regression with read-only root sampling, three-document checkpoint. During the phase the user also instructed skipping the recharge before the Recompiled long session, and approved filing an upstream issue for a new visual defect (filed from the user's account via Claude in Chrome). It does not authorize milestone 5, source changes, or an upstream PR.
 
-  GPU memory and upload volume (#89) are deferred until the BC1→ASTC result is measured.
-- **Milestones 6-9:** definitions unchanged. Milestone 6 must recheck the latest release for overlap, and milestones 8-9 compare against the active baseline at that time, not against 0.2.5.
+**Outcome:** Main fast-forwarded to `4bad6dc`, APK rebuilt and installed in place (ABI unchanged), regression completed with one truncated session. Results and evidence are in MALI_PROGRESS.md.
+
+## Reassessment of milestones 5-9 after the 0.2.10 regression (proposal; not approved)
+
+Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is done.
+
+- **Measured on 0.2.10 and changed vs earlier baselines:**
+  - GPU memory halved (1,440 MB vs 2,914 MB);
+  - no thermal escalation in either mode (Android thermal status stayed 0, against SEVERE 2/2 for Recompiled on 0.2.5);
+  - a new Native-only terrain/grass defect (upstream issue mamcjr/BOTWRecompAndroid#174).
+
+  The Recompiled thermal symptom is therefore no longer a milestone 5 candidate unless it recurs.
+- **Milestone 5 candidates on 0.2.10, re-ranked:**
+  1. The Native terrain/grass sinking defect. It is reproducible within ~10 min on this route, Native only, and absent on 0.2.5. Upstream now knows (#174) and ships quickly, so investigate only if #174 stays unfixed in the next release. Otherwise a cheap step is a bisect between 0.2.8 and 0.2.10 or a flag test (`LARECOMP_BC1_ASTC=0`) to give upstream a precise cause.
+  2. The Native teardown hang: 1 of 18 on 0.2.5, 0 of 8 Native returns since (4 on 0.2.8, 4 on 0.2.10). Not reproducible cheaply; keep only as an observation.
+  3. Pipeline-creation wait regression: a fixed small batch waits 104-167 ms on 0.2.10 (174-182 ms on 0.2.8, 13-34 ms on 0.2.5). Small, measurable, Mali-specific candidate.
+  4. 50 ms pacing bursts at the 30 FPS cap (still present, up to ~1,400 intervals in a segment).
+  5. Upload volume of ~930 MB per 2 s (#89, #161). The maintainer has said heap import for Mali/Xclipse is the next big piece of work, so this has a high risk of duplicating upstream.
+- **Process proposal (not approved):** with upstream releasing every few hours, use tiered per-release checks:
+  - a short smoke check (install, one short cell per mode, visual check), about 30 min;
+  - long thermal sessions only when a release touches power, thermal or memory paths;
+  - milestone work on a pinned SHA, with overlap rechecked at fix selection and before the PR.
+
+  An AC-side smart plug would remove the manual charger steps; see `.mali/charging-feasibility/REPORT.md`.
+- **Milestones 6-9:** definitions unchanged; compare against the active baseline at that time.
 
 ## 1. Prepare the fork, workspace, and checkpoints.
 
