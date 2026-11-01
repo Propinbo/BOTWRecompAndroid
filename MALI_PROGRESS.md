@@ -56,7 +56,7 @@ Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
 - **Evidence (local only).** `.mali/milestone-7/`: `M7_REPORT.md`, patches and build diffs, G0/SMOKE/SMOKE2/SMOKE3/CANDIDATE APKs, build logs, scripts and helper copies, analysis scripts, `runs/`, `host-tests/`. No commit, push or upstream write.
 - **Next step (needs explicit authorization; not started).** Milestone 8 validates the candidate with the milestone 6 criteria. The M5B sweep diagnostic patch must first be rebased onto the candidate. Decisions before milestone 8:
   - **P2: kept as defined (user decision, 2026-11-01, "Оставить P2 как есть").** At 120 Hz no 150-frame block may exceed 0.16, even though the compositor-side background is close to that limit. If P2 fails, the result is recorded as a failure with its cause analysed; the criterion is not relaxed after the fact.
-  - **Long session: on battery (user decision, 2026-11-01, "От батареи").** As in the milestone 4 and migration long sessions: charge conditioning first, the charger unplugged during the session. The short diagnostic sweep windows may stay USB-powered as a recorded deviation, as in milestones 5, 5b and 7.
+  - **Long session: USB power (user decision, 2026-11-01, "От USB").** It is recorded as a deviation from M3-v1, as in milestones 5 and 5b. The long session is judged on pacing (S2: burst runs), and its thermal readings are not compared with the battery-powered baseline sessions. The short S1 cells keep the M3-v1 battery conditions as defined in milestone 6; this decision covers only the long session.
 
 ## Milestone 6 outcome: COMPLETE, 2026-11-01 (Claude Code session)
 
