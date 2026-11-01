@@ -1,6 +1,6 @@
 # BOTWRecompAndroid Mali contribution plan
 
-Approved in chat on 2026-10-30. This is the authoritative milestone plan. The original nine milestone definitions remain preserved. On 2026-10-30 the user approved splitting the remaining baseline preparation into milestones 3a and 3b after the completed milestone-3 investigation. Actual execution status, evidence, decisions, blockers, and relevant commit SHAs belong in MALI_PROGRESS.md.
+Approved in chat on 2026-10-30. This is the authoritative milestone plan. The original nine milestone definitions remain preserved. On 2026-10-30 the user approved splitting the remaining baseline preparation into milestones 3a and 3b after the completed milestone-3 investigation. On 2026-11-01 the user approved adding milestone 5b (the 50 ms pacing bursts) between milestones 5 and 6. Actual execution status, evidence, decisions, blockers, and relevant commit SHAs belong in MALI_PROGRESS.md.
 
 Upstream: https://github.com/mamcjr/BOTWRecompAndroid
 
@@ -170,6 +170,24 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 **Dependencies:** Milestone 2 and usable baseline evidence from milestone 4.
 
 **Stopping condition:** Reach a supported diagnosis, reject the hypothesis, or identify the next missing measurement. Further investigation requires another explicitly authorized scope.
+
+## 5b. Investigate the 50 ms pacing bursts at the 30 FPS cap.
+
+**Approval (2026-11-01):** after milestone 5, the user selected this symptom and approved adding this milestone ("Одобряю 5b"). Approval is not execution authorization: execution needs `Приступай к шагу 5b`.
+
+**Symptom:** at the 30 FPS cap on a 60 Hz panel, the mean holds 30 FPS but frames go to the screen in bursts that alternate 50.0 / 16.7 ms (one vsync late, then one early) instead of 33.3 ms. Examples: 906 of 3,600 intervals were 50 ms in GP-R-S2-cold-1; bursts occurred in 7 of 24 M4 windows; long runs of 515 intervals (0.2.8 Native) and 1,398 intervals (0.2.10 Recompiled). The cause is not established. All measurements so far were at 60 Hz; the device default is 120 Hz.
+
+**Scope:** pin the newest verified release at the start (currently v0.2.10-beta `4bad6dc`). Trace the frame path from game-frame readiness to present: frame limiter (`runtime/framepace.h`), async render and present (`runtime/nvn/vulkan/async.c`, `device.c`), swapchain present mode, and ADPF. Start with existing diagnostics (`timing_trace.c`, `LARECOMP_LOG_POWER`). Add temporary instrumentation only if they are insufficient, isolated and identifiable. Form one explicit hypothesis, for example "frame readiness sits near a vsync boundary". Test it with a discriminating device experiment comparing frame readiness with actual present (SurfaceFlinger) at 60 and 120 Hz, Native and Recompiled where needed. Diagnostic runs stay separate from performance runs. USB power is allowed as a recorded deviation, as in milestone 5. Restore the user's display settings afterwards.
+
+**Deliverables:** referenced code paths, the hypothesis, the experiment, results, rejected explanations, and local raw evidence under `.mali/milestone-5b/`.
+
+**Acceptance criteria:** one bounded hypothesis/experiment cycle. Verified defects stay clearly separated from plausible explanations. Diagnostic changes and measurements are identifiable and reproducible.
+
+**Estimated duration:** about 2-2.5 h in total: code reading 30-45 min, device runs 1-1.5 h (4-8 windows of 2-5 min, about 5 min of cooling before each), analysis and recording 15-20 min.
+
+**Dependencies:** milestone 4 evidence; milestone 5 complete.
+
+**Stopping condition:** a supported diagnosis, a rejected hypothesis, or the next missing measurement identified. No source fix, commit or PR. Milestone 6 then selects one contribution using the evidence from milestones 5 and 5b.
 
 ## 6. Select one narrowly scoped contribution.
 

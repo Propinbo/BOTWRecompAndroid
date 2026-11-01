@@ -1,8 +1,16 @@
 # Mali contribution execution checkpoint
 
-Checkpoint ID: MALI-M5-COMPLETE-2026-11-01 (milestone 5 complete; preceding documentation checkpoints: 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
+Checkpoint ID: MALI-M5B-ADDED-2026-11-01 (milestone 5 complete, milestone 5b added; preceding documentation checkpoints: 48ba5aa6a6b801da5937293c0aa761b36356bf87 (milestone 5), 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
 
 Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
+
+## Plan change: milestone 5b added, 2026-11-01 (approved; not started)
+
+- After milestone 5 the user asked what the 50 ms pacing bursts are and selected that symptom ("Выбираю этот симптом"). The session proposed a separate milestone 5b instead of going straight to milestone 6, and the user approved it ("Одобряю 5b").
+- **Reason.** Milestone 5 showed that the compile-wait symptom is a pipeline-cache state effect with small player impact. The pacing bursts are a sustained, visible judder at a steady 30 FPS mean, and their cause is unknown, so milestone 6 could not select a supported fix for them without another bounded investigation.
+- **Data recheck before the proposal (M4/migration evidence).** The bursts alternate 50.0 / 16.7 ms present intervals, one vsync late then one early. GP-R-S2-cold-1 had 906 of 3,600 intervals at 50 ms, GP-N-S1-warm-3 227, and GP210-N-S2-warm-1 53. All of this was at a 60 Hz panel.
+- **Change.** Milestone 5b is defined in MALI_PLAN.md: scope, an estimate of about 2-2.5 h with 1-1.5 h on the device, and USB power allowed as a recorded deviation. Milestones 1-5 and their decisions are unchanged. Milestone 6 will now use evidence from both 5 and 5b.
+- **Authorization.** Approval of the plan change does not authorize execution. Milestone 5b needs `Приступай к шагу 5b`.
 
 ## Milestone 5 outcome: COMPLETE, 2026-11-01 (Claude Code session)
 
@@ -211,7 +219,7 @@ Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
 
 ## Authorization and status
 
-Current authorization (2026-11-01): nothing is currently authorized. Milestones 4 and 5 and the upstream migration phases 0.2.5→0.2.8 and 0.2.8→0.2.10 are COMPLETE. Milestone 6 needs `Приступай к шагу 6`. Earlier status: milestone 4 was explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Milestone 4 is COMPLETE (see the outcome section): 24 matrix windows, the stability sessions and the final analysis are done, and device restoration is complete; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
+Current authorization (2026-11-01): nothing is currently authorized. Milestones 4 and 5 and the upstream migration phases 0.2.5→0.2.8 and 0.2.8→0.2.10 are COMPLETE. The user-approved milestone 5b (pacing bursts) comes next and needs `Приступай к шагу 5b`; milestone 6 needs `Приступай к шагу 6`. Earlier status: milestone 4 was explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Milestone 4 is COMPLETE (see the outcome section): 24 matrix windows, the stability sessions and the final analysis are done, and device restoration is complete; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
 
 | Milestone | Status |
 | --- | --- |
@@ -225,6 +233,7 @@ Current authorization (2026-11-01): nothing is currently authorized. Milestones 
 | Upstream migration phase 0.2.5→0.2.8 (between 4 and 5) | COMPLETE; main FF to b02302c, APK c6ab822e installed in place, bounded regression done, policy added; newer 0.2.9/0.2.10 released during the campaign |
 | Upstream migration phase 0.2.8→0.2.10 | COMPLETE; main FF to 4bad6dc, APK e4a62881 installed in place, regression done (Recompiled long session truncated by a Wi-Fi outage), GPU memory halved, no thermal escalation, new Native terrain defect filed as mamcjr/BOTWRecompAndroid#174 |
 | 5. Investigate one symptom with a bounded diagnostic experiment | COMPLETE; the small-batch compile-wait "regression" is a pipeline-cache state effect (15 ms with the batch cached vs 120 ms without, on 0.2.10); a small unsaved-session-tail defect is verified |
+| 5b. Investigate the 50 ms pacing bursts at the 30 FPS cap | Added 2026-11-01 with user approval; not started; awaiting `Приступай к шагу 5b` |
 | 6. Select one narrowly scoped contribution | Not started; awaiting explicit authorization |
 | 7. Implement the selected fix and perform local verification | Not started; awaiting explicit authorization |
 | 8. Validate the candidate on your device | Not started; awaiting explicit authorization |
