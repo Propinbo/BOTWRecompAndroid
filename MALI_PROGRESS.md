@@ -1,8 +1,62 @@
 # Mali contribution execution checkpoint
 
-Checkpoint ID: MALI-M6-COMPLETE-2026-11-01 (milestone 6 complete; preceding documentation checkpoints: baaedbf2d86796cfcba2e1a0852b4f003c5deb87 (milestone 5b), 51cebfc41500128d35afba5569287b45dd77fbff (milestone 5b added), 48ba5aa6a6b801da5937293c0aa761b36356bf87 (milestone 5), 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
+Checkpoint ID: MALI-M7-COMPLETE-2026-11-01 (milestone 7 complete; preceding documentation checkpoints: 1588b1a0fd290234420120c76287ce4b80dd424a (milestone 6), baaedbf2d86796cfcba2e1a0852b4f003c5deb87 (milestone 5b), 51cebfc41500128d35afba5569287b45dd77fbff (milestone 5b added), 48ba5aa6a6b801da5937293c0aa761b36356bf87 (milestone 5), 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
 
 Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
+
+## Milestone 7 outcome: COMPLETE, 2026-11-01 (Claude Code session)
+
+- **Authorization.** The user's `Приступай к шагу 7`. Milestone 8 is not authorized.
+- **Release checks.** At 18:56Z and 19:47Z the newest release was still `v0.2.10-beta` = upstream main `4bad6dc`; the only open PR is #96 (AAudio), with no overlap. The work was pinned to `4bad6dc`.
+- **Candidate patch** (uncommitted in the working tree; local copy `.mali/milestone-7/m7-candidate.patch`, SHA-256 `b44927ae…3cce`). 4 files, +133/−8:
+  - **`vulkan/device.c`:**
+    - enables `VK_GOOGLE_display_timing` where advertised (Android; `LARECOMP_PACE_VSYNC=0` leaves it off);
+    - chains `VkPresentTimesInfoGOOGLE` with `desiredPresentTime` 0;
+    - after each present, `vsync_update` keeps the newest `actualPresentTime`, the refresh period (re-queried every 32 presents), a fit check, and the median of the last 9 hand-over→queueBuffer delays;
+    - `backend_vsync_offset()` returns the shift that puts queueBuffer half a vsync before the next vsync. It returns false without valid or recent timings, or when the grid is not a whole number of vsyncs.
+  - **`objects.c`** (`framepace_on()` grid only):
+    - the full shift at a grid restart;
+    - otherwise 0.25 ms/frame steering once the shift is above 0.5 ms;
+    - a cap of one vsync of steering per correction, then left until the next restart.
+  - **`vulkan/async.c`:** the PRESENT request carries the hand-over time.
+  - **`nvn.h`:** one declaration.
+- **Gate G0: pass.** Timings collected and pacing unchanged (`NOSTEER` diagnostic). Native S1, warm cache, 60 s windows, USB power (recorded deviation).
+  - `actualPresentTime` equalled SurfaceFlinger's actual present for 1800/1800 frames at both 60 and 120 Hz.
+  - refreshDuration was 16.66 / 8.33 ms.
+  - The app's queue time is 0.13 ms before SurfaceFlinger's desiredPresent.
+  - The in-window hand-over→queue delay was median 1.0-1.1 ms, below 3 ms.
+- **Design changes against the milestone 6 proposal.** These are within the approved mechanism and driven by evidence; the success criteria are unchanged.
+  1. **Dead band ±r/4 → ±0.5 ms, step 0.5 → 0.25 ms per frame.** At 120 Hz, G0 showed a 0.227 burst share at a lead of 5.97 ms, inside the proposed band. The M5B-D120 sweep also shows elevated shares at leads of 5.8-8 ms: the 120 Hz zone spans about 1.5 ms before to 2.5 ms after a vsync.
+  2. **A whole-vsync grid guard.** No phase lock without a frame limit or with a non-multiple grid.
+  3. **A steering stop/continue rule** (smoke v1 defect). After an overshoot, the grid went the long way round through the bad zone: a 17.7 ms shift in 70 frames.
+  4. **Median-of-9 delay and the one-vsync cap** (smoke v2 defect). After loads, a clamped average decayed at exactly the steering rate, so steering chased it on the title screen and the world load.
+  5. The period is logged only on a change of more than 1%.
+- **Smoke v3, final logic** (functional check, not milestone 8 validation; candidate + DIAG-M7 logging, APK `c5d551a5…`):
+
+  | Run | Lead median | Lead in r/2±r/4 | Burst share | Max 150-frame block | FPS / p99 | Max grid shift in 70 frames |
+  |---|---|---|---|---|---|---|
+  | SMK3-T60 | 8.08 ms | 100% | 0.000 | 0.000 | 30.000 / 33.5 | 3.7 ms |
+  | SMK3-T120 | 3.87 ms | 100% | 0.103 | 0.153 | 29.92* / 41.7 | 4.2 ms |
+
+  The steering cap never triggered, and all teardowns were graceful.
+
+  \* The SMK3-T120 timing is flagged invalid only because the collector lost SurfaceFlinger's ring once (5 frames). The app's own display timings show all 1800 frames, with a maximum interval of 41.7 ms.
+- **120 Hz residual (risk for milestone 8 P2).** Late-shown frames at 120 Hz were queued and GPU-ready on time; the misses are isolated (runs of 2-4) and on the compositor side. This is the phase-independent 120 Hz background noted in milestone 5b, outside the patch's scope. Max block 0.153 is close to the P2 limit of 0.16. Changing P2 would need the user's approval; it was not changed.
+- **Local verification.**
+  - All `assembleDebug` builds exited 0 with the verified environment. No compiler warnings in the changed files.
+  - Candidate APK `BOTWRecompAndroid-0.2.10-4bad6dc-M7-CANDIDATE-debug.apk`:
+    - SHA-256 `f4482815c3d366522688d7902b8e0990afd6dff1fd6f0dedc6792e8be39fdae6`, 99,683,337 bytes;
+    - versionCode 30, v2 signature with the same debug signer `60fa2a5f…`, zipalign OK;
+    - game-library ABI `65da5d95e597ba58` unchanged;
+    - not installed.
+  - Host tests match the baseline: 8 / 17 / 33 / 16 PASS. Upload caches fails as before (the 3b known limitation).
+  - No regression test was added. The behaviour depends on SurfaceFlinger's latch, and a host test would need moving the arithmetic into a header. Device validation is required.
+  - No `RT_ON_RESET` hook is needed: a reboot is a long frame, so it restarts the grid.
+- **Restoration.** Baseline APK `e4a62881…` was reinstalled after every device phase (hash verified). Refresh keys are null and brightness is on auto mode 1 (reads 75-82 after adaptive adjustment; 88 written back). ADB is USB-only.
+- **Evidence (local only).** `.mali/milestone-7/`: `M7_REPORT.md`, patches and build diffs, G0/SMOKE/SMOKE2/SMOKE3/CANDIDATE APKs, build logs, scripts and helper copies, analysis scripts, `runs/`, `host-tests/`. No commit, push or upstream write.
+- **Next step (needs explicit authorization; not started).** Milestone 8 validates the candidate with the milestone 6 criteria. The M5B sweep diagnostic patch must first be rebased onto the candidate. Two decisions before milestone 8:
+  - whether to keep P2 as defined given the compositor-side 120 Hz background;
+  - the long-session conditions (battery versus USB power).
 
 ## Milestone 6 outcome: COMPLETE, 2026-11-01 (Claude Code session)
 
@@ -302,7 +356,7 @@ Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
 
 ## Authorization and status
 
-Current authorization (2026-11-01): nothing is currently authorized. Milestones 4, 5, 5b and 6 and the upstream migration phases 0.2.5→0.2.8 and 0.2.8→0.2.10 are COMPLETE. Milestone 7 (implement the milestone 6 proposal) needs `Приступай к шагу 7`. Earlier status: milestone 4 was explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Milestone 4 is COMPLETE (see the outcome section): 24 matrix windows, the stability sessions and the final analysis are done, and device restoration is complete; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
+Current authorization (2026-11-01): nothing is currently authorized. Milestones 4, 5, 5b, 6 and 7 and the upstream migration phases 0.2.5→0.2.8 and 0.2.8→0.2.10 are COMPLETE. The candidate patch is uncommitted in the source working tree. Milestone 8 (device validation) needs `Приступай к шагу 8`. Earlier status: milestone 4 was explicitly authorized. After the initial data-blocker checkpoint, the user instructed doing everything needed to prepare the game and supplied its PC folder. This explicitly approves the preparation addendum now recorded in MALI_PLAN.md. The data blocker is resolved: the user-supplied game/update/DLC were extracted, verified and transferred; Native boots 1.9.0 with DLC 3.0 and loads a scratch copy of the supplied save. The user then explicitly selected preparation of Great Plateau and Recompiled for the full original comparison. That approved addendum is recorded in MALI_PLAN.md; no Native-only alternative or shortened check is selected. Milestone 4 is COMPLETE (see the outcome section): 24 matrix windows, the stability sessions and the final analysis are done, and device restoration is complete; do not treat setup gameplay or a preflight sanity check as a completed baseline. Milestones 1-3/3a/3b and synchronization remain complete. Milestones 5-9, source/test fixes and source publication remain unauthorized.
 
 | Milestone | Status |
 | --- | --- |

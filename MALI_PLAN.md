@@ -30,6 +30,7 @@ Release-check record (newest first):
 
 | Checked (UTC) | Newest published release | Tag SHA | Active baseline | Note |
 |---|---|---|---|---|
+| 2026-11-01T18:56Z, rechecked 19:47Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 7 pinned) | No newer release or main commit during milestone 7. |
 | 2026-11-01T18:47Z, rechecked 18:54Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 6 pinned) | No newer release or main commit during milestone 6. |
 | 2026-11-01T18:15Z, rechecked 18:39Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 5b pinned) | No newer release or main commit during milestone 5b. |
 | 2026-11-01T17:44Z, rechecked 18:07Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 5 pinned) | No newer release or main commit during milestone 5. |
@@ -208,6 +209,8 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 **Stopping condition:** One concrete proposal is ready for authorization; no production implementation.
 
 ## 7. Implement the selected fix and perform local verification.
+
+**Status (2026-11-01): COMPLETE** on `4bad6dc`. Gate G0 passed. The candidate patch (4 files, +133/−8) is uncommitted in the working tree. Candidate APK `f4482815…` is built and not installed. Device smoke runs found and fixed two steering defects. Evidence-driven parameter changes against the milestone 6 proposal stay within its mechanism. Details are in MALI_PROGRESS.md. Milestone 8 is not authorized.
 
 **Scope:** Implement only the proposal selected in milestone 6, following surrounding conventions and contributor rules. Remove unrelated diagnostic changes. Add a meaningful regression test when feasible; otherwise document why device validation is necessary.
 
