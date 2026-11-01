@@ -54,9 +54,9 @@ Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
   - No `RT_ON_RESET` hook is needed: a reboot is a long frame, so it restarts the grid.
 - **Restoration.** Baseline APK `e4a62881…` was reinstalled after every device phase (hash verified). Refresh keys are null and brightness is on auto mode 1 (reads 75-82 after adaptive adjustment; 88 written back). ADB is USB-only.
 - **Evidence (local only).** `.mali/milestone-7/`: `M7_REPORT.md`, patches and build diffs, G0/SMOKE/SMOKE2/SMOKE3/CANDIDATE APKs, build logs, scripts and helper copies, analysis scripts, `runs/`, `host-tests/`. No commit, push or upstream write.
-- **Next step (needs explicit authorization; not started).** Milestone 8 validates the candidate with the milestone 6 criteria. The M5B sweep diagnostic patch must first be rebased onto the candidate. Two decisions before milestone 8:
-  - whether to keep P2 as defined given the compositor-side 120 Hz background;
-  - the long-session conditions (battery versus USB power).
+- **Next step (needs explicit authorization; not started).** Milestone 8 validates the candidate with the milestone 6 criteria. The M5B sweep diagnostic patch must first be rebased onto the candidate. Decisions before milestone 8:
+  - **P2: kept as defined (user decision, 2026-11-01, "Оставить P2 как есть").** At 120 Hz no 150-frame block may exceed 0.16, even though the compositor-side background is close to that limit. If P2 fails, the result is recorded as a failure with its cause analysed; the criterion is not relaxed after the fact.
+  - Long-session conditions (battery versus USB power): open.
 
 ## Milestone 6 outcome: COMPLETE, 2026-11-01 (Claude Code session)
 
