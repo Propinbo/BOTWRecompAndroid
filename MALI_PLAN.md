@@ -251,3 +251,40 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 **Dependencies:** Successful milestone 8 and completed local verification.
 
 **Stopping condition:** Stop with the package ready for your review. Committing, pushing a branch, publishing evidence, and submitting the upstream PR each require explicit authorization for that action.
+
+**Submission (2026-11-02):** on the user's "Отправлять PR как есть": commit `9c6ab0e` on fork branch `pace-vsync-phase`, upstream PR mamcjr/BOTWRecompAndroid#183.
+
+## 10. Investigate the residual 120 Hz 41.7 / 25 ms background.
+
+**Approval (2026-11-02):** the user approved adding this milestone ("Да, сформируй новый план для этой ошибки"). Approval is not execution authorization: execution needs `Приступай к шагу 10`.
+
+**Symptom:** at the 30 FPS cap on the 120 Hz panel (device default), with the PR #183 pacing, about 17% of intervals per 150-frame block are 41.7 / 25 ms instead of 33.3 ms (M8: mean block share 0.175, max 0.253 with sweep; 0.176 / 0.333 without). It does not depend on the grid phase. The late-shown frames were queued and GPU-ready on time. Misses are isolated, in runs of 2-4. Working attribution: compositor side. Not proven. This is a different mechanism from the phase bursts fixed by #183.
+
+**Hypotheses (one bounded cycle discriminates them):**
+- **H-A, compositor/display-side misses** that the app cannot influence. Prediction: no app-side lever changes the background. FrameTimeline classifies the misses as SurfaceFlinger or display-HAL jank, not app jank.
+- **H-B, latch-target ambiguity:** with `desiredPresentTime = 0`, SurfaceFlinger latches "the first vsync after the queue". At 120 Hz, its scheduling or prediction picks the wrong vsync. Prediction: a `desiredPresentTime` set to the intended vsync (from the #183 anchor and period) removes most of the background.
+- **H-C, refresh-rate selection:** without a frame-rate vote, SurfaceFlinger or Samsung's adaptive refresh heuristics make the 120 Hz grid irregular for a 30 fps layer. Prediction: `ANativeWindow_setFrameRate(30, FIXED_SOURCE)` or a periodic refresh change in the SurfaceFlinger dump coincides with the misses and changes the background.
+
+**Scope:**
+1. Release and PR check at the start: newest upstream release, the state of #183 and maintainer comments. Pin the SHA, which is `pace-vsync-phase` `9c6ab0e` on `4bad6dc` unless upstream has moved. A move means proposing an adaptation first.
+2. **Cheap, no code (about 30 min):** on the #183 candidate APK, 120 Hz, Native S1 with warm cache, capture one 180 s window. Record SurfaceFlinger `--latency` together with FrameTimeline jank classification (Perfetto `android.surfaceflinger.frametimeline` or `dumpsys SurfaceFlinger --frametimeline`, whichever the device supports) and the active display mode over time. If the misses classify clearly as SurfaceFlinger or display jank and no lever looks applicable, the cycle can end here with H-A supported.
+3. **Discriminating experiment:** one temporary, isolated, env-gated diagnostic patch on top of the candidate, kept local and never part of a PR:
+   - V0, candidate as is;
+   - V1, `desiredPresentTime` = intended vsync (H-B);
+   - V2, `setFrameRate(30, FIXED_SOURCE)` (H-C);
+   - V3, lead of 2 ms and 6 ms instead of r/2 (confirms phase-independence).
+
+   Each variant: 120 Hz, Native S1, warm cache, 60 s settle + 180 s window, 2 windows, about 5 min cooling between windows, USB power (recorded deviation, as in 5b/8). Any variant that removes the background also gets one 60 Hz window, to check P1 still holds.
+4. Analyse with the M8 block-share tooling, the same 150-frame blocks and burst definitions. Restore afterwards: baseline APK `e4a62881…` reinstalled and hash-verified, refresh keys deleted, brightness 88 and auto mode, ADB over USB.
+
+**Success / decision criteria (fixed before measuring):**
+- A lever "works" if both its windows reach mean block share ≤ 0.05 and max ≤ 0.16 at 120 Hz (P2), with FPS within ±0.05 of V0 and P1 still met at 60 Hz.
+- "No effect" if every variant stays within the V0 window-to-window range. Then H-A is supported: record compositor-side, outside the app, and offer a factual comment on #183.
+
+**Deliverables:** referenced code and system paths, the hypotheses, the FrameTimeline classification, the variant table, rejected explanations, local raw evidence under `.mali/milestone-10/`, and the diagnostic patch with its SHA-256.
+
+**Estimated duration:** about 2.5-3 h in total. Start checks and FrameTimeline capture 30-40 min. Diagnostic patch and build 30-40 min. Device runs about 1.5 h (up to 9 windows of about 4 min plus about 5 min cooling each). Analysis and recording 20 min.
+
+**Dependencies:** milestone 8 evidence; PR #183 branch.
+
+**Stopping condition:** a supported diagnosis (a working lever, or H-A supported), or the next missing measurement identified. There is no production fix, commit, push or PR in this milestone. A working lever becomes a separately proposed implementation milestone and a separate PR, or an update to #183 if the maintainer prefers. Each needs its own authorization. The open S3 checks from milestone 8 (60 FPS in-world, movie) are not part of this milestone.

@@ -4,6 +4,10 @@ Checkpoint ID: MALI-M8-COMPLETE-2026-11-02 (milestone 8 complete with failed P2;
 
 Updated: 2026-11-02, Europe/Moscow (UTC+03:00).
 
+## Plan revision: milestone 10 added, 2026-11-02 (not started)
+
+The user approved adding a milestone for the residual 120 Hz 41.7 / 25 ms background ("Да, сформируй новый план для этой ошибки"). Reason: milestone 8 showed that this background is phase-independent and separate from the phase bursts fixed by PR #183. It was attributed to the compositor without proof. Milestone 10 in MALI_PLAN.md defines one bounded cycle: a FrameTimeline jank classification, then env-gated variants (`desiredPresentTime`, `setFrameRate(30)`, lead changes) at 120 Hz. Its success criteria are fixed before measurement. Estimated time is about 2.5-3 h, of which about 1.5 h on the device. Completed milestones 1-9 are unchanged. Execution needs `Приступай к шагу 10`. At the time of this revision the tablet (SM-X730) was reachable over ADB, and nothing was run on it.
+
 ## Milestone 9 outcome: COMPLETE, 2026-11-02 (Claude Code session)
 
 Authorized by "Приступай к шагу 9". Preceding checkpoint: MALI-M8-COMPLETE-2026-11-02. Nothing is committed, pushed or submitted.
