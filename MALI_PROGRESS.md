@@ -4,6 +4,20 @@ Checkpoint ID: MALI-M8-COMPLETE-2026-11-02 (milestone 8 complete with failed P2;
 
 Updated: 2026-11-02, Europe/Moscow (UTC+03:00).
 
+## Milestone 9 outcome: COMPLETE, 2026-11-02 (Claude Code session)
+
+Authorized by "Приступай к шагу 9". Preceding checkpoint: MALI-M8-COMPLETE-2026-11-02. Nothing is committed, pushed or submitted.
+
+- **Upstream recheck (06:33Z):** newest release `v0.2.10-beta`, main `4bad6dc`; the only open PR is draft #96 (AAudio); no PR, commit or issue touches present pacing or `VK_GOOGLE_display_timing`. No adaptation needed.
+- **Patch review:** the working-tree diff (4 files, +133/-8, SHA-256 `b44927ae...3cce`) is the milestone-7 candidate, identical to what built candidate APK `f4482815...`. `git apply --check` on a pristine `4bad6dc` export passes; `git diff --check` is clean; no planning files, logs, generated code, game data, local paths or diagnostic code. Not rebuilt or retested (no source change since M7/M8).
+- **Package (local, `.mali/milestone-9/`):** `botw-vsync-phase-pacing.patch`, `PR_DRAFT.md` (title, body, test table, limitations), `REPRODUCTION.md`, `M9_REPORT.md`, `diffstat.txt`. Shareable evidence is the summary tables in the draft; raw evidence stays under `.mali/milestone-5b|7|8/`.
+- **Claims vs evidence:** the draft reports P1, P3, P4, P5, S1 and S2 as passed, and states plainly that P2 failed at 120 Hz (max block 0.253 vs 0.16; mean 0.175 vs baseline 0.228) and that 60 FPS in-world and movie checks were not done; one device, USB-powered sweeps and long session, one cell per baseline comparison, no automated regression test.
+- **Decisions for the user:** (1) submit as is, run the open S3 checks first, or hold; (2) separate authorization is needed for each of: committing the patch on a branch, pushing it, publishing evidence, opening the upstream PR. Milestone 9 completion authorizes none of them.
+
+| Release check | Newest release | Tag SHA | Active baseline | Note |
+|---|---|---|---|---|
+| 2026-11-02T06:33Z | `v0.2.10-beta` (2026-11-01T15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` | No newer release; `main` still `4bad6dc`. |
+
 ## Milestone 8 outcome: COMPLETE with one failed criterion (P2), 2026-11-02 (Claude Code session)
 
 Authorized by "Приступай к шагу 8"; "Делай что надо" authorized the extra P2 cause runs. Candidate (4 files, +133/-8, diff SHA-256 `b44927ae...`, uncommitted on `4bad6dc` = v0.2.10-beta) compared with unchanged 0.2.10 (APK `e4a62881...`). Candidate APK `f4482815...`; sweep APK `e6457459...` (candidate + temporary diagnostic grid sweep, local only). Evidence local only under `.mali/milestone-8/` (Part A sweeps in `runs/`, Part B performance/stability in `perf/`, summary in `PART_A_RESULTS.md`).

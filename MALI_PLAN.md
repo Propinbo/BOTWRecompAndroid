@@ -30,6 +30,7 @@ Release-check record (newest first):
 
 | Checked (UTC) | Newest published release | Tag SHA | Active baseline | Note |
 |---|---|---|---|---|
+| 2026-11-02T06:33Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` | No newer release or main commit during milestone 9. |
 | 2026-11-02T05:13Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` | No newer release or main commit at end of milestone 8. |
 | 2026-11-01T18:56Z, rechecked 19:47Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 7 pinned) | No newer release or main commit during milestone 7. |
 | 2026-11-01T18:47Z, rechecked 18:54Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 6 pinned) | No newer release or main commit during milestone 6. |
@@ -238,6 +239,8 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 **Stopping condition:** Record pass, failure, or inconclusive results. A failure does not authorize another implementation cycle automatically.
 
 ## 9. Prepare a reviewable upstream PR package locally.
+
+**Status (2026-11-02): COMPLETE** on `4bad6dc`. The package (clean 4-file patch, PR draft with title, body, reproduction steps and limitations) is local; no overlap with upstream found, claims in the draft match the M8 evidence, including the failed P2 and the open smoke checks. Nothing was committed, pushed or submitted. Details in MALI_PROGRESS.md.
 
 **Scope:** Recheck current upstream for overlapping fixes and review the final patch. Prepare the PR title/body, reproduction instructions, explanation, validation summary, and limitations.
 
