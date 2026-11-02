@@ -26,7 +26,8 @@ Authorized by "Приступай к шагу 10". Pin `pace-vsync-phase` `9c6ab
   V2 fails the pre-set criterion and is worse than V0 in both windows. No 60 Hz check was needed.
 - **Conclusion.** The residual 120 Hz background is outside the app, and no tested lever removes it. PR #183 needs no change. A factual comment on #183 is possible but needs separate authorization. Not covered: other devices or HWC vendors, adaptive refresh settings, FIFO present mode, battery power.
 - **Restoration.** Baseline APK `e4a62881...` reinstalled and hash-verified after each driver; refresh keys deleted; brightness auto mode 1. Source tree restored to a clean `9c6ab0e`. No commit, push or upstream write.
-- **Next (needs authorization):** optional #183 comment; the open M8 S3 checks (60 FPS in-world, movie).
+- **#183 comment (user: "фактический комментарий в #183 о причине фона при 120 Гц", then "делай все, что считаешь нужным"):** posted from the user's account at 2026-11-02T10:09:24Z, https://github.com/mamcjr/BOTWRecompAndroid/pull/183#issuecomment-6574475018. Summary figures only; no logs or evidence files published. Local copy `.mali/milestone-10/pr183-comment.md`.
+- **Next (needs authorization):** the open M8 S3 checks (60 FPS in-world, movie).
 
 ## Plan revision: milestone 10 added, 2026-11-02 (executed above)
 
