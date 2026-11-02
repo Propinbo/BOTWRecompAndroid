@@ -1,8 +1,36 @@
 # Mali contribution execution checkpoint
 
-Checkpoint ID: MALI-M7-COMPLETE-2026-11-01 (milestone 7 complete; preceding documentation checkpoints: 1588b1a0fd290234420120c76287ce4b80dd424a (milestone 6), baaedbf2d86796cfcba2e1a0852b4f003c5deb87 (milestone 5b), 51cebfc41500128d35afba5569287b45dd77fbff (milestone 5b added), 48ba5aa6a6b801da5937293c0aa761b36356bf87 (milestone 5), 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262).
+Checkpoint ID: MALI-M8-COMPLETE-2026-11-02 (milestone 8 complete with failed P2; preceding checkpoint MALI-M7-COMPLETE-2026-11-01 (milestone 7 complete; preceding documentation checkpoints: 1588b1a0fd290234420120c76287ce4b80dd424a (milestone 6), baaedbf2d86796cfcba2e1a0852b4f003c5deb87 (milestone 5b), 51cebfc41500128d35afba5569287b45dd77fbff (milestone 5b added), 48ba5aa6a6b801da5937293c0aa761b36356bf87 (milestone 5), 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262)).
 
-Updated: 2026-11-01, Europe/Moscow (UTC+03:00).
+Updated: 2026-11-02, Europe/Moscow (UTC+03:00).
+
+## Milestone 8 outcome: COMPLETE with one failed criterion (P2), 2026-11-02 (Claude Code session)
+
+Authorized by "Приступай к шагу 8"; "Делай что надо" authorized the extra P2 cause runs. Candidate (4 files, +133/-8, diff SHA-256 `b44927ae...`, uncommitted on `4bad6dc` = v0.2.10-beta) compared with unchanged 0.2.10 (APK `e4a62881...`). Candidate APK `f4482815...`; sweep APK `e6457459...` (candidate + temporary diagnostic grid sweep, local only). Evidence local only under `.mali/milestone-8/` (Part A sweeps in `runs/`, Part B performance/stability in `perf/`, summary in `PART_A_RESULTS.md`).
+
+**Results against the milestone-6 criteria**
+| Criterion | Result |
+|---|---|
+| P1 (60 Hz, share per 150-frame block <=0.02, no run >=6 alternating) | PASS: max block 0.013, longest off-grid run 2 |
+| P2 (120 Hz, no block above 0.16) | **FAIL**: max block 0.253 (mean 0.175). Criterion not relaxed. Cause runs: baseline pacing + sweep 0.228/0.480; candidate + sweep 0.175/0.253; candidate, no sweep 0.176/0.333 (mean/max). The candidate removes the phase peak, but a ~0.17 phase-independent background remains at 120 Hz, attributed to compositor-side behaviour outside the patch (not proven on other devices) |
+| P3 (lead within r/2+-r/4 for >=99%) | PASS: 1.000 at 60 Hz and 120 Hz |
+| P4 (`LARECOMP_PACE_VSYNC=0` reproduces baseline zone) | PASS: block 0.433, lead share 0.488 |
+| P5 (Recompiled 60 Hz sweep meets P1) | PASS: max block 0.013, longest run 1 |
+| S1 (FPS within +-0.05 of 0.2.10 cells, >100 ms count not above baseline+1, p99 <=33.6 ms; 4 cells, 120 s) | PASS. Candidate vs 0.2.10: N cold 29.971/29.971 FPS, >50 ms 14/21, >100 ms 1/1; N warm 29.933/29.933, 14/50, 2/3, p99 33.47 vs 50.01; R cold 29.971/29.975, 14/19, 1/1; R warm 29.967/29.929, 13/15, 2/2. p99 <=33.5 ms in every candidate cell |
+| S2 (no burst run >=20 alternating intervals, long session with 3 menus + re-boot) | PASS: long session LONG8-N-1 (Native, warm cache, 4x300 s, 37379 frames): 29.84 FPS, p99 49.93 ms, 159 intervals >50 ms, 3 >100 ms, max 166.6 ms; longest alternating off-grid run 4. 0.2.10 long session for comparison: 29.85 FPS, p99 50.0 ms, 232 >50 ms, 3 >100 ms, max 150 ms |
+| S3 (graceful teardown/re-boot, no crash or visual change, smoke checks) | PARTIAL: graceful teardown confirmed in all windows; 3 menu transitions passed, launcher return 2.2 s, re-boot to world 26.8 s; no crash recorded in the session; captures reviewed, no visual artefacts. 60 FPS setting smoke (`frame_rate = 60`, candidate): launcher at 16.67 ms, title screen stable at 33.33 ms, process alive; the world was not reached by hand, so 60 FPS in-world is **not verified**. **Movie not checked** (no automatic route) |
+
+**Limitations and deviations (recorded)**
+- Sweeps (Part A) and the long session ran on USB power, a deviation from M3-v1 battery conditions; short S1 cells kept battery conditions. The candidate S1 cells ran at a cooler ambient (23-24 C battery) than some 0.2.10 cells.
+- The 0.2.10 cell comparison is one cell per mode/cache, so variability is not separated from the effect; the >50 ms reduction is supportive only.
+- Single device (Samsung SM-X730, Mali-G925); other vendors and 90 Hz panels untested. The long session is 20 min of crash-free testing, not proof of absence of crashes.
+- Failed/collided attempts kept aside (`attempt1-120hz-invalid`, `attempt2-archive-collision`, `attempt3-scratch-collision`, `M8-SMOKE60-attempt-collector-needs-battery`, `before-M8-SMOKE60-attempt1-incomplete`/`attempt3`); the SMOKE60 helper edits to the temporary settings copy were reverted (`frame_rate = 30` verified).
+- Device restored: baseline APK `e4a62881...` reinstalled and hash-verified, `peak_refresh_rate`/`min_refresh_rate` deleted, brightness 88 with auto mode, ADB back to USB (`service.adb.tcp.port` 0). Working tree equals the candidate (diff SHA unchanged).
+- Verdict: the patch meets P1, P3, P4, P5, S1, S2 and removes the 60 Hz bursts, but fails P2 at 120 Hz and leaves the 60 FPS in-world and movie smoke checks open. A failure does not authorize another implementation cycle. **Milestone 9 is not authorized**; scope/priority decisions on P2 and the open smoke checks belong to the user.
+
+| Release check | Newest release | Tag SHA | Active baseline | Note |
+|---|---|---|---|---|
+| 2026-11-02T05:13Z | `v0.2.10-beta` (2026-11-01T15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` | No newer release; `main` still `4bad6dc`. |
 
 ## Milestone 7 outcome: COMPLETE, 2026-11-01 (Claude Code session)
 

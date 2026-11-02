@@ -30,6 +30,7 @@ Release-check record (newest first):
 
 | Checked (UTC) | Newest published release | Tag SHA | Active baseline | Note |
 |---|---|---|---|---|
+| 2026-11-02T05:13Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` | No newer release or main commit at end of milestone 8. |
 | 2026-11-01T18:56Z, rechecked 19:47Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 7 pinned) | No newer release or main commit during milestone 7. |
 | 2026-11-01T18:47Z, rechecked 18:54Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 6 pinned) | No newer release or main commit during milestone 6. |
 | 2026-11-01T18:15Z, rechecked 18:39Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 5b pinned) | No newer release or main commit during milestone 5b. |
@@ -223,6 +224,8 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 **Stopping condition:** Candidate patch is ready for device validation. No claim of a verified rendering fix, commit, or push.
 
 ## 8. Validate the candidate on your device.
+
+**Status (2026-11-02): COMPLETE with one failed criterion (P2).** On `4bad6dc` the candidate meets P1, P3, P4, P5, S1 and S2 (60 Hz bursts removed, long session 37379 frames without a burst run above 4) but fails P2 at 120 Hz (max block 0.253 vs limit 0.16; residual background attributed to the compositor, criterion not relaxed). S3 is partial: 60 FPS in-world and movie smoke checks remain open. Failure does not authorize another implementation cycle; milestone 9 is not authorized. Details in MALI_PROGRESS.md.
 
 **Scope:** Compare unchanged baseline and candidate under the recorded protocol. Repeat the reproducer, relevant mode comparisons, focused rendering checks, and the predefined stability run.
 
