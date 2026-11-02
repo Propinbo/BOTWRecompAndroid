@@ -1,10 +1,34 @@
 # Mali contribution execution checkpoint
 
-Checkpoint ID: MALI-M8-COMPLETE-2026-11-02 (milestone 8 complete with failed P2; preceding checkpoint MALI-M7-COMPLETE-2026-11-01 (milestone 7 complete; preceding documentation checkpoints: 1588b1a0fd290234420120c76287ce4b80dd424a (milestone 6), baaedbf2d86796cfcba2e1a0852b4f003c5deb87 (milestone 5b), 51cebfc41500128d35afba5569287b45dd77fbff (milestone 5b added), 48ba5aa6a6b801da5937293c0aa761b36356bf87 (milestone 5), 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262)).
+Checkpoint ID: MALI-M10-COMPLETE-2026-11-02 (milestone 10 complete, H-A supported; preceding checkpoint MALI-M8-COMPLETE-2026-11-02 (milestone 8 complete with failed P2; preceding checkpoint MALI-M7-COMPLETE-2026-11-01 (milestone 7 complete; preceding documentation checkpoints: 1588b1a0fd290234420120c76287ce4b80dd424a (milestone 6), baaedbf2d86796cfcba2e1a0852b4f003c5deb87 (milestone 5b), 51cebfc41500128d35afba5569287b45dd77fbff (milestone 5b added), 48ba5aa6a6b801da5937293c0aa761b36356bf87 (milestone 5), 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262))).
 
 Updated: 2026-11-02, Europe/Moscow (UTC+03:00).
 
-## Plan revision: milestone 10 added, 2026-11-02 (not started)
+## Milestone 10 outcome: COMPLETE, H-A supported, 2026-11-02 (Claude Code session)
+
+Authorized by "Приступай к шагу 10". Pin `pace-vsync-phase` `9c6ab0e` (= M7 candidate patch, diff SHA-256 `b44927ae...`, candidate APK `f4482815...`). Release checks 08:41Z and 10:03Z: newest still `v0.2.10-beta` `4bad6dc`, main unchanged; PR #183 open, no comments or reviews. Conditions: SM-X730, 120 Hz forced, Native S1, warm cache, 60 s settle + 180 s window, USB power (recorded deviation). Evidence local only: `.mali/milestone-10/` (`M10_REPORT.md`, trace, analysis, runs, DIAG patch and APK).
+
+- **FrameTimeline window M10-FTB-D120** (Perfetto FrameTimeline + atrace gfx). The game's Vulkan SurfaceView has no per-layer FrameTimeline frames, so each game frame was followed via the layer's `BufferTX` counter (arrival, latch), `VSYNC-sf` wakeups and the SF display frame that showed it. Of 5173 frames, 4709 had 33.3 ms intervals, 230 had 41.7 ms and 231 had 25.0 ms. In all three classes:
+  - queue lead was 3.8-3.9 ms;
+  - the transaction reached SF 0.4-0.5 ms after the queue;
+  - every frame was latched at the first SF wake after arrival.
+
+  Only the time from latch to screen differs. It is 15.2 ms for 33.3 and 41.7 ms frames and 7.6 ms for 25 ms frames. Display frames: 8379 were `Late Present` / `Display HAL`, exactly one vsync (8.49 ms) after SF's expectation, and 888 were on time. The 25 ms frames are those on-time presents, mostly single ones; a 41.7 ms interval follows in 206 of 231 cases. **H-A supported:** display-HAL present latency jitters by one vsync, outside the app. H-B as stated is contradicted. V1 as implemented would be a no-op, and V3 is excluded because leads are identical across classes. Window background: block mean 0.089, max 0.173. One ~7.5 s collector ring gap was excluded. Attempt 1 is invalid because the tablet was locked (keyguard); the user unlocked it.
+- **V2 check** (user chose "Проверить V2" over ending or running the full V0-V3 set). DIAG APK `fc428141...` = `9c6ab0e` + env-gated `m10-diag.diff` (`f44d3292...`, `device.c` only). Interleaved windows; `setFrameRate` returned 0 in both V2 windows:
+
+  | Window | FPS | p99 | Block mean / max |
+  |---|---|---|---|
+  | V0-1 | 30.000 | 41.69 | 0.134 / 0.200 |
+  | V2-1 | 30.000 | 41.70 | 0.199 / 0.353 |
+  | V0-2 | 30.000 | 41.69 | 0.146 / 0.273 |
+  | V2-2 | 30.000 | 41.71 | 0.247 / 0.320 |
+
+  V2 fails the pre-set criterion and is worse than V0 in both windows. No 60 Hz check was needed.
+- **Conclusion.** The residual 120 Hz background is outside the app, and no tested lever removes it. PR #183 needs no change. A factual comment on #183 is possible but needs separate authorization. Not covered: other devices or HWC vendors, adaptive refresh settings, FIFO present mode, battery power.
+- **Restoration.** Baseline APK `e4a62881...` reinstalled and hash-verified after each driver; refresh keys deleted; brightness auto mode 1. Source tree restored to a clean `9c6ab0e`. No commit, push or upstream write.
+- **Next (needs authorization):** optional #183 comment; the open M8 S3 checks (60 FPS in-world, movie).
+
+## Plan revision: milestone 10 added, 2026-11-02 (executed above)
 
 The user approved adding a milestone for the residual 120 Hz 41.7 / 25 ms background ("Да, сформируй новый план для этой ошибки"). Reason: milestone 8 showed that this background is phase-independent and separate from the phase bursts fixed by PR #183. It was attributed to the compositor without proof. Milestone 10 in MALI_PLAN.md defines one bounded cycle: a FrameTimeline jank classification, then env-gated variants (`desiredPresentTime`, `setFrameRate(30)`, lead changes) at 120 Hz. Its success criteria are fixed before measurement. Estimated time is about 2.5-3 h, of which about 1.5 h on the device. Completed milestones 1-9 are unchanged. Execution needs `Приступай к шагу 10`. At the time of this revision the tablet (SM-X730) was reachable over ADB, and nothing was run on it.
 

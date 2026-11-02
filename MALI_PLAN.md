@@ -30,6 +30,7 @@ Release-check record (newest first):
 
 | Checked (UTC) | Newest published release | Tag SHA | Active baseline | Note |
 |---|---|---|---|---|
+| 2026-11-02T08:41Z, rechecked 10:03Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc`; milestone 10 pinned `pace-vsync-phase` `9c6ab0e` | No newer release or main commit during milestone 10; PR #183 open, no comments. |
 | 2026-11-02T06:33Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` | No newer release or main commit during milestone 9. |
 | 2026-11-02T05:13Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` | No newer release or main commit at end of milestone 8. |
 | 2026-11-01T18:56Z, rechecked 19:47Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (milestone 7 pinned) | No newer release or main commit during milestone 7. |
@@ -257,6 +258,8 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 ## 10. Investigate the residual 120 Hz 41.7 / 25 ms background.
 
 **Approval (2026-11-02):** the user approved adding this milestone ("Да, сформируй новый план для этой ошибки"). Approval is not execution authorization: execution needs `Приступай к шагу 10`.
+
+**Status (2026-11-02): COMPLETE** on `9c6ab0e`. H-A supported: FrameTimeline shows the display HAL presenting one vsync later than SurfaceFlinger expects on ~90% of display frames and on time on the rest; the 25 / 41.7 ms pairs are those on-time presents, while app queue, SF arrival and latch are identical across interval classes. V1 and V3 were excluded by mechanism after step 2; at the user's choice only V2 (`setFrameRate(30)`) was run against V0, and it made the background worse. Details in MALI_PROGRESS.md. No further milestone is authorized.
 
 **Symptom:** at the 30 FPS cap on the 120 Hz panel (device default), with the PR #183 pacing, about 17% of intervals per 150-frame block are 41.7 / 25 ms instead of 33.3 ms (M8: mean block share 0.175, max 0.253 with sweep; 0.176 / 0.333 without). It does not depend on the grid phase. The late-shown frames were queued and GPU-ready on time. Misses are isolated, in runs of 2-4. Working attribution: compositor side. Not proven. This is a different mechanism from the phase bursts fixed by #183.
 
