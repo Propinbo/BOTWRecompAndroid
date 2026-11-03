@@ -132,6 +132,62 @@ Updated: 2026-11-02, Europe/Moscow (UTC+03:00).
     - Nothing was ported, merged or rebuilt on v0.2.13.
   - **Device left:** the audit patch APK `bcbd1b9e…` is installed; the app is stopped. Scratch dirs `files/mali-step4/M-*` remain. Stock 0.2.10 is in `.mali/upstream-migration/artifacts/` for rollback.
   - **Evidence (local only):** `.mali/teleport-dissolve/regress/` (M-* runs, `compare.py`/`compare.md`, `matrix.log`, sheets, `saves-before.txt`/`saves-after.txt`) and `.mali/teleport-dissolve/build/`.
+- **Checkpoint, local commit and port to v0.2.13, 2026-11-03 (user: option 1, then a local Git commit of the patch, then option 2: port to v0.2.13 and test; not a milestone).**
+  - Documentation checkpoint `27e9dad` was pushed to `mali-workspace` (this file and MALI_PLAN.md; readback matched).
+  - **Local commit:** the patch is committed on local branch `mali-bc-render-target` as `7862afc7ccf8065a95616482c09589dd2772608e` (parent `4bad6dc`). Not pushed. No PR.
+  - **Port:**
+    - Release recheck at 06:56Z: still `v0.2.13-beta`. The campaign is pinned to `5403f006905343792cc1692a3ea9c4fca89c1506`.
+    - New local branch `mali-bc-render-target-0213` from that SHA, with `7862afc` cherry-picked without conflicts as `050fbc2`. Not pushed.
+    - Local `main` and fork `main` are untouched (still 0.2.10). No merge.
+  - **Compatibility review:**
+    - v0.2.13's #176 DEAD VIEW check sees the shadow views. They are created by `vk_image_view` (marked alive) and released through `views_forget` → `defer` → `vk_collect_dead` (marked dead), so a destroyed shadow view reaching a pass would be logged.
+    - `e38e692` (#168, linear RT write-back) does not apply to BC textures.
+    - Recompiler and game-lib interfaces are unchanged between 4bad6dc and 5403f00.
+  - **Builds** (JDK 17, `assembleDebug`):
+    - Patched: `BOTWRecompAndroid-5403f00-noisefix-debug.apk` `9a141dc5…`.
+    - Stock: `BOTWRecompAndroid-0.2.13-beta-5403f00-debug.apk` `1c28041e…`.
+    - Both are in `.mali/upstream-migration/artifacts/` and both report versionCode 33.
+    - Only the patched libraries contain the shadow log strings; both contain DEAD VIEW.
+    - One warning, pre-existing upstream code (`exec.c:6997`, blame 2026-10-20).
+  - **Harness change:** 0.2.12 made the icon touch layout the in-world default (`touch_scheme = 1`). `regress.py` now writes `touch_scheme = 0`, the classic layout its coordinates tap; earlier versions ignore the key. It applies to both 0.2.13 builds equally.
+  - **Matrix N-*** (06:58–08:05Z, same routes and modes as M-*): 10 runs, starts at 27.5–28.6 °C. Table `regress/compare-0213.md`; sheets `n-hat-sheet.jpg`, `n-gp-sheet.jpg`, `n-long-sheet.jpg`.
+  - **Confirmed:**
+    - All runs: 0 error lines, including **0 DEAD VIEW**. All alive at the end, median 30 FPS.
+    - Teleports finished: patch 12.2–23.8 s, stock 12.2–24.2 s.
+    - Share of play windows below 29 FPS:
+
+      | Run | Patch | Stock |
+      |---|---|---|
+      | LONG | 150/567 | 156/563 |
+      | R-HAT | 22/82 | 25/86 |
+      | N-HAT | 27/83 | 23/83 |
+      | R-GP | 15/57 | 14/57 |
+      | N-GP | 16/55 | 15/55 |
+
+    - 3D LUT: 4 lines in each run, and the menus are identical.
+    - Fog: no difference on the sheets.
+    - Stock 0.2.13 still has the bug (Link's body gone in the burst frames). The patched build shows the body breaking up on the first, second and long-session teleports, in Native and Recompiled.
+    - **Exactly 1 readback/decode per process** (frames 452–559): 63 slices, 18541 of 18744 bytes nonzero. GPU wait 4.68–6.03 ms, decode 0.08–0.18 ms.
+    - Load stall, max frame ms:
+
+      | Run | Patch | Stock |
+      |---|---|---|
+      | N-GP | 1230 | 1227 |
+      | N-HAT | 1267 | 1307 |
+      | R-GP | 1427 | 1432 |
+      | R-HAT | 1272 | 1346 |
+      | LONG | 1260 | 1474 |
+
+      Here the patch is lower in 4 of 5 pairs. On 0.2.10 it was higher in 4 of 5. Across the 10 pairs there is no consistent direction, so the earlier "+~60 ms" hypothesis is not supported. The stall is run-to-run noise around the ~5–7 ms measured cost.
+    - Original saves are unchanged after this series as well: all 430 files match `saves-before.txt` (`saves-after-0213.txt`).
+  - **Not a teleport time:** in N-P-R-LONG cycle 3, a blood-moon cutscene replaced the teleport (2.5 s). As in M-S-R-LONG, it ran within the same process with no repeat decode.
+  - **Limitations:**
+    - One run per configuration, Mali-G925 only.
+    - No Adreno or desktop build, and no validation layer.
+    - The 15-min sessions are still shorter than the ~30-min crash window of #176.
+    - The edge-case paths are still never exercised by the game.
+  - **Device left:** the patched 0.2.13 APK `9a141dc5…` is installed (versionCode 33; before this, 0.2.10 builds were installed). The app is stopped. Scratch dirs `files/mali-step4/N-*` remain. Rollback: the stock 0.2.10 or 0.2.13 APK with `install -r -d`.
+  - **Evidence (local only):** `.mali/teleport-dissolve/regress/N-*`, `matrix-0213.sh`/`matrix-0213.log`, `compare-0213.md`, the sheets, and build logs `build/assemble-0213-*.log`.
 - **Device left (implementation):** the fix build `cd735345…` is installed (versionCode 30). Stock 0.2.10 `e4a62881…` is in `.mali/upstream-migration/artifacts/` for rollback.
 - **Device left (shader capture):** app stopped; the `files/v190/build/` diagnostic folder created by these sessions was removed after the GLSL was copied; `files/v190/save` untouched. Evidence (local only): `.mali/teleport-dissolve/TPD-R-PICK1/`, `TPD-R-DUMP/` (logs, `glsl/`, recordings, `dec.py`).
 - **Remaining difference (not investigated):** with sync shaders, the glowing Link is a saturated blue/purple, while the reference is a pale translucent cyan/white, and the body disappears before the lines grow instead of under them. Possibly the glow shader's colour/blend or bloom; the shader capture was not needed for the first issue and was not done.
