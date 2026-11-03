@@ -4,6 +4,177 @@ Checkpoint ID: MALI-M10-COMPLETE-2026-11-02 (milestone 10 complete, H-A supporte
 
 Updated: 2026-11-02, Europe/Moscow (UTC+03:00).
 
+## Teleport dissolve A/B on 0.2.10, 2026-11-02 (user: "Да, запускай"; not a milestone)
+
+- **User report:** at fast-travel departure Link turns dark/black and vanishes abruptly instead of gradually glowing and breaking into lines. Seen on the user's own save, 0.2.10, Recompiled (`native_code = 0`), every teleport. The user supplied a Switch reference video (`.mali/teleport-dissolve/reference/ref.mp4`, local only).
+- **Runs** (SM-X730 over USB, installed 0.2.10 `versionCode 30`, Recompiled, harness settings, Great-Plateau seed save copied into a fresh scratch dir, same calibrated teleport as TP210, `screenrecord` 1280x800). Four runs: TPD-R-DEF (default), TPD-R-NOVS (`LARECOMP_NO_VS_SNAP=1`), TPD-R-NOGS (`LARECOMP_NO_GATHER_SNAP=1`), TPD-R-BC1 (`LARECOMP_BC1_ASTC=0`). All four teleports were performed (confirm→HUD 23.6-25.2 s).
+- **Result: the defect reproduces identically in all four runs**, so `9c3a0f3`/`1ff912a` (UV/gather snapping) and `596615e` (BC1→ASTC) are excluded. Departure on Mali: the normal Link vanishes within one frame, then for ~0.3 s an opaque, unlit, saturated blue/pink Link builds up piece by piece (head, sword, then body), then vanishes, and the line column starts. Switch reference: over ~1.5-2 s the lit Link gradually shifts to a translucent glowing light-blue Link, and the lines emerge from it while the body is still visible. Arrival on Mali looks close to the reference (translucent blue Link fading in).
+- **Interpretation (not confirmed):** the glow/dissolve material's draw is wrong (opaque instead of blended, or an inverted or binary mask), and the base model's fade-out is not gradual. Not yet tied to a shader or blend state. Static notes: NVN fixed-function alpha test (`nvnColorStateSetAlphaTest`, `nvnCommandBufferSetAlphaRef`) is recorded but never applied in the Vulkan backend; whether BOTW uses it here is unknown.
+- **Follow-up (user: "Снять шейдер"):** before dumping shaders, the app logs of all four runs showed draws skipped while shaders build exactly in the departure window (default: 742 + 1,615 skipped draws, 139 + 131 compiles at t=65-69 s; same pattern in every run). Run **TPD-R-SYNC** (`LARECOMP_SYNC_SHADERS=1`, otherwise identical): 0 skipped draws, **Link no longer vanishes or assembles piecewise**; he shifts gradually from lit to blue over ~0.6 s as in the reference. Frame cost is similar (max 156/167 ms vs 171/153 ms default). **Cause of the abrupt disappearance: asynchronous pipeline builds** - the glow material's pipelines (one per Link part) are new at departure, so their draws are skipped until each finishes. Not Mali-specific in mechanism (async compile is the backend's default everywhere); Mali's slower compiles make it longer. Not yet checked: whether a second teleport in the same session is clean (expected if this is the cause).
+- **Second teleport in one session (user: "Проверить 2-й телепорт"):** the Great-Plateau seed has only one travel point (TPD-R-TWICE: first teleport done, second not possible; map label never matched). Repeated on a fresh scratch copy of `mali-step4-hateno-seed` (TPD-R-HAT2, Recompiled, default flags, map driven manually): teleport 1 Hateno lab → Myahm Agana Shrine, teleport 2 Myahm Agana → Myahm Agana. **Teleport 1: Link vanishes for 2 frames, then a purple/blue Link appears at once. Teleport 2: no vanish, a gradual lit→blue transition, as in TPD-R-SYNC.** This confirms the async-compile cause: only the first departure in a session shows the abrupt disappearance (fewer missing frames than on the plateau, probably because the driver pipeline cache was warm). Both teleports, like TPD-R-SYNC, still show the saturated blue/purple colour and ~7 frames without Link before the lines appear; the second teleport has its pipelines already built, so this part is not async compile.
+- **Glow-colour shader capture (user: "Снять шейдер цвета"; Hateno seed, Recompiled):** TPD-R-PICK1 (debug frames by F9 = `input keyevent 139`, `LARECOMP_DEBUG_NO_PASSES=1`, `LARECOMP_LOG_FSHASH=1`, points in `build/pick.txt`) and TPD-R-DUMP (plus `LARECOMP_SYNC_SHADERS=1`, `LARECOMP_VK_NO_SPIRV_CACHE=1`, `LARECOMP_DUMP_FS=...`). Findings:
+  - During departure Link is drawn into the G-buffer with dedicated materials that are not used in normal frames (fs `d5dfd5a97f910f0e`, `17890d52aae48359`; their GLSL was dumped only once the teleport started). In `d5dfd5a97f910f0e`, RT1 (albedo) is scaled by `1 - cb7[34].w` and RT5 (the HDR target, emission) is lerped to a constant glow colour `cb7[34].rgb` by `cb7[34].w`. A dissolve edge adds emission `(0.2, 0.45, 4 + 10·noise)·edge`, with a `discard` from a 3D noise texture while `cb7[37].w < 1`.
+  - Measured RT5 on Link pixels (RT5 pick, second teleport): `(0.033, 0.075, 0.67)` then `(0.050, 0.113, 1.0)`, identical across body points, i.e. exactly the glow constant times the ramp. **The translated material outputs the deep blue that its constants ask for**, so the pale cyan of the reference must come later (lighting composite `ec9c39a52f0aac1e`, bloom or tonemap) or from different constant values; not determined. The full-screen pass `211d31f56893a8bc` first suspected is the sky (z = 1, depth EQUAL) and is not the cause.
+  - Not analysed: why the body vanishes ~7 frames before the lines (likely the `cb7[37].w` discard path).
+- **Post-processing / root cause (user: "Разобрать постобработку"):** the post chain is near-linear for these values (frame 3086, point 0: HDR emission `(0.0125, 0.028, 0.246)` → composite `ec9c…` `(0.056, 0.061, 0.234)` → tonemap `a929…` RGB10A2 `(0.043, 0.048, 0.225)` → final RGBA8 `(58, 62, 131)`), so bloom/tonemap are not the cause. Run **TPD-R-CB** (`LARECOMP_LOG_FS_CB=d5dfd5a97f910f0e:1:7:34:4`, sync shaders) logged the material constants every frame. They correct the earlier reading: `cb7[34] = 0` (no glow lerp), and `cb7[37].w` (dissolve progress) ramps smoothly 0.99 → 0.30 over ~80 frames. So the whole blue is the dissolve-edge term `(0.2 + n·cb1[4].y, 0.45 + n·cb1[4].z, 4 + 10·n)·saturate((1 − w)·2.5)` with noise `n = 0` everywhere: the measured `(0.050, 0.113, 1.0)` is exactly `(0.2, 0.45, 4)·0.25`. With `n = 0` the noise discard (`n < saturate((1 − w − 0.15)·1.176)`) also drops every pixel at once when `w` crosses 0.85, instead of dissolving per texel.
+  - **Noise source:** `t4` is a `sampler3D`, bound to a 32×32 `f0x49` = **BC4_UNORM 3D texture** (`@3dca21000`; the same volume is used by other draws, e.g. `a790f9d96ccd4f0b`, tex5 of a sky-adjacent pass). **Cause (code reading, `runtime/nvn/vulkan/textures.c` `upload_texture`):** the CPU BC-decode path for GPUs without BC (and the ASTC path) deswizzles with depth 1 (`tegra_deswizzle(src, blocks, l.wb, l.hb, 1, …)`) and copies `imageExtent.depth = 1`. A 3D BC texture therefore gets only slice 0, read with a 2D block-linear layout, and the rest of the volume stays unwritten. This is Mali-specific: native BC (Adreno) takes the plain path, which passes `l.d`. Expected effect of a fix: per-texel noise, so the edge emission reaches HDR `4 + 10·n` in blue (pale cyan/white after tonemap and bloom, as in the reference) and the body dissolves gradually. Not yet verified by a build; other effects that sample this volume (fog/clouds) are probably affected too.
+- **Fix attempt and real cause (user: "Да, исправляй"; local branch from `main` 4bad6dc, nothing committed):**
+  - Attempt 1, all slices in the CPU BC/ASTC upload of 3D textures (`upload_texture`): built, installed, Hateno two-teleport run TPD-R-FIX. **No change.** A diagnostic shader patch (TPD-R-VIS2, `LARECOMP_SHADER_PATCH` writing `texture(t4, screen-space coords)` into RT5) showed that **t4 returns 0 at any coordinate**. Diagnostic logs (temporary `[diag3d]` builds): the 32×32×32 BC4 volume `@3dca21000` (6 levels, NVN target 2) is never CPU-uploaded (`uploaded 0`). It is `gpu_owned` from the start.
+  - Attempt 2, decoding BC blocks in `copy_buffer_to_texture` before the copy into a CPU-decoded BC image: built, installed, TPD-R-FIX2. **No change** (that path is not used for this texture). Diff kept unverified in `.mali/teleport-dissolve/build/buf2tex-bc-decode-unverified.diff`.
+  - **Actual cause (TPD-R-WATCH, `LARECOMP_WATCH_TEXADDR=3dca21000`):** at frame 519 the game *renders* the noise into the BC4 volume, slice by slice (render target, view `setmask 0x27`, layer 0..31), i.e. it GPU-compresses procedurally generated noise through an uncompressed block-sized view (one 8-byte BC4 block per texel). On Mali the image is the CPU-decoded R8 (`bc_vf`), so `vk_view` renders those block texels into the R8 image as colour, and the volume stays effectively zero. A real fix needs render-to-BC support for decoded images: a shadow target in the view format at block resolution, then a GPU (compute) or CPU BC4 decode into the R8 image after the draws. That is a design-level change, not done. It probably also matters for native BC (Adreno) unless block-texel-view-compatible images are already handled; not checked.
+  - **State after the attempt:** source reverted, temporary branch `mali-3d-bc-upload` deleted, back on `pace-vsync-phase` (clean). Device reinstalled with stock 0.2.10 debug APK `e4a62881…` (verified on device). The APK installed before this work (updated 2026-11-02 22:39) was not hashed beforehand, so whether it was the same build is unknown. Built APKs kept in `.mali/teleport-dissolve/build/`.
+- **Implementation (user: "Реализовать самим"; branch `mali-bc-render-target` from `main` 4bad6dc, uncommitted).** Release check 2026-11-03: `v0.2.12-beta` `c9fb160` is out (touch overhaul, widescreen map, destroyed-view logging; small `exec.c`/`textures.c` changes, not this path). Not migrated; the work stays on 0.2.10. The noise chain turned out to have three defects, all fixed in the diff (`.mali/teleport-dissolve/build/noisefix.diff`; `exec.c` +38/−5, `textures.c` +146, `vk.h` +9):
+  1. **Level-0 upload (generic, not Mali-only):** the source R8 volume `@3dca0a000` (32×32×32, CPU-filled) is first drawn into at level 1 (mip generation). `begin_pass` marked it `gpu_owned` before any CPU upload, so level 0 stayed zero. Fix: a colour target first drawn into at `base_level > 0`, never uploaded and not GPU-owned, gets `vk_tex(t, false)` before it is marked.
+  2. **Fragment output type (generic):** `rt_kind` came from the texture's format, not the view's. The BC4 compressor draws through an RGBA16_UINT view (`0x2C`), so its shader declared `vec4` into an integer target, which gives zeros on Mali. Fix: `rt_format(i)` (the view's format when it names one) for `fkey.rt_kind` and the blend test.
+  3. **Render to CPU-decoded BC (Mali / no BC):** a draw into a `bc_vf` texture through a block-sized view goes to a shadow image in the view's format at block resolution (`vk_bc_shadow_view`). At the next `begin_pass` that does not draw into it, the blocks are read back (one `renderer_flush`, once after load), decoded with `bc_decode`/`bc1_to_astc`, and copied into the image (`vk_bc_shadows_resolve`).
+- **Verification (TPD-R-FIX3, Hateno seed, Recompiled, default flags, APK `cd735345…`):** log `BC 32x32x32: 6 levels of blocks decoded (18541 of 18744 bytes nonzero)` (all zero before). Teleport 2 (pipelines built) matches the Switch reference: gradual shift to a pale translucent glowing cyan, the body stays visible and breaks up into the lines (sheet `.mali/teleport-dissolve/ref-before-after.jpg`). Teleport 1 still has ~2 frames without Link from async pipeline builds (a separate cause, unchanged). 30.0 FPS steady afterwards, no device loss or errors in ~5 min. Side effect seen: visible volumetric mist in the forest at Myahm Agana, which the same noise volume feeds. It is probably more correct, but not compared with Switch. Not done: broader regression (Great Plateau route, menus, other areas), Adreno, 0.2.12 rebase.
+- **Regression check, 2026-11-03 (user: "Проверить регрессии").** Release check: newest is `v0.2.13-beta`, published 2026-11-03 03:40Z (20 fps, touch gestures, stray leaves); not migrated. Harness `.mali/teleport-dissolve/regress.py` runs one scripted route, Recompiled mode, default flags, on whichever APK is installed:
+  - Great Plateau seed: stand, camera, walk, inventory menu, fast travel to the Shrine of Resurrection, walk.
+  - Hateno seed: walk, map, fast travel to Myahm Agana, camera, walk.
+  - Fix `cd735345…` runs: REG-FIX-GP and REG-FIX-HAT2. Stock 0.2.10 `e4a62881…` runs: REG-STOCK-GP and REG-STOCK-HAT.
+  - REG-FIX-HAT is invalid: the HUD detector threshold was too high for the seed's low hearts; it was lowered to >5 red pixels.
+  - **Results:** all four runs had 0 error lines, the app was alive at the end, and both fast travels completed (GP 23.7 s vs 23.7 s; Hateno 15.1 s vs 15.3 s). Median 30 FPS everywhere; sub-25 FPS samples are 9/6 (GP fix/stock) and 4/5 (Hateno), all during boot and teleport loading in both builds. The `gpu mem` maximum differs both ways (256 MB allocation blocks), so it is noise.
+  - **Shadow path:** the only BC texture that took it in either area is the 32³ noise volume; nothing else in these routes renders to BC.
+  - **Visuals** (sheets `regress/gp-sheet.jpg`, `regress/hat-sheet.jpg`): menus, map, shrine interior, HUD and terrain are the same, with no corruption. The fix adds visible distance haze/fog on the Great Plateau and mist in the Myahm Agana forest, from the same noise volume now being non-zero. This is expected, but not compared with Switch. Hateno `03-walked` differs only because the walk diverged (camera ended facing the sign).
+  - **Device:** the fix APK was reinstalled at the end.
+  - **Not covered:** Adreno, other regions, combat or weather effects, Native mode.
+- **Code review and fixes, 2026-11-03 (user: `/code-review`, then "Исправить всё").** Two read-only review agents ran: one on standards (CONTRIBUTING.md plus a smell baseline), one on spec (this section). Standards: no hard violations, 7 judgement calls. Spec: 6 probable edge-case bugs, none of them triggered by BOTW's 32³ volume. All were addressed in the working tree (still uncommitted; diff `.mali/teleport-dissolve/build/noisefix-review.diff`; `device.c` +3, `exec.c` +55/−7, `textures.c` +229/−21, `vk.h` +10).
+  - **Spec fixes:**
+    - Only drawn (level, slice) pairs are decoded, via a per-slice `drawn` map, so the undefined parts of the shadow no longer overwrite the image.
+    - Shadow level extents are `ceil((w>>lv)/4)` (`bc_blocks`). Level 0 is widened so that every level fits and the shadow has all of the texture's levels. This also fixes 2D textures missing their mip levels.
+    - A target drawn through a view of another output type into an image of another format (ASTC/BC decoded, no shadow) is no longer bound. Before, its outputs were of the wrong type, which is undefined behaviour.
+    - The shadow path follows `LARECOMP_3D_RT` via the shared `rt3d_mode()`, so the Qualcomm guard can no longer be bypassed with `LARECOMP_NO_BC`.
+    - The decode also runs before dispatches, texture→buffer and texture→texture copies, and the present, not only before passes.
+  - **Standards fixes:**
+    - Shared `bc_upload_blocks` for both upload and resolve.
+    - `bc_block_bytes` replaced with `FormatInfo::bpb`, held in a `BcShadow` struct (with `img`, `bsize`, `first[]`, `drawn`, `dirty`).
+    - One format/extent path in `begin_pass`.
+    - `nz` renamed.
+    - The level-0 decision moved to `vk_tex_upload_for_mips` in textures.c.
+    - The reset concern needs no code: `vk_textures_reset` destroys every backend, which empties the dirty list.
+  - **Verification:**
+    - APK `4921214b…` built; one warning, pre-existing, `exec.c:6852`.
+    - TPD-R-REV, two-teleport harness: the dissolve looks as before (`TPD-R-REV/rev-dissolve.jpg`). Log `63 slices of blocks decoded (18541 of 18744 bytes nonzero)`, identical bytes, one resolve. 0 errors, 30 FPS.
+    - REG-REV-GP and REG-REV-HAT: 0 errors, both fast travels done, median 30 FPS. The GP minimum of 3.8 FPS falls in the world-load compile burst (890 compiles; stock had 887 at 14.9 FPS, a different split across the 2 s windows). No `not drawn` lines.
+    - Sheets `regress/rev-gp-sheet.jpg` and `regress/rev-hat-sheet.jpg` match the earlier fix: the same haze, no corruption.
+    - The second teleport in TPD-R-REV was not performed (map aim failed); the first one was enough.
+    - Not checked: the new edge-case paths themselves (no game content triggers them), Adreno, Native mode, a desktop build. The review APK is installed.
+- **Audit, regression matrix and v0.2.13 compatibility, 2026-11-03 (user: Vulkan audit, Native/Recompiled, first and second teleport, menu, 3D LUT, fog, a long session, readback cost, comparison with stock 0.2.10, v0.2.13 check, no migration or merge; not a milestone).** Patch still uncommitted on local `mali-bc-render-target` (from `main` `4bad6dc`). Final diff `.mali/teleport-dissolve/build/noisefix-audit.diff` (sha256 `0e6809a2…`; `device.c` +3, `exec.c` +55/−7, `textures.c` +241/−21, `vk.h` +10). APK `noisefix-audit-debug.apk` `bcbd1b9e…`.
+  - **Audit (code reading; confirmed by reasoning, not by a validation layer):**
+    - Synchronization: every BC-shadow step is fenced by `vk_full_barrier`. One gap was found and fixed: there was no TRANSFER_WRITE→HOST_READ barrier between the image→buffer copy and the CPU read. Added before `renderer_flush`. The readback memory is host-cached and `vk_readback_ready` invalidates it.
+    - Image layouts: the shadow and the decoded image stay in GENERAL. The shadow is initialised with `vk_image_init_layout` on the upload command buffer.
+    - Staging: readback goes through the single grow-only `vk_readback` buffer, used right after a submit-and-wait. Decoded texels go through `vk_transient`, which lives until its submission completes.
+    - Lifetime: `bc_shadow_destroy` runs from `destroy_image`. It removes the texture from the dirty list, calls `views_forget` before `defer` (image and memory are freed only after the pending sequence), and frees `drawn`. `backend_texture_destroyed` drains the render thread first. A format change of the drawing view recreates the shadow. A device reset destroys every backend.
+    - Mips: per-level block extents come from `bc_blocks`. Level 0 is widened so that non-power-of-two levels fit. At most 16 levels.
+    - Temporary objects: the region array is freed after each resolve, and `drawn` is cleared.
+    - Also added (diagnostics only): a log line with decode number, frame, slices, GPU wait and decode time for the first 8 decodes, then every 64th.
+  - **Matrix (`regress.py` v2 + `matrix.sh`, 2026-11-03 05:35–06:38Z, Mali-G925):**
+    - 10 runs, alternating stock 0.2.10 `e4a62881…` (S) and the patch (P).
+    - Recompiled (R) and Native (N), each verified from the log.
+    - Routes:
+      - GP: walk, inventory, teleport to the Shrine of Resurrection.
+      - HAT: Hateno seed; walk, map, teleport 1 to Myahm Agana, forest/fog, inventory, teleport 2.
+      - LONG: HAT plus 12 cycles of walk/menu/teleport, 15 min.
+    - Starts gated at ≤36 °C (the runs started at 24–27 °C).
+    - Table: `regress/compare.md`. Sheets: `m-hat-sheet.jpg`, `m-gp-sheet.jpg`, `m-long-sheet.jpg`.
+  - **Confirmed:**
+    - All 10 runs: 0 error lines (including DEAD VIEW), alive at the end, median 30 FPS.
+    - Every teleport finished: patch 12.3–23.8 s, stock 12.4–25.0 s.
+    - Share of play windows below 29 FPS:
+
+      | Run | Patch | Stock |
+      |---|---|---|
+      | LONG | 143/564 | 142/565 |
+      | R-HAT | 20/81 | 21/82 |
+      | N-HAT | 23/81 | 25/81 |
+      | R-GP | 15/58 | 15/60 |
+      | N-GP | 15/55 | 15/57 |
+
+    - 3D LUT: 4 `3D target 8x8x8` lines in every run, and the inventory menu is identical.
+    - Fog/haze in the Myahm Agana forest and on the Plateau: no difference from stock on the sheets.
+    - Dissolve: in the patched runs Link's body visibly breaks up into the lines on the first, second and every long-session teleport, in both modes. In stock the body is already gone in the same frames.
+    - **Readback/decode count: exactly 1 per process**, at load (frames 438–500): 63 slices, 18541 of 18744 bytes nonzero in all 5 patched runs. There was none on any of the 14 teleports of the long session. The `past 0` upload happened once and `not drawn` never appeared.
+    - Measured cost:
+      - GPU wait (submit-and-wait incl. copy) 4.82–7.08 ms;
+      - CPU BC4 decode 0.15–0.19 ms.
+    - It falls inside the existing ~1.2–1.4 s load stall, which stock has too:
+
+      | Run | Patch max frame ms | Stock max frame ms |
+      |---|---|---|
+      | N-GP | 1250 | 1214 |
+      | N-HAT | 1297 | 1197 |
+      | R-GP | 1400 | 1269 |
+      | R-HAT | 1275 | 1312 |
+      | LONG | 1298 | 1232 |
+
+    - Original saves unchanged: sha256 of all 430 files under `v190/save`, `mali-step4-hateno-seed` and `mali-step4-great-plateau-seed-v1`. `regress/saves-before.txt` = `saves-after.txt`. Runs used copies in `files/mali-step4/M-*`.
+  - **Hypotheses / not shown:**
+    - The patch's load stall is on average about 60 ms longer (4 of 5 pairs; −37 to +131 ms). That is ~10× the measured wait, and the run-to-run spread has the same magnitude, so this is not established. If real, plausible sources are the extra `vk_tex` upload of the R8 source and pipelines for format 95.
+    - The GPU wait is an upper bound on the added time, since that frame waits anyway.
+    - A reload that recreates the noise volume (blood moon, death, title → load) would repeat the single decode. Not observed on the patch.
+    - In stock LONG cycle 3, a blood-moon cutscene replaced the teleport. That is the 4.2 s value; it is not a teleport time.
+  - **Limitations:**
+    - One run per configuration.
+    - Only Mali-G925.
+    - No Adreno or desktop build.
+    - No Vulkan validation layer.
+    - The edge-case paths (non-power-of-two BC targets, format changes, 2D BC targets, a full dirty list) are never exercised by the game.
+    - 15 min, not a multi-hour session. Upstream #176 is a Mali crash after ~30 min with a destroyed view.
+    - The glow colour difference noted below is unchanged.
+  - **Upstream release check 2026-11-03T06:40Z:**
+    - Newest is `v0.2.13-beta`, tag commit `5403f006…`.
+    - The active baseline for this patch stays 0.2.10 `4bad6dc` (bounded campaign; no migration).
+    - Compatibility:
+      - The diff applies cleanly to v0.2.13 sources (dry run on a scratch copy; not compiled, not tested).
+      - Overlaps in `exec.c` `begin_pass`: v0.2.13 adds a DEAD VIEW check before `vk_begin_rendering`. Shadow views come from `vk_image_view` and are released through `views_forget` + `defer`, so they should take part in its dead-view tracking. This needs a build and a run.
+      - `wb_eligible` changes, but BC textures are excluded from it.
+      - `vk_collect_dead` / `vk_image_view` gain dead-view tracking.
+    - Nothing was ported, merged or rebuilt on v0.2.13.
+  - **Device left:** the audit patch APK `bcbd1b9e…` is installed; the app is stopped. Scratch dirs `files/mali-step4/M-*` remain. Stock 0.2.10 is in `.mali/upstream-migration/artifacts/` for rollback.
+  - **Evidence (local only):** `.mali/teleport-dissolve/regress/` (M-* runs, `compare.py`/`compare.md`, `matrix.log`, sheets, `saves-before.txt`/`saves-after.txt`) and `.mali/teleport-dissolve/build/`.
+- **Device left (implementation):** the fix build `cd735345…` is installed (versionCode 30). Stock 0.2.10 `e4a62881…` is in `.mali/upstream-migration/artifacts/` for rollback.
+- **Device left (shader capture):** app stopped; the `files/v190/build/` diagnostic folder created by these sessions was removed after the GLSL was copied; `files/v190/save` untouched. Evidence (local only): `.mali/teleport-dissolve/TPD-R-PICK1/`, `TPD-R-DUMP/` (logs, `glsl/`, recordings, `dec.py`).
+- **Remaining difference (not investigated):** with sync shaders, the glowing Link is a saturated blue/purple, while the reference is a pale translucent cyan/white, and the body disappears before the lines grow instead of under them. Possibly the glow shader's colour/blend or bloom; the shader capture was not needed for the first issue and was not done.
+- **Device left:** app stopped, recordings removed from `/sdcard/Download`, scratch dirs `files/mali-step4/TPD-*` left in place; the user's save and settings were not touched.
+- **Evidence (local only):** `.mali/teleport-dissolve/` (harness `tp-dissolve.py`, per-run video/log/commands, `compare-depart.png`, `ref-vs-mali-depart.jpg`).
+
+## #174 both-flags run on 0.2.10, 2026-11-02 (user: "Да, оба флага"; not a milestone)
+
+- **Result: normal at all four check points** with `LARECOMP_BC1_ASTC=0` + `LARECOMP_LIN_STAGGER=1` (tall grass, Link on the ground at ~5/10/15/20 min). With either flag alone the defect appears (BC1OFF-N-3, LINSTAG-N-1). So each of `596615e` and `8053dc8` is sufficient on its own, and the 0.2.9 ADPF change `b6725c5` is excluded. Most likely both expose a shared underlying problem; not investigated. One run per configuration; onset variance applies.
+- **Run BOTH-N-1:** APK `e4a62881…` (0.2.10), warm bundle `after-GP210-N-S2-warm-1` (654 files, verified), same route/settings/60 Hz/brightness; mode verified Native; no ASTC log line (BC1 flag effective). 37,244 frames, 29.82 FPS, p99 50.05 ms, 2,158 >50 ms (the phase-burst judder, unrelated to #174), 2 >100 ms, max 217 ms. Returns graceful (2.1 s), re-boot 24.7 s.
+- **Device left:** 0.2.10, refresh keys deleted, brightness auto, app stopped; working cache = BOTH-N-1 state (bundled `after-BOTH-N-1`), previous archived as `mali-archive/before-BOTH-N-1`.
+- **Evidence (local only):** `.mali/issue-174-both/` (harness, conditions, console, captures, `sheet-all.png`, `sheet-comment.jpg`, draft `comment-both.md`). On the user's "Да, публикуй" posted from the user's account via Claude in Chrome at 2026-11-02T20:12:54Z, https://github.com/mamcjr/BOTWRecompAndroid/issues/174#issuecomment-6587371018 (5-row sheet as JPEG; final text `comment-both-final.md`); it also carries the 0.2.8 result.
+
+## #174 0.2.8 run on the same route, 2026-11-02 (user: "публикуй, потом 0.2.8"; not a milestone)
+
+- **Comment posted first:** the LIN_STAGGER result on #174 from the user's account via Claude in Chrome, 2026-11-02T19:10:45Z, https://github.com/mamcjr/BOTWRecompAndroid/issues/174#issuecomment-6586034785 (sheet as JPEG; text `.mali/issue-174-lin/comment-linstagger-final.md`).
+- **Result: 0.2.8 is normal at all four check points** (tall grass, Link on the ground at ~5/10/15/20 min), like 0.2.5 (STAB-N-3). One 20-min run; onset varies (≤5 to 10-15 min on 0.2.10), so this is strong but not conclusive. Combined with the two flag runs: the defect appears in 0.2.9/0.2.10, yet neither `596615e` alone nor `8053dc8` alone is required. Remaining explanations: either change alone is enough to trigger it (a common mechanism, e.g. timing or memory pressure on terrain updates), or the 0.2.9 ADPF change `b6725c5`. Discriminating next step: 0.2.10 with both `LARECOMP_BC1_ASTC=0` and `LARECOMP_LIN_STAGGER=1`. Not run; not authorized.
+- **Run V028-N-1:** APK `c6ab822e…` (0.2.8-beta `b02302c`, debug, same signer) installed in place with `install -r -d` (no uninstall or clear; `firstInstallTime` preserved), hash verified. Warm bundle `after-GP28-N-S2-warm-1` (656 files restored, hashes verified); route, menus, settings, 60 Hz, brightness 128 as the 0.2.10 runs; mode verified Native; no ASTC line (expected on 0.2.8). 37,240 frames, 29.83 FPS, p99 49.98 ms, 204 >50 ms, 1 >100 ms, max 200 ms. Returns graceful (2.1 s each), re-boot to world 23.6 s.
+- **Device left:** 0.2.10 APK `e4a62881…` reinstalled in place (versionCode 30, `firstInstallTime` preserved), refresh keys deleted, brightness auto, app stopped. Working cache = V028-N-1 state (bundled `after-V028-N-1`); the LINSTAG-N-1 cache is archived as `mali-archive/before-V028-N-1`.
+- **Evidence (local only):** `.mali/issue-174-v028/` (harness copies, install record, conditions, console, captures, `sheet-025-028-0210.png` rows 0.2.5 STAB-N-3 / 0.2.8 V028-N-1 / 0.2.10 LONG210-N-1 / 0.2.10 LINSTAG-N-1). Nothing about 0.2.8 posted upstream.
+
+## #174 cause-finding run: `LARECOMP_LIN_STAGGER=1`, 2026-11-02 (user: "Да, запускай"; not a milestone)
+
+- **Result: the defect reproduces with `LARECOMP_LIN_STAGGER=1`** (pre-`8053dc8` every-8th-frame check of linear textures). Normal at ~5 and ~10 min (tall grass, Link on the ground), defect at ~15 and ~20 min (no grass, Link knee-deep), normal after launcher return + re-boot. So `8053dc8` is excluded too. With the flag, 0.2.10 behaves like 0.2.9 for this path, and `596615e` (BC1→ASTC) is the 0.2.9 change already excluded by BC1OFF-N-3. The cause therefore most likely predates 0.2.9: between 0.2.5 (STAB-N-3 normal at all four points) and 0.2.8 (LONG28-N-1 not comparable: teleport into the shrine at the first boundary). Not confirmed by a 0.2.9 or 0.2.8 run on the same route. Onset time varies between runs: 5-10 min (LONG210-N-1), ≤5 min (BC1OFF-N-3), 10-15 min (here); LONG8-N-1 (M8 candidate, 0.2.10) also shows it from ~10 min.
+- **Run LINSTAG-N-1:** installed APK verified `e4a62881…` (0.2.10-beta `4bad6dc`); same route, menus, warm bundle `after-GP210-N-S2-warm-1` (654 files restored, hashes verified), settings, 60 Hz and brightness 128 as LONG210-N-1/BC1OFF-N-3; mode verified Native. The flag has no log line; it went through the same intent `env` path as `LARECOMP_LOG_FILE` (which took effect), and the ASTC line is present as expected. 37,215 frames, 29.82 FPS, p99 49.96 ms, 163 intervals >50 ms, 3 >100 ms, max 150 ms. Returns graceful (2.1 s each), re-boot to world 27.5 s. Same deviations as BC1OFF-N-3 (USB power and ADB, no GPU/thermal sampling).
+- **Device left:** refresh keys deleted, brightness auto (reads 87), app stopped. Working cache = LINSTAG-N-1 state (bundled `after-LINSTAG-N-1`, 712 files); previous working cache archived as `mali-archive/before-LINSTAG-N-1`.
+- **Evidence (local only):** `.mali/issue-174-lin/` (harness copies differing only by flag/paths, `make-sheet.py`, conditions, console log, captures, `sheet-ref-bc1off-lin.png` rows LONG210-N-1 / BC1OFF-N-3 / LINSTAG-N-1). Nothing posted upstream.
+
+## #174 cause-finding run: `LARECOMP_BC1_ASTC=0`, 2026-11-02 (user: "Только BC1_ASTC=0"; not a milestone)
+
+- **Result: the defect reproduces with BC1→ASTC off**, already at the ~5 min check point (default ASTC run LONG210-N-1: first seen between 5 and 10 min). Present at ~5/10/15/20 min. Gone after launcher return + re-boot (also normal in LONG210-N-1). So `596615e` (BC1→ASTC) is excluded as the cause; the remaining 0.2.10 suspect is `8053dc8` (per-frame checks on CPU-written linear textures). 0.2.9 not run.
+- **Run BC1OFF-N-3:** installed APK verified `e4a62881…` (0.2.10-beta `4bad6dc`); route, menus, warm bundle `after-GP210-N-S2-warm-1` (654 files, hashes verified) and settings identical to LONG210-N-1; flag confirmed by the absence of `[vk] BC1 textures as ASTC 4x4` in the app log. 37,227 frames, 29.82 FPS, p99 50.0 ms, 1,339 intervals >50 ms (LONG210-N-1: 232), 4 >100 ms, max 917 ms. Returns graceful (2.1 s), re-boot to world 23.7 s.
+- **Deviations:** USB power and ADB over USB (battery 40%, no charge-to-78% gate; battery/external-power gates removed from the copied script); no 1 Hz GPU/thermal sampling (no root after the device reboot; samples recorded as failed).
+- **Harness fix:** after today's device reboot the shell user lost access to `files/v190` and `chown` on external storage fails. BC1OFF-N-1 stopped at settings `chown`, after a cache restore that silently restored 0 files; BC1OFF-N-2 stopped at a settings read-back check (`adb shell cat` adds CR). Neither reached the game. The copies in `.mali/issue-174-bc1/` do cache test/mv/tar and settings writes through `run-as`, and verify by sha256.
+- **Device left:** refresh keys deleted, brightness auto (reads 87), USB ADB, app stopped. The working shader cache is now the BC1OFF-N-3 state (bundled as `after-BC1OFF-N-3`, 698 files); the previous working cache is archived on the device in `mali-archive/before-BC1OFF-N-2` (1,924 files). Leftover scratch dirs/ini from N-1/N-2 are harmless.
+- **Evidence (local only):** `.mali/issue-174-bc1/` (scripts, conditions, console logs, BC1OFF-N-3 captures and log, comparison sheets, draft comment `comment-bc1off.md`, shareable log `issue174-native-bc1astc0-app.log`, reviewed: app paths and GPU info only). On the user's "Да, публикуй" the comment was posted from the user's account via Claude in Chrome at 2026-11-02T18:18:35Z (https://github.com/mamcjr/BOTWRecompAndroid/issues/174#issuecomment-6584799813), with the Link crop sheet and the app log attached (as `.txt`: GitHub rejected `.log`). Final text: `comment-bc1off-final.md`.
+
+## Release check and upstream feedback, 2026-11-02T17:28Z (no milestone executed)
+
+- New release `v0.2.11-beta` `3556864` (published 15:55Z): input dead-zone floor, in-place mod toggle, version bump. No change to rendering, textures or pacing. Not relevant to #174 or #183; #183 still merges cleanly onto it. Active baseline stays `4bad6dc`; migration only on separate authorization at the next checkpoint boundary.
+- #174 maintainer reply: not reproduced on Adreno 830 Native (10.5 min, standing in a grass field); another user sees it on Poco F6 (Hateno) and #159 on Adreno 735, so it is probably not Mali-specific. Requested: Native run with `LARECOMP_BC1_ASTC=0` on the same route, and/or 0.2.9 on the same route, plus a log of a run showing the defect. This matches the bisect/flag step already listed as the cheap option in the 0.2.10 reassessment. Not authorized yet.
+- #183: our H-A follow-up comment is posted; no maintainer response yet.
+
 ## Milestone 10 outcome: COMPLETE, H-A supported, 2026-11-02 (Claude Code session)
 
 Authorized by "Приступай к шагу 10". Pin `pace-vsync-phase` `9c6ab0e` (= M7 candidate patch, diff SHA-256 `b44927ae...`, candidate APK `f4482815...`). Release checks 08:41Z and 10:03Z: newest still `v0.2.10-beta` `4bad6dc`, main unchanged; PR #183 open, no comments or reviews. Conditions: SM-X730, 120 Hz forced, Native S1, warm cache, 60 s settle + 180 s window, USB power (recorded deviation). Evidence local only: `.mali/milestone-10/` (`M10_REPORT.md`, trace, analysis, runs, DIAG patch and APK).
