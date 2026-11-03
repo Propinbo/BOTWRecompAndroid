@@ -2,7 +2,14 @@
 
 Checkpoint ID: MALI-M10-COMPLETE-2026-11-02 (milestone 10 complete, H-A supported; preceding checkpoint MALI-M8-COMPLETE-2026-11-02 (milestone 8 complete with failed P2; preceding checkpoint MALI-M7-COMPLETE-2026-11-01 (milestone 7 complete; preceding documentation checkpoints: 1588b1a0fd290234420120c76287ce4b80dd424a (milestone 6), baaedbf2d86796cfcba2e1a0852b4f003c5deb87 (milestone 5b), 51cebfc41500128d35afba5569287b45dd77fbff (milestone 5b added), 48ba5aa6a6b801da5937293c0aa761b36356bf87 (milestone 5), 911e7644a9d4ce69aabf14da4f84386ee68ed017 (0.2.10 migration), 6a8678f9751fa7870d715743c61eef347a9538c2 (0.2.8 migration), b37b036a6f7fbb9c5a4d1f878628eeb1bf98a5a2 (M4 complete), d843d612733c19e9a900c0a2ab9cafb5919fa36b, b9dda86b9bb13d14abaaba9aa440c0a58142d262))).
 
-Updated: 2026-11-02, Europe/Moscow (UTC+03:00).
+Updated: 2026-11-03, Europe/Moscow (UTC+03:00).
+
+## Built-in benchmark proposal and role contract, 2026-11-03 (not a milestone)
+
+- **Benchmark idea (user, after the UltraCam mod on GameBanana):** a built-in benchmark mode instead of adb tap scripts. UltraCam's benchmark targets the Switch game (documented for TOTK; BOTW 1.6) and does not apply to this recompilation; its code is not used. Existing pieces: frame-indexed `LARECOMP_INPUT` (`runtime/hle/input.c`), the perf overlay, `LOG_PACE`/`VK_PROF`/`TIMING_TRACE`. `LARECOMP_BENCHMARK_CONFIG` only logs the output scale. The runtime has no player/camera hooks.
+- **Decision:** ask the maintainer before building (an upstream-facing runtime change; the `LARECOMP_INPUT` comment mentions an internal "perf walk"). Proposal issue https://github.com/mamcjr/BOTWRecompAndroid/issues/214 opened with `gh` from Propinbo (user: "Публикуй"). No implementation and no plan change until the maintainer answers; then a step 11 (11a mechanism, 11b load-end anchoring + repeatability, 11c optional camera hooks) goes to the user for approval.
+- **Release check 2026-11-03T08:56Z:** newest `v0.2.13-beta` `5403f00`, unchanged.
+- **Role contract (user):** recorded at the top of `AGENTS.md`. The user decides product questions and when to move on; the agent decides technical questions and records important decisions here. Steps still start only on the user's command. Source commits/pushes/PRs and other actions outside the step's contract still need the user. Never risk the user's saves on the tablet.
 
 ## Teleport dissolve A/B on 0.2.10, 2026-11-02 (user: "Да, запускай"; not a milestone)
 

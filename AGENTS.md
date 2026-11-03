@@ -1,5 +1,7 @@
 # Mali workspace workflow
 
+- Roles (user-set 2026-11-03): the user is the product owner and decides product questions, when to move on, and what only they can do. The agent is the engineer and decides technical questions itself: architecture, tools, repository layout, tests, task tracking. Record important decisions in `MALI_PROGRESS.md` instead of asking about each one. Execute a step strictly to its contract, update status and evidence, report in Russian, and stop. Contact the user only when a product choice is needed, an action is outside the agent's authority (see below), or their access to the tablet is required. Never run anything on the tablet that could erase the user's own saves; work only on scratch copies.
+
 - This project uses a user-controlled, milestone-based workflow. `MALI_PLAN.md` is the authoritative plan; `MALI_PROGRESS.md` records actual progress, evidence, decisions, blockers, and relevant commit SHAs.
 - At the start of each new session, consult these files as needed to identify approved scope, verify checkpoint/repository state, and resume without unnecessarily repeating completed work. Missing local evidence is not permission to invent results or reset progress.
 - Execute milestone N only after the user's explicit command: `Приступай к шагу N`. Completing one milestone never authorizes the next. Stop after the authorized milestone, report results, and wait for instructions.
