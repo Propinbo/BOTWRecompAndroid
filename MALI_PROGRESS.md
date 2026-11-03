@@ -188,6 +188,23 @@ Updated: 2026-11-02, Europe/Moscow (UTC+03:00).
     - The edge-case paths are still never exercised by the game.
   - **Device left:** the patched 0.2.13 APK `9a141dc5…` is installed (versionCode 33; before this, 0.2.10 builds were installed). The app is stopped. Scratch dirs `files/mali-step4/N-*` remain. Rollback: the stock 0.2.10 or 0.2.13 APK with `install -r -d`.
   - **Evidence (local only):** `.mali/teleport-dissolve/regress/N-*`, `matrix-0213.sh`/`matrix-0213.log`, `compare-0213.md`, the sheets, and build logs `build/assemble-0213-*.log`.
+- **Upstream PR prepared locally, 2026-11-03 (user: "Готовить upstream PR от v0.2.13"; not a milestone; nothing pushed or opened).**
+  - **Release check 08:08Z:** still `v0.2.13-beta`. `upstream/main` = `5403f00`, so the PR base is the tag itself.
+  - **Upstream state:** open PRs #183 (ours), #187–189 (others) and #96 touch none of the patch's code paths. No upstream issue for the dissolve bug was found (searched teleport / fast travel / dissolve).
+  - **PR branch:** local `mali-bc-render-target-0213`, one commit `050fbc2` on `5403f00`. It changes only 4 files in `runtime/nvn/vulkan` (+281/−28).
+  - **Branch checks:**
+    - Line endings: CRLF, like the repository.
+    - `git diff --check`: clean.
+    - Content: no private paths, device serials, `.mali` references or Nintendo files.
+    - The exported patch applies cleanly to `5403f00`.
+  - **Host tests (NDK 30), identical on `050fbc2` and `5403f00`:** timing history 8, shader cache 17, Vulkan startup 33, Vulkan compat 16 checks pass.
+  - **Package** in `.mali/teleport-dissolve/pr/`:
+    - `PR_DRAFT.md` (title, summary, evidence, merge danger, limitations);
+    - `before-after.jpg` (stock 0.2.13 vs the patch, both fast travels; game screenshots, allowed by CONTRIBUTING.md);
+    - `teleport-dissolve-bc-shadow.patch`;
+    - `diffstat.txt`.
+  - **Stated in the draft:** `rt_format` and the "not drawn" guard apply on every platform, not only Android. Adreno is untested.
+  - **Open:** pushing the branch to the fork and opening the PR need separate authorization. The commit is authored by the Propinbo noreply identity used for earlier commits.
 - **Device left (implementation):** the fix build `cd735345…` is installed (versionCode 30). Stock 0.2.10 `e4a62881…` is in `.mali/upstream-migration/artifacts/` for rollback.
 - **Device left (shader capture):** app stopped; the `files/v190/build/` diagnostic folder created by these sessions was removed after the GLSL was copied; `files/v190/save` untouched. Evidence (local only): `.mali/teleport-dissolve/TPD-R-PICK1/`, `TPD-R-DUMP/` (logs, `glsl/`, recordings, `dec.py`).
 - **Remaining difference (not investigated):** with sync shaders, the glowing Link is a saturated blue/purple, while the reference is a pale translucent cyan/white, and the body disappears before the lines grow instead of under them. Possibly the glow shader's colour/blend or bloom; the shader capture was not needed for the first issue and was not done.
