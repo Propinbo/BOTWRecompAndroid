@@ -205,6 +205,12 @@ Updated: 2026-11-02, Europe/Moscow (UTC+03:00).
     - `diffstat.txt`.
   - **Stated in the draft:** `rt_format` and the "not drawn" guard apply on every platform, not only Android. Adreno is untested.
   - **Open:** pushing the branch to the fork and opening the PR need separate authorization. The commit is authored by the Propinbo noreply identity used for earlier commits.
+- **Upstream PR opened, 2026-11-03 (user: "Да, открыть PR").** Before pushing, `upstream/main` and the newest release were rechecked: still `5403f00` / `v0.2.13-beta`.
+  - Branch `mali-bc-render-target-0213` (`050fbc2`) pushed to the fork `Propinbo/BOTWRecompAndroid`.
+  - PR https://github.com/mamcjr/BOTWRecompAndroid/pull/210 opened against `main` with `gh`. Body: `PR_DRAFT.md` plus the Claude Code attribution line.
+  - `before-after.jpg` was uploaded through the user's signed-in Chrome, via the new-comment file input. That comment draft was cleared and not posted (PR comments: 0). The resulting user-attachments image was added to the description with `gh pr edit`.
+  - Status at opening: open, mergeable/clean, no CI checks configured. The session's PR monitor (auto-fix, address comments) is on; auto-merge is off.
+  - Local `main`, fork `main` and upstream were not changed.
 - **Device left (implementation):** the fix build `cd735345…` is installed (versionCode 30). Stock 0.2.10 `e4a62881…` is in `.mali/upstream-migration/artifacts/` for rollback.
 - **Device left (shader capture):** app stopped; the `files/v190/build/` diagnostic folder created by these sessions was removed after the GLSL was copied; `files/v190/save` untouched. Evidence (local only): `.mali/teleport-dissolve/TPD-R-PICK1/`, `TPD-R-DUMP/` (logs, `glsl/`, recordings, `dec.py`).
 - **Remaining difference (not investigated):** with sync shaders, the glowing Link is a saturated blue/purple, while the reference is a pale translucent cyan/white, and the body disappears before the lines grow instead of under them. Possibly the glow shader's colour/blend or bloom; the shader capture was not needed for the first issue and was not done.
