@@ -1,26 +1,37 @@
 # Vulkan format probe (tools/test_vk_formats.c), no game files needed: builds with the project's NDK, runs through adb,
-# writes the JSON report to android/out/test_vk_formats.json (or -OutFile).
-#   tools/test_vk_formats.ps1                                                  the system driver
-#   tools/test_vk_formats.ps1 -Driver C:\drivers\libvulkan_freedreno.so        a driver .so from this PC (Turnip: the .so out of its zip)
-#   tools/test_vk_formats.ps1 -Driver /data/local/tmp/libvulkan_freedreno.so   a driver .so already on the device
+# writes the JSON report to android/out/test_vk_formats.json (or -OutFile). Windows, macOS or Linux, in pwsh.
+#   pwsh tools/test_vk_formats.ps1                                                  the system driver
+#   pwsh tools/test_vk_formats.ps1 -Driver ~/drivers/libvulkan_freedreno.so         a driver .so from this computer (Turnip: the .so out of its zip)
+#   pwsh tools/test_vk_formats.ps1 -Driver /data/local/tmp/libvulkan_freedreno.so   a driver .so already on the device
 # Other options: -Sdk <Android SDK>, -DeviceSerial <serial from adb devices>. It takes about a minute. It touches only
 # its own files in /data/local/tmp. A group that crashes the driver shows up in the report as "crashed".
 param([string]$Sdk, [string]$DeviceSerial, [string]$Driver, [string]$OutFile)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
+# (Windows PowerShell 5.1 has none of the $Is variables: it is the last branch)
+if ($IsMacOS) {
+    $ndkHost = 'darwin-x86_64'; $exe = ''; $defaultSdk = Join-Path $HOME 'Library/Android/sdk'
+} elseif ($IsLinux) {
+    $ndkHost = 'linux-x86_64'; $exe = ''; $defaultSdk = Join-Path $HOME 'Android/Sdk'
+} else {
+    $ndkHost = 'windows-x86_64'; $exe = '.exe'; $defaultSdk = Join-Path $env:LOCALAPPDATA 'Android/Sdk'
+}
+if (-not $Sdk) { $Sdk = $env:ANDROID_HOME }
 if (-not $Sdk) {
     $sdkProperties = Join-Path $repoRoot 'android/botwrecompandroid/local.properties'
     if (Test-Path -LiteralPath $sdkProperties) {
         $sdkLine = Get-Content -LiteralPath $sdkProperties | Where-Object { $_ -match '^sdk\.dir=' } | Select-Object -First 1
         if ($sdkLine) { $Sdk = $sdkLine.Substring(8).Replace('\:', ':').Replace('\\', '\') }
     }
-    if (-not $Sdk) { $Sdk = $env:ANDROID_HOME }
-    if (-not $Sdk) { $Sdk = Join-Path $env:LOCALAPPDATA 'Android/Sdk' }
 }
+if (-not $Sdk) { $Sdk = $defaultSdk }
 $ndk = Join-Path $Sdk 'ndk/30.0.16248370'
-$compilerPath = Join-Path $ndk 'toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe'
-$glslcPath = Join-Path $ndk 'shader-tools/windows-x86_64/glslc.exe'
-$adbPath = Join-Path $Sdk 'platform-tools/adb.exe'
+$compilerPath = Join-Path $ndk "toolchains/llvm/prebuilt/$ndkHost/bin/clang$exe"
+$glslcPath = Join-Path $ndk "shader-tools/$ndkHost/glslc$exe"
+$adbPath = Join-Path $Sdk "platform-tools/adb$exe"
+foreach ($tool in @($compilerPath, $glslcPath, $adbPath)) {
+    if (-not (Test-Path -LiteralPath $tool)) { throw "Not found: $tool (NDK 30.0.16248370 and platform-tools in the SDK; -Sdk or ANDROID_HOME says where it is)" }
+}
 $deviceArgs = @()
 if ($DeviceSerial) { $deviceArgs = @('-s', $DeviceSerial) }
 $deviceDir = '/data/local/tmp/botwrecompandroid-tests'
