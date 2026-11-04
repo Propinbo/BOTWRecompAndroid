@@ -4,6 +4,55 @@ Checkpoint ID: MALI-M10-COMPLETE-2026-11-02 (milestone 10 complete, H-A supporte
 
 Updated: 2026-11-04, Europe/Moscow (UTC+03:00).
 
+## Step 11b refinements before the PR, 2026-11-04 (user-authorized; PR not opened, 11c not authorized)
+
+- **Release check:** 19:55Z, newest `v0.3.1-beta`, tag `c48606c` = `upstream/main`.
+- **Commits on `benchmark-mvp`, not pushed:** `4aac21a` warm-up until calm and `cache_cold`; `6a808ef` review fixes. Head `6a808ef`.
+- **Calm rule:** warm-up lasts at least `warmup_s` (20), until `calm_s` (20) pass without a compile or skipped draw, at most `warmup_max_s` (180). N comes from 5-minute windows (`LONG-R`, `LONG-N`) and the earlier logs: the load's burst has gaps up to 12 s; afterwards small bursts come 10-130 s apart with no end seen in 5 minutes, so a larger N doesn't help. Any compile or skip in the window gives `cache_cold` with its numbers. Thermal status at window start and end was already in the JSON and is now in `report.csv` too.
+- **Final runs on `6a808ef` (`FINAL-R`, `FINAL-N`, 3 x 3, about 17 min each):** 0 `harness_error`, 30.00 FPS, 0 frames over 50 ms; warm-up 20.7-59.5 s. **13 of 18 windows are `cache_cold` with a warm cache** (R 5, N 8). GPU p50 spread including them: plateau R 0.22%, N 0.15%; lab R 0.60%, N 2.56%; village R 0.30%, N 0.19%. Counts don't predict GPU p50.
+- **Cold cache, lab in R, 3 repeats, scratch data root, twice (`COLD-R` on the dirty pre-commit build, `COLD2-R` on `6a808ef`):** first repeat 26.78 and 27.06, both `cache_cold`, no outlier. Second repeat 28.39 `cache_cold` and **28.69 `ok`** with 0 compiles and 0 skips. So the outlier is not a shader cache effect, and the rule can't catch it. Inside such windows GPU time rises to about 31 ms for 15-25 s, also in the warm `FULL-R` lab window (28.49). Cause not established; DVFS is a guess, not tested. R only so far.
+- **No adb:** none in the app. `LARECOMP_*` come only from the launch intent's `env` extra (`BOTWRecompAndroidActivity`, exported MAIN); `settings.c` doesn't set env. Another app sending that intent should work, not tried. Reported to the user, nothing added.
+- **Code review (high effort, 10 findings):** 8 fixed: scene file inside the save's folder wrote into the save (now refused, seen on device); `_exit` skipped the pipeline cache save and log tail (now `exit`, tail present, pipeline cache grew between runs); huge yaw hung `wrap180` (now refused, seen on device); `low_fps` with zero frames; unreadable camera passed the check; GPU time after a long frame; `plugged` default; path truncation. Not fixed: `cache_cold` counts skips unrelated to the cache (needs a new counter, stated in the PR); `copy_tree` ignores write failures (shared code, scratch only).
+- **Flag off on `6a808ef` (`OFF2-*`):** R period 33.34, GPU 27.04 against stock 33.34, 26.99; N 33.33, 27.06 against 33.34, 26.81; 0 over 50 ms, no benchmark lines, no extra files.
+- **Redaction:** the published `MALI_PROGRESS.md` (`ff49377`) already had the tablet serial replaced by `<tablet serial>`, but the local copy still had it in 5 lines. Local copy now matches; no serial in the four documents.
+- **Tablet restored 19:55Z:** stock 0.3.1 debug APK `9e11940d...54fe` verified, app stopped, scratch removed, player's save hash `159b1d58...` and settings hash `8036460e...` unchanged. Shader cache not rolled back (`spirv` 1231 files). Tablet time for this task about 1 h 40 min.
+- **PR text:** `.mali/benchmark/mvp-11b/PR.md`, shown to the user, not published.
+
+## Step 11b benchmark MVP, 2026-11-04 (COMPLETE; 11c not authorized)
+
+- **Release check:** session start and 18:38Z, newest `v0.3.1-beta`, tag `c48606c` = `upstream/main`. Pinned.
+- **Result:** branch `benchmark-mvp` `588021f` on `c48606c`, one commit, not pushed. `runtime/hle/benchmark.c` (748 lines), small call sites, `tools/benchmark-scenes.txt`. `tools/patches.py` and every `GAMELIB_ID` source unchanged. Evidence, scripts, APKs and PR text: `.mali/benchmark/mvp-11b/` (`PR.md`, `runs/`, `check.py`).
+- **Runs (`FULL-R`, `FULL-N`, 3 scenes x 3 repeats, 20 s warm-up, 45 s window, 14.5 min each):** 18 of 18 `ok`, 30.00 FPS, 0 frames over 50 ms; report numbers match a recomputation from `frames.csv`. GPU p50 spread: plateau R 0.26%, N 0.14%; hateno-lab R 5.30%, N 0.62%; hateno-village R 0.13%, N 0.05%. The 5.30% comes from one window (28.49 against 27.05, 27.09): first lab window of the R run, cause not established.
+- **Flag off against stock (`OFF-*`, `STOCK-*`, one 100 s run each):** period p50 33.33 / 33.34, GPU p50 R 26.90 / 26.99, N 26.99 / 26.81, 0 over 50 ms, no benchmark log lines, no extra files.
+- **Failure paths on the device:** unreachable pitch `harness_error` at `camera`; far position at `arrive`; event inside a too-short warm-up at `window`; missing save at `save`; `format = 2` message and `bad_scene_file`; flipped version check in a throwaway build: `unsupported version`, exits after OK. Source save, seed, the player's save and settings hashes unchanged after every run. Default save and settings paths: one run on a scratch data root, not on the player's real save.
+- **New fact:** a short event, about 1 s, comes 6-7 s after every load, on any scene, also in the 11a state logs; 11a missed it because it waited 20 s. The warm-up now counts from its end.
+- **New fact:** closed-loop pitch reached 85 degrees (open sky), GPU p50 23.6 against about 27 ms at that scene's level view.
+- **Decisions (engineer):** in-process repeats (`repeats` key) with reboot in place; scratch and report in `<scene file>.out/`; settings also a scratch copy, because `settings_save` could write the forced values into the player's file; all save slots edited; camera signs fixed (inverted camera gives `harness_error` at `camera`); scene 3 is the fast-travel arrival at Myahm Agana (Hateno village view), the only other point 11a confirmed; commit id through `git describe` at configure time.
+- **Differences from the plan text, by the user's 11b command:** `cap30` only, `ok`/`harness_error`, no headroom field. Recorded in `MALI_PLAN.md`.
+- **Not tested:** real other game version (only 1.9.0 here), shrine save, several slots, inverted camera, crash during a run, other refresh rates. Hearts checked on screenshots only. Display rate from SDL, not compared with `dumpsys`. Thermal status reached 3 and stayed; no cooling wait in scope. Skipped draws and compiles in windows are not zero (up to 448 and 17). The last log lines before `_exit` can be missing from `LARECOMP_LOG_FILE`; the report is unaffected.
+- **Tablet restored 18:39Z:** stock 0.3.1 debug APK `9e11940d...54fe` verified, app stopped, scratch removed, player's save hash `159b1d58...` unchanged. Shader cache not rolled back. Tablet time about 45 min.
+- **Not published:** no push, no PR. Checkpoint documents not pushed.
+
+## Step 11a device probe, 2026-11-04 (COMPLETE; step 11b not authorized)
+
+- **Release check:** 15:58Z and 17:09Z, newest `v0.3.1-beta`, tag `c48606c` = `upstream/main`. Pinned for the whole probe.
+- **Scope kept:** tablet about 1 h 10 min (estimate 2.5 h), scratch copies only. Temporary probe on a detached `c48606c`, never committed, tree reverted; `tools/patches.py` and `GAMELIB_ID` untouched. Raw evidence and diff: `.mali/benchmark/probe-11a/`. Results and corrections: `.mali/benchmark/FEASIBILITY.md` (section on top), durations: `.mali/benchmark/TEST_STRATEGY.md`.
+- **Results:**
+  - (a) `LARECOMP_PLACE`, `LARECOMP_DOORJUMP_TEST`: dead. The code was `doorjump.c` from LAS Recomp, removed in `c10ad4c`; the names only disable user input now.
+  - (b) Live teleport: not confirmed (actor `mMtx` write does nothing; `setNewPlayerMtx` not located). Scratch save with `RT_REBOOT_GAME`: works in R and N, XZ error up to 0.02, about 24-30 s, no new process.
+  - (c) Camera read confirmed. Closed-loop stick: yaw error 0.29-0.37, pitch 0.40-0.42 with a 0.5 tolerance. Plain absolute write in Native: no effect, game restored it in 299 of 300 frames; one attempt.
+  - (d) Weather held 45 s with 0 game overwrites, visible on screen. Time: writing the `WM_Time` flag does **not** hold it (the first run misread my own value); `TimeMgr` `mNewTime` once plus `mTimeStep=0` holds with zero drift. Blood Moon reset by save.
+  - (e) Fast travel by input with each step confirmed: R and N, 2 of 2, identical arrival coordinates, 17.0-18.5 s. A missed cursor gives `harness_error` (seen by accident and in a control). Cursor still uses touch swipes, 1 miss in 4; the nudge was never exercised.
+  - (f) `cap30`: 30.00 FPS. `fps_mode=4` at 120 Hz: target 40, actual 30.9-36.3, spread 8% between two R runs; `renderFrameRate` read 60 or 40 during it. 60 and 90 Hz not tested.
+  - (g) Three runs of one scene: GPU p50 within 0.3%, p95 headroom within 0.56 ms, no frame over 50 ms; screenshots differ through clouds and grass.
+  - (h) N vs R: no difference above run-to-run noise, no pixel match either; the oracle needs a sky and grass mask, no control was run.
+  - (i) Clock speed 0.25000-0.25020 units/s across real 30-35 FPS. **Controls `FRAMEPACE=0` and `TICK_SCALE=2` stayed green,** so the test's sensitivity is unproven (`control_missing`).
+  - (k) Game functions without patch changes, R and N: `getPlayerPos` 20 of 20, `setWeatherType`, `callBloodMoonDemo` with the real scene and world reload; no failure, callee-saved registers unchanged. `GetNpadState` runs on at least three guest threads and `rt_vfr_update` on more than one, so thread safety in general is not shown.
+- **Corrections to earlier static findings:** `world::Manager` `sInstance` is `0x7001e57580`, not `...780`. `CurrentHart` in this seed is 9, not 120.
+- **Decisions (engineer):** 11b scenes use the scratch save with an in-place reboot; time through `TimeMgr`; no `LARECOMP_FPS=40`.
+- **Tablet restored 2026-11-04T17:13Z:** stock 0.3.1 debug APK `9e11940d...54fe` verified on device, app stopped, the probe's scratch dirs removed from `files/mali-step4/`, no save or settings file outside scratch changed since the start of the probe, debug-layer settings null, no shell logcat, 11 GB free. Shader cache not rolled back. Checkout back on `mali-bc-render-target-0213`.
+- **Not published:** the checkpoint documents were not pushed to `mali-workspace`.
+
 ## MALI_STATUS.md introduced, 2026-11-04 (user-authorized documentation task; not a milestone)
 
 - **Reason:** save context. A new session reads `MALI_STATUS.md` (current base, branches, open PRs/issues, authorizations, pointers) and opens `MALI_PROGRESS.md` only by heading. `AGENTS.md` and `MALI_PLAN.md` updated: the checkpoint is now four files; `/MALI_STATUS.md` added to `.git/info/exclude`. Recovery commands above list four paths. No milestone authorized.

@@ -3,13 +3,14 @@
 Updated: 2026-11-04 (Europe/Moscow). History lives in `MALI_PROGRESS.md`: find a section by heading, never read the whole file.
 
 ## Base
-- Active baseline: upstream `v0.3.1-beta`, tag `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` = `upstream/main` = fork `main` = local `main`. Last release check 2026-11-04T15:58Z (see table in `MALI_PLAN.md`); recheck at session start.
-- Tablet (Immortalis-G925; serial from `adb devices`): stock 0.3.1 debug APK `9e11940d...54fe` was verified on 2026-11-04T15:08Z. **After that step 11a built a probe APK (`.mali/benchmark/probe-11a/apk`, 19:06); whether it is installed now is not verified. Check with `adb` before anything else on the device.**
-- Checkout: detached HEAD at `v0.3.1-beta` with uncommitted temporary probe edits (`runtime/hle/framepace.c`, `input.c`, `runtime/nvn/vulkan/exec.c`, untracked `runtime/hle/probe11a.c`). They are step 11a scratch, outside git history; copy kept in `.mali/benchmark/probe-11a/probe.diff`. Do not commit them.
+- Active baseline: upstream `v0.3.1-beta`, tag `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` = `upstream/main` = fork `main` = local `main`. Last release check 2026-11-04T19:55Z (see table in `MALI_PLAN.md`); recheck at session start.
+- Tablet (Immortalis-G925; serial from `adb devices`): stock 0.3.1 debug APK `9e11940d...54fe` verified on device 2026-11-04T19:55Z after step 11b; app stopped, scratch dirs removed.
+- Checkout: `benchmark-mvp`, clean.
 - `BOTWRecompAndroid-checkpoint/` (untracked dir at repo root) is an old local copy; ignore it.
 
 ## Branches (fork `Propinbo/BOTWRecompAndroid`)
-- `mali-workspace`: documentation checkpoint only (last published `600dedb`).
+- `mali-workspace`: documentation checkpoint only (published through the step 11b refinements; find the commit with `git log origin/mali-workspace`).
+- `benchmark-mvp` `6a808ef` (3 commits on `c48606c`): step 11b, local only, not pushed.
 - `pr-maintenance5` `e9ef72c`: pushed to fork, PR #255 open.
 - `format-probe` `24cd72b`: pushed to fork only, no PR (test_vk_formats probe for #244).
 - Local only, not pushed: `audit-fixes-030`, `audit-fixes-0213`, `pr210-followups`, `vuid-fixes-030`, `vuid-fixes-0213`.
@@ -22,12 +23,12 @@ Updated: 2026-11-04 (Europe/Moscow). History lives in `MALI_PROGRESS.md`: find a
 - Issue #174: see its sections in `MALI_PROGRESS.md`; maintainer asked for more data, not pursued now.
 
 ## Authorized now
-- Step 11a (device probe, ~2.5 h, base `c48606c`, scratch copies only): authorized by "приступай к шагу 11a". Probe code, APK and scripts built (`.mali/benchmark/probe-11a/`); **no results recorded in `MALI_PROGRESS.md` yet.** Done-when is in `MALI_PLAN.md` section 11a, includes restoring and verifying stock 0.3.1 on the tablet.
+- Nothing in progress. Step 11b and its refinements are COMPLETE (results: `MALI_PROGRESS.md` "Step 11b refinements before the PR", `.mali/benchmark/mvp-11b/`).
 - Standing: documentation-only checkpoints of the four docs to `mali-workspace` (including `MALI_STATUS.md` since 2026-11-04).
 
 ## Awaiting the user's decision
-- Steps 11b, 11c, 11d: each needs its own command (`Приступай к шагу N`).
-- Upstream pushes, new PRs, source commits: need separate authorization. `audit-fixes-030` stays unpushed by the user's decision.
+- Steps 11c, 11d: each needs its own command (`Приступай к шагу N`).
+- PR for `benchmark-mvp` (text in `.mali/benchmark/mvp-11b/PR.md`, shown to the user), whether `cache_cold` stays this strict (13 of 18 warm windows), a way to start without adb (none in the app), upstream pushes, new PRs, source commits: need separate authorization. `audit-fixes-030` stays unpushed by the user's decision.
 
 ## Key user decisions (pointers into `MALI_PROGRESS.md` by heading)
 - Role contract: user owns product, agent owns technical choices; protect the user's saves; scratch copies only. See `AGENTS.md` and "Built-in benchmark proposal and role contract".
@@ -37,7 +38,7 @@ Updated: 2026-11-04 (Europe/Moscow). History lives in `MALI_PROGRESS.md`: find a
 - PR auto-fix events: CI/conflict fixes stay local, show diff, wait for confirmation (memory rule).
 
 ## Where the main reports are
-- Benchmark: `.mali/benchmark/FEASIBILITY.md`, `TEST_STRATEGY.md`, `probe-11a/`.
+- Benchmark: `.mali/benchmark/FEASIBILITY.md`, `TEST_STRATEGY.md`, `probe-11a/`, `mvp-11b/`.
 - PR #255 evidence: `.mali/pr-maintenance5-031/` (`PR.md`, `device/sheet.jpg`, `runner.log`, APKs).
 - Format probe: `.mali/format-probe/` (report JSON, `run.log`, reply draft).
 - G925 audit: `.mali/audit-g925-20261103/` (`SUMMARY.md`, `FINDINGS.md`, `FIXES.md`).
