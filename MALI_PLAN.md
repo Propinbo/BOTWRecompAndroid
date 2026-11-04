@@ -4,7 +4,7 @@ Approved in chat on 2026-10-30. This is the authoritative milestone plan. The or
 
 Upstream: https://github.com/mamcjr/BOTWRecompAndroid
 
-Current active source baseline after the second authorized upstream migration phase (2026-11-01): **`4bad6dcb0390ae81d0e5d2e174809422d7198d97`**, upstream `v0.2.10-beta`. Fork main and local `main` were fast-forwarded `3d66ac0` (`v0.2.5-beta`, the milestone 3b/4 baseline) → `b02302c` (`v0.2.8-beta`) → `4bad6dc`; the 0.2.5 baseline itself came by fast-forward from `4acbf40c9312618e16e1153f3696c64e125d2a2f` on 2026-10-30. Completed milestones and phases keep the SHAs they used. See "Rolling upstream baseline" for the last release check.
+Current active source baseline after the third authorized upstream migration phase (2026-11-04): **`06111e4c981a101ea7e8d2b1b9e709667f3e057b`**, upstream `v0.3.0-beta`. No APK was built or installed for this baseline: the tablet still runs the previous test APK `9a141dc5…` (0.2.13-based). Fork main and local `main` were fast-forwarded `3d66ac0` (`v0.2.5-beta`, the milestone 3b/4 baseline) → `b02302c` (`v0.2.8-beta`) → `4bad6dc` (`v0.2.10-beta`) → `06111e4`; the 0.2.5 baseline itself came by fast-forward from `4acbf40c9312618e16e1153f3696c64e125d2a2f` on 2026-10-30. Completed milestones and phases keep the SHAs they used. See "Rolling upstream baseline" for the last release check.
 
 Planned test hardware: MediaTek Dimensity 9400+, Arm Immortalis-G925 MC12. Hardware and device results must be verified from real device evidence during the authorized device milestones.
 
@@ -16,9 +16,9 @@ Reassess remaining milestones as evidence emerges, prioritizing the project obje
 
 ## Documentation persistence authorization
 
-The active checkpoint branch is `mali-workspace` in the existing fork https://github.com/Propinbo/BOTWRecompAndroid. On 2026-10-30 the user authorized a documentation/checkpoint task only, plus standing documentation-only updates after future explicitly authorized milestones: commit and publish exactly `AGENTS.md`, `MALI_PLAN.md`, and `MALI_PROGRESS.md` to the checkpoint branch, then named `codex/mali-workspace`. On 2026-10-31 the user separately authorized its official GitHub rename to `mali-workspace` and migration of active recovery references. This changes the branch name, not milestone scope, order, status, or execution authorization. No project milestone is authorized by either maintenance task. Review the three files for credentials, proprietary assets, sensitive logs, and private information before publication. Raw evidence and other working notes remain local.
+The active checkpoint branch is `mali-workspace` in the existing fork https://github.com/Propinbo/BOTWRecompAndroid. On 2026-10-30 the user authorized a documentation/checkpoint task only, plus standing documentation-only updates after future explicitly authorized milestones: commit and publish exactly `AGENTS.md`, `MALI_PLAN.md`, and `MALI_PROGRESS.md` to the checkpoint branch, then named `codex/mali-workspace`. On 2026-11-04 the user added `MALI_STATUS.md` (a short current-state file read at session start) to this list, so the checkpoint is now four files. On 2026-10-31 the user separately authorized its official GitHub rename to `mali-workspace` and migration of active recovery references. This changes the branch name, not milestone scope, order, status, or execution authorization. No project milestone is authorized by either maintenance task. Review the four files for credentials, proprietary assets, sensitive logs, and private information before publication. Raw evidence and other working notes remain local.
 
-Do not push to upstream, open a PR, merge branches, change the default branch, force-push, or publish source changes under this authorization. Keep checkpoint documentation out of future upstream PRs: never merge this branch into a contribution branch; carry only the independently authorized source patch. On source branches keep the three documentation files locally excluded from staging, along with `.mali/`. A clean clone of the checkpoint branch contains the documentation; a clone of `main` needs explicit recovery. See MALI_PROGRESS.md for retrieval steps and verified persistence limits.
+Do not push to upstream, open a PR, merge branches, change the default branch, force-push, or publish source changes under this authorization. Keep checkpoint documentation out of future upstream PRs: never merge this branch into a contribution branch; carry only the independently authorized source patch. On source branches keep the four documentation files locally excluded from staging, along with `.mali/`. A clean clone of the checkpoint branch contains the documentation; a clone of `main` needs explicit recovery. See MALI_PROGRESS.md for retrieval steps and verified persistence limits.
 
 The bounded synchronization separately authorized importing upstream commits into fork main only by fast-forward. It did not expand standing source-publication permission. The documentation branch intentionally retains its historical application tree and is updated with documents only; its application tree is not the current build baseline. Recover documents into a current main checkout without merging checkpoint history into source.
 
@@ -30,6 +30,9 @@ Release-check record (newest first):
 
 | Checked (UTC) | Newest published release | Tag SHA | Active baseline | Note |
 |---|---|---|---|---|
+| 2026-11-04T15:58Z | `v0.3.1-beta` (published 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Start of step 11a; campaign pinned to this SHA. Tag = `upstream/main`. |
+| 2026-11-04T15:08Z | `v0.3.1-beta` (published 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Tag = upstream main. Migration authorized by the user; fork and local main fast-forwarded from `06111e4`, no force. Campaign `pr-maintenance5` pinned to it, rechecked unchanged before the push. |
+| 2026-11-04T07:39Z | `v0.3.0-beta` (published 02:47:32Z) | `06111e4c981a101ea7e8d2b1b9e709667f3e057b` | `v0.3.0-beta` `06111e4` | Tag = upstream main. Migration authorized by the user; fork and local main fast-forwarded from `4bad6dc`. Rechecked unchanged at the end of the port. |
 | 2026-11-03T08:30Z | `v0.2.13-beta` | `5403f006905343792cc1692a3ea9c4fca89c1506` | Fork main `4bad6dc`, review port based on `5403f00` | Session-start release check for review of `050fbc2`. |
 | 2026-11-03T06:40Z | `v0.2.13-beta` (published 03:40:51Z; 0.2.12 at 2026-11-02T20:47Z) | `5403f006905343792cc1692a3ea9c4fca89c1506` | `v0.2.10-beta` `4bad6dc` (teleport-dissolve patch campaign finished on it) | v0.2.13 touches `exec.c` `begin_pass` (DEAD VIEW check), `wb_eligible`, `vk_collect_dead`/`vk_image_view`; the teleport-dissolve diff applies cleanly in a dry run. The user then authorized a local commit of the patch and a port to v0.2.13 (see MALI_PROGRESS.md); this changes no fork `main`. |
 | 2026-11-02T17:28Z | `v0.2.11-beta` (published 15:55:35Z) | `3556864abc50b1bb7f0e89705f8364167ee0d272` | `v0.2.10-beta` `4bad6dc` (no migration authorized) | 0.2.11 = 3 commits over 4bad6dc: stick dead-zone floor 8% (`runtime/hle/input.c`), in-place mods toggle (`runtime/mods.c`), version bump. No rendering, Vulkan, pacing or texture changes; does not address #174 and does not touch #183 files (#183 merges onto 0.2.11 without conflicts). Maintainer replied on #174: could not reproduce on Adreno 830 Native (10.5 min standing); asks for Native `LARECOMP_BC1_ASTC=0` and/or 0.2.9 on the same route, plus a log of a run showing the defect. #183: no maintainer response yet. |
@@ -55,6 +58,12 @@ Release-check record (newest first):
 **Authorization:** The user's "Migrate to 0.2.10" in answer to the proposal recorded at the 0.2.8 checkpoint. Same shape and limits as the 0.2.8 phase: FF-only main update, unchanged rebuild, in-place install, bounded regression with read-only root sampling, three-document checkpoint. During the phase the user also instructed skipping the recharge before the Recompiled long session, and approved filing an upstream issue for a new visual defect (filed from the user's account via Claude in Chrome). It does not authorize milestone 5, source changes, or an upstream PR.
 
 **Outcome:** Main fast-forwarded to `4bad6dc`, APK rebuilt and installed in place (ABI unchanged), regression completed with one truncated session. Results and evidence are in MALI_PROGRESS.md.
+
+## Upstream migration phase: 0.2.10-beta → 0.3.0-beta (COMPLETE, 2026-11-04)
+
+**Authorization:** The user's 2026-11-04 instruction: FF of fork main under the `AGENTS.md` rules and a record here, with no rebuild and no install on the tablet. Then local ports of `audit-fixes-0213` and `vuid-fixes-0213` as `audit-fixes-030` and `vuid-fixes-030`, without `diag:` commits and without push or PR.
+
+**Outcome:** Main fast-forwarded to `06111e4`; the two ports exist locally. No device regression was run on 0.3.0, because none was authorized. Results are in MALI_PROGRESS.md.
 
 ## Reassessment of milestones 5-9 after the 0.2.10 regression (proposal; not approved)
 
@@ -92,7 +101,7 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 
 **Stopping condition:** Workspace and initial checkpoint are ready; no build, commit, or push.
 
-**Execution rules for every milestone:** Start only after `Приступай к шагу N`; check prerequisites, existing progress, and repository state without repeating completed investigations unnecessarily. Record the relevant SHA, completed work, findings with references, validation evidence, changed files/state, blockers, and next action awaiting authorization. Report the checkpoint location and persistence status. Verify checkpoint existence and recorded hashes when resuming; consult MALI_PROGRESS.md for actual persistence tests and their limits. Preserve a user-controlled backup of local raw evidence and any uncommitted patch; only the three reviewed documentation files may be published under the standing checkpoint authorization. If retrieval is unavailable or persistence uncertain, report the blocker and provide a portable checkpoint. Stop after the authorized milestone; if it grows too large, document a coherent checkpoint and propose separately authorized substeps. No automatic advance.
+**Execution rules for every milestone:** Start only after `Приступай к шагу N`; check prerequisites, existing progress, and repository state without repeating completed investigations unnecessarily. Record the relevant SHA, completed work, findings with references, validation evidence, changed files/state, blockers, and next action awaiting authorization. Report the checkpoint location and persistence status. Verify checkpoint existence and recorded hashes when resuming; consult MALI_PROGRESS.md for actual persistence tests and their limits. Preserve a user-controlled backup of local raw evidence and any uncommitted patch; only the four reviewed documentation files may be published under the standing checkpoint authorization. If retrieval is unavailable or persistence uncertain, report the blocker and provide a portable checkpoint. Stop after the authorized milestone; if it grows too large, document a coherent checkpoint and propose separately authorized substeps. No automatic advance.
 
 ## 2. Triage the reports against current upstream.
 
@@ -294,3 +303,27 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 **Dependencies:** milestone 8 evidence; PR #183 branch.
 
 **Stopping condition:** a supported diagnosis (a working lever, or H-A supported), or the next missing measurement identified. There is no production fix, commit, push or PR in this milestone. A working lever becomes a separately proposed implementation milestone and a separate PR, or an update to #183 if the maintainer prefers. Each needs its own authorization. The open S3 checks from milestone 8 (60 FPS in-world, movie) are not part of this milestone.
+
+## 11. Built-in benchmark and test suite.
+
+**Approval (2026-11-04):** the user approved adding this milestone and its split after the maintainer's answer in #214: scenes with teleport, time and weather; memory writes behind the benchmark switch on a scratch save; hooks that change `tools/patches.py` or `GAMELIB_ID` only Native for the prototype or held for a release that already rebuilds; 1.9.0 only, with `unsupported version` on others; fixed cap through env for measurement. Each substep runs only on its own command. Background: `.mali/benchmark/FEASIBILITY.md`, `.mali/benchmark/TEST_STRATEGY.md`.
+
+### 11a. Device probe.
+
+**Status (2026-11-04):** authorized by the user's "приступай к шагу 11a". See MALI_PROGRESS.md.
+
+**Scope:** about 2.5 h on the tablet, base `v0.3.1-beta` `c48606c`, scratch copies only. Commands instead of input; where input is unavoidable, each step is confirmed by game state. Temporary patches stay outside git history. Items (a)-(k) as in the user's instruction: `LARECOMP_PLACE` and `LARECOMP_DOORJUMP_TEST`; teleport; camera read and closed-loop stick; time and weather held for 45 s with Blood Moon reset; fast travel by confirmed input; `cap30` and `fps_mode=4` passes with display rate and actual FPS target (`LARECOMP_FPS=40` not used); three runs of one scene; Native vs Recompiled; clock speed independent of FPS; game function call without patch changes, stopped at the first failure.
+
+**Done when:** each item in FEASIBILITY.md reads confirmed, not confirmed or fallback only, with evidence; real durations are in TEST_STRATEGY.md; the tablet runs stock 0.3.1 and that is verified; the result is in MALI_PROGRESS.md.
+
+### 11b. Benchmark MVP, no hooks in `tools/patches.py`.
+
+**Done when:** behind the benchmark switch, off by default and with no change in behaviour when off, a run on 1.9.0 goes from start to report on a scratch save without user input and rejects other versions with `unsupported version`. Scenes come from the methods 11a confirmed, with arrival checked by Link's coordinates. The report gives per-frame CPU and GPU time, p50/p95/p99, headroom against budget, repeats with median and spread, a passport without serial numbers, and the `pass`/`fail`/`harness_error` statuses. `cap30` and `fps_mode=4` are both reported with display rate and actual target. `GAMELIB_ID` does not change. Upstream PR only on separate authorization.
+
+### 11c. Check layer per TEST_STRATEGY.md.
+
+**Done when:** the minimal loop from TEST_STRATEGY section 5 runs on the 11b machinery (T1, T3, L1, P1, with statuses and report); thresholds come from A/A runs; every binding test has seen its negative control go red on the device, or is reported as `control_missing`; `git bisect run` exit codes work on at least one known defect. Real durations replace the estimates.
+
+### 11d. What needs hooks, Native only.
+
+**Done when:** absolute camera (and the path without gravity and collisions, if taken up) works behind the switch in Native through `fixes[]` in `native.c`, with `tools/patches.py` and `GAMELIB_ID` unchanged and Recompiled reporting the feature as unavailable. Stop criterion from FEASIBILITY.md holds: if Link cannot complete 60 s without death or state change within the spike, the path is dropped and scenes stay on the pan.
