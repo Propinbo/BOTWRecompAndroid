@@ -3,14 +3,14 @@
 Updated: 2026-11-04 (Europe/Moscow). History lives in `MALI_PROGRESS.md`: find a section by heading, never read the whole file.
 
 ## Base
-- Active baseline: upstream `v0.3.1-beta`, tag `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` = `upstream/main` = fork `main` = local `main`. Last release check 2026-11-04T19:55Z (see table in `MALI_PLAN.md`); recheck at session start.
-- Tablet (Immortalis-G925; serial from `adb devices`): stock 0.3.1 debug APK `9e11940d...54fe` verified on device 2026-11-04T19:55Z after step 11b; app stopped, scratch dirs removed.
+- Active baseline: upstream `v0.3.1-beta`, tag `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` = `upstream/main` = fork `main` = local `main`. Last release check 2026-11-05T15:48Z (see table in `MALI_PLAN.md`); recheck at session start.
+- Tablet (Immortalis-G925; serial from `adb devices`): stock 0.3.1 debug APK `9e11940d...54fe` verified on device 2026-11-05 after the `shader_cache_at_start` control; app stopped, scratch dirs removed.
 - Checkout: `benchmark-mvp`, clean.
 - `BOTWRecompAndroid-checkpoint/` (untracked dir at repo root) is an old local copy; ignore it.
 
 ## Branches (fork `Propinbo/BOTWRecompAndroid`)
 - `mali-workspace`: documentation checkpoint only (published through the step 11b refinements; find the commit with `git log origin/mali-workspace`).
-- `benchmark-mvp` `6a808ef` (3 commits on `c48606c`): step 11b, local only, not pushed.
+- `benchmark-mvp` `08fb8f5` (4 commits on `c48606c`): pushed to fork, PR #278 open, ready for review.
 - `pr-maintenance5` `e9ef72c`: pushed to fork, PR #255 open.
 - `format-probe` `24cd72b`: pushed to fork only, no PR (test_vk_formats probe for #244).
 - Local only, not pushed: `audit-fixes-030`, `audit-fixes-0213`, `pr210-followups`, `vuid-fixes-030`, `vuid-fixes-0213`.
@@ -18,17 +18,18 @@ Updated: 2026-11-04 (Europe/Moscow). History lives in `MALI_PROGRESS.md`: find a
 
 ## Open upstream items (`mamcjr/BOTWRecompAndroid`)
 - PR #255 (maintenance5 for points without PointSize, no empty `vkCmdCopyBuffer` regions): open, mergeable, 0 comments at last check; validation, FPS and runner checks passed.
+- PR #278 (built-in benchmark, first version): open, not draft.
 - Issue #214 (built-in benchmark proposal): open; maintainer accepted scenes, scratch-save memory writes, 1.9.0 only, fixed cap via env; hooks Native-only for the prototype.
 - Issue #244 (formats without feature report, UB): open; our probe report published as a comment, 2 comments total at last check.
 - Issue #174: see its sections in `MALI_PROGRESS.md`; maintainer asked for more data, not pursued now.
 
 ## Authorized now
-- Nothing in progress. Step 11b and its refinements are COMPLETE (results: `MALI_PROGRESS.md` "Step 11b refinements before the PR", `.mali/benchmark/mvp-11b/`).
+- Nothing in progress. Step 11b is COMPLETE and published as PR #278 (results: `MALI_PROGRESS.md` "Step 11b published as PR #278", `.mali/benchmark/mvp-11b/`).
 - Standing: documentation-only checkpoints of the four docs to `mali-workspace` (including `MALI_STATUS.md` since 2026-11-04).
 
 ## Awaiting the user's decision
 - Steps 11c, 11d: each needs its own command (`Приступай к шагу N`).
-- PR for `benchmark-mvp` (text in `.mali/benchmark/mvp-11b/PR.md`, shown to the user), whether `cache_cold` stays this strict (13 of 18 warm windows), a way to start without adb (none in the app), upstream pushes, new PRs, source commits: need separate authorization. `audit-fixes-030` stays unpushed by the user's decision.
+- A way to start the benchmark without adb: none in the app. Upstream pushes, new PRs, source commits: need separate authorization. `audit-fixes-030` stays unpushed by the user's decision.
 
 ## Key user decisions (pointers into `MALI_PROGRESS.md` by heading)
 - Role contract: user owns product, agent owns technical choices; protect the user's saves; scratch copies only. See `AGENTS.md` and "Built-in benchmark proposal and role contract".
@@ -38,6 +39,7 @@ Updated: 2026-11-04 (Europe/Moscow). History lives in `MALI_PROGRESS.md`: find a
 - PR auto-fix events: CI/conflict fixes stay local, show diff, wait for confirmation (memory rule).
 
 ## Where the main reports are
+- User save and settings backups: `.mali/user-backup/<date>/`; `backup.py` beside them (rule in `AGENTS.md`).
 - Benchmark: `.mali/benchmark/FEASIBILITY.md`, `TEST_STRATEGY.md`, `probe-11a/`, `mvp-11b/`.
 - PR #255 evidence: `.mali/pr-maintenance5-031/` (`PR.md`, `device/sheet.jpg`, `runner.log`, APKs).
 - Format probe: `.mali/format-probe/` (report JSON, `run.log`, reply draft).

@@ -4,6 +4,26 @@ Checkpoint ID: MALI-M10-COMPLETE-2026-11-02 (milestone 10 complete, H-A supporte
 
 Updated: 2026-11-04, Europe/Moscow (UTC+03:00).
 
+## Step 11b published as PR #278, 2026-11-05
+
+- **User decisions:** incident closed: the user played on Nov 5 and changed the save and settings. `cache_cold` removed; windows are `ok` or `harness_error` and keep `skipped_building` and `shader_compiles` without a verdict. New rule in `AGENTS.md`: back up the real save and settings before tablet runs.
+- **Why no threshold:** replay on earlier runs (`.mali/benchmark/mvp-11b/rule.py`): any threshold marking the lab's cold start (below 0.0015% of draws) left 8 of 18 warm windows `ok`; at 0.01%, 12 of 18, with the cold start marked in 1 of 3 runs.
+- **Code (`08fb8f5`):** `shader_cache_at_start` cold or warm by SPIR-V cache misses before the first window, no threshold. Commit field from a custom target on every build, `-dirty` for changes under `runtime android tools third_party`, `unknown` without git. Seen: `6a808ef920e6-dirty` with changes, `08fb8f58dd80` after commit with no source change.
+- **Control on `08fb8f5`, lab, 1 repeat each:** empty cache R `cold`; warm R and warm N `warm`; all `ok`. Player's save hash `03f161fb...` and settings hash `e41eb9a5...` unchanged, stock APK `9e11940d...54fe` restored, scratch removed. Backup: `.mali/user-backup/2026-11-05/`.
+- **Full runs not repeated on `08fb8f5`:** the 3 x 3 table and flag-off runs are from `6a808ef`; stated in the PR.
+- **Departure from the user's wording, reported:** the PR doesn't say the window is independent of a cold start. GPU p50 matches, but 4 of 8 windows in cold-cache runs had 1294-1345 frames (1% low 24.2-26.6 fps, CPU p50 up to 22.8 ms) against 1351 in all 39 warm windows (1% low at least 29.08). The 4 are in the two runs that started at thermal status 2; the two at status 0 were clean. Cause not established.
+- **Published:** PR https://github.com/mamcjr/BOTWRecompAndroid/pull/278. Release check 15:48Z: newest `v0.3.1-beta`, `upstream/main` `c48606c`.
+
+## Player save and settings incident, 2026-11-05 (CLOSED: the user played; nothing restored)
+
+- **Backup:** `.mali/user-backup/2026-11-05/` (`save-and-settings.tar` sha256 `bad167e6...`, `device-sha256.txt`, 21 files, 0 mismatches). Tablet not changed.
+- **Clock:** tablet is Europe/Moscow, +03:00. Settings written 15:38:09 MSK Nov 5 (12:38Z). Slots written 16:15-16:25 MSK Nov 5, `option.sav` 16:25:26. The times are Nov 5, not Nov 4.
+- **Our runs:** tree hash `159b1d58` held at 2026-11-04T18:39Z and 19:55Z and across every 11b guarded run. No agent transcript or `.mali` file changed between 23:00 MSK Nov 4 and 18:03 MSK Nov 5; adb daemon was down at 18:04 MSK Nov 5; adb over TCP off. Our Nov 5 control ran 18:05-18:09 MSK, after the writes, with the player hash unchanged.
+- **The tablet in that time:** usage stats show the app resumed 11:47-11:54, 12:14-12:26, 14:20-16:25 MSK, each after a screen-on and keyguard-hidden event; exit info `REMOVE TASK` (swipe from recents) at 11:54, 12:26, 16:25, rss up to 8.4 GB. Launcher, Termux, ChatGPT, settings and other apps also in use.
+- **Content:** no sign of our edit: positions (142,1606)...(610,1749) moving between autosaves, time 336.96 -> 132.17, Blood Moon timer 1591-1693, hearts 15 of 16; caption times match file times. Settings have none of the benchmark's forced values (`show_fps = 1`, `touch_controls = 1`).
+- **Not established:** who played. The pre-Nov 5 save has no copy on the PC or tablet (266 + 18 files scanned, hashes only); the pre-Nov 5 settings (1745 bytes, `8036460e`) have no copy, only an Oct 31 one. The Nov 3 per-file list doesn't give hash `159b1d58`, so the save also changed between Nov 3 and Nov 4 or the list format differs; not resolved.
+- **Code:** no write path to the source save or settings found in `benchmark-mvp`.
+
 ## Step 11b refinements before the PR, 2026-11-04 (user-authorized; PR not opened, 11c not authorized)
 
 - **Release check:** 19:55Z, newest `v0.3.1-beta`, tag `c48606c` = `upstream/main`.

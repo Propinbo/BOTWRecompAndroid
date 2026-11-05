@@ -30,6 +30,7 @@ Release-check record (newest first):
 
 | Checked (UTC) | Newest published release | Tag SHA | Active baseline | Note |
 |---|---|---|---|---|
+| 2026-11-05T15:48Z | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Before PR #278; tag = `upstream/main`, no newer release. |
 | 2026-11-04T19:55Z | `v0.3.1-beta` (published 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Step 11b refinements; tag = `upstream/main`, no newer release. |
 | 2026-11-04T18:38Z | `v0.3.1-beta` (published 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | End of step 11b, pinned to this SHA; tag = `upstream/main`, no newer release. |
 | 2026-11-04T15:58Z | `v0.3.1-beta` (published 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Start of step 11a; campaign pinned to this SHA. Tag = `upstream/main`. |
@@ -320,7 +321,7 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 
 ### 11b. Benchmark MVP, no hooks in `tools/patches.py`.
 
-**Status (2026-11-04): COMPLETE** on branch `benchmark-mvp`, head `6a808ef` after refinements (base `c48606c`), local only. The user's 11b command narrowed the contract below: `cap30` only (no `fps_mode=4`), statuses `ok`/`cache_cold`/`harness_error` (no `pass`/`fail`), no headroom field (derivable from `frames.csv`). All three scenes ran 3 repeats in R and N with no `harness_error`; 13 of 18 windows `cache_cold`. Details in MALI_PROGRESS.md. Steps 11c and 11d are not authorized.
+**Status (2026-11-04): COMPLETE** on branch `benchmark-mvp`, head `08fb8f5` (base `c48606c`), published as PR #278. The user's 11b command narrowed the contract below: `cap30` only (no `fps_mode=4`), statuses `ok`/`harness_error` (no `pass`/`fail`), no headroom field (derivable from `frames.csv`). All three scenes ran 3 repeats in R and N with no `harness_error`. Details in MALI_PROGRESS.md. Steps 11c and 11d are not authorized.
 
 
 **Done when:** behind the benchmark switch, off by default and with no change in behaviour when off, a run on 1.9.0 goes from start to report on a scratch save without user input and rejects other versions with `unsupported version`. Scenes come from the methods 11a confirmed, with arrival checked by Link's coordinates. The report gives per-frame CPU and GPU time, p50/p95/p99, headroom against budget, repeats with median and spread, a passport without serial numbers, and the `pass`/`fail`/`harness_error` statuses. `cap30` and `fps_mode=4` are both reported with display rate and actual target. `GAMELIB_ID` does not change. Upstream PR only on separate authorization.
