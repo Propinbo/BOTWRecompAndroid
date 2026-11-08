@@ -4,7 +4,7 @@ Approved in chat on 2026-10-30. This is the authoritative milestone plan. The or
 
 Upstream: https://github.com/mamcjr/BOTWRecompAndroid
 
-Current active source baseline after the third authorized upstream migration phase (2026-11-04): **`06111e4c981a101ea7e8d2b1b9e709667f3e057b`**, upstream `v0.3.0-beta`. No APK was built or installed for this baseline: the tablet still runs the previous test APK `9a141dc5…` (0.2.13-based). Fork main and local `main` were fast-forwarded `3d66ac0` (`v0.2.5-beta`, the milestone 3b/4 baseline) → `b02302c` (`v0.2.8-beta`) → `4bad6dc` (`v0.2.10-beta`) → `06111e4`; the 0.2.5 baseline itself came by fast-forward from `4acbf40c9312618e16e1153f3696c64e125d2a2f` on 2026-10-30. Completed milestones and phases keep the SHAs they used. See "Rolling upstream baseline" for the last release check.
+Current active source baseline after the authorized 2026-11-08 fast-forward: upstream **`v0.3.2-beta`** at **`7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5`**. Completed milestones and phases keep the SHAs they used. See "Rolling upstream baseline" for the release checks.
 
 Planned test hardware: MediaTek Dimensity 9400+, Arm Immortalis-G925 MC12. Hardware and device results must be verified from real device evidence during the authorized device milestones.
 
@@ -30,6 +30,32 @@ Release-check record (newest first):
 
 | Checked (UTC) | Newest published release | Tag SHA | Active baseline | Note |
 |---|---|---|---|---|
+| 2026-11-08 07:29 UTC | `v0.3.2-beta` | `7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5` | `v0.3.2-beta` `7bb5bc9` | Repeat API + tag/main check during benchmark-v2; unchanged, campaign remains pinned. |
+| 2026-11-08 07:12 UTC | `v0.3.2-beta` (published 2026-11-08 04:57:53Z) | `7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5` | `v0.3.2-beta` `7bb5bc9` | Releases API + tag/main verified; authorized FF main and benchmark-v2. |
+| 2026-11-07 21:39 UTC (8 ноября MSK) | `v0.3.1-beta` | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Начало второго этапа Fullscreen16:10: Releases API + git ls-remote, нового релиза нет. Кампания остаётся на прежней базе + принятый phase1. |
+| 2026-11-07 20:28 / 20:40 UTC | `v0.3.1-beta` | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Fullscreen 16:10: старт сессии (Releases API + git ls-remote), повтор перед выбором правки. Новый релиз отсутствует; новый worktree на прежней базе. |
+| 2026-11-07 ~20:04 UTC | `v0.3.1-beta` | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Перенос ultrawide-правок в отдельный worktree по запросу пользователя. GitHub Releases API + git ls-remote; без миграции/сборки/переустановки. |
+| 2026-11-07 ~18:31 UTC | `v0.3.1-beta` | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Перед выбором правки Armoranth: Releases Atom + git ls-remote. Без миграции. |
+| 2026-11-07 ~18:02 UTC | `v0.3.1-beta` | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Проверка перед исправлением окна подбора Armoranth. GitHub Releases + git ls-remote; main уже `8f5b9a6`, опубликованного нового релиза нет. Кампания остаётся на прежней базе. |
+| 2026-11-07 ~09:55 UTC | `v0.3.1-beta` | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Регрессия списка сейвов после правок сундука. GitHub Releases через web, SHA git ls-remote; без миграции. |
+| 2026-11-07 ~09:32 UTC | `v0.3.1-beta` | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Раскладка окна сундука по уточнению пользователя. GitHub Releases через web (API rate limit), SHA через git ls-remote; без миграции. |
+| 2026-11-07 ~09:13 UTC | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` (git ls-remote rechecked ~09:25 UTC) | `v0.3.1-beta` `c48606c` | Продолжение окна сундука: раздвоение, пропорции содержимого и покадровая анимация. Новых релизов нет. |
+| 2026-11-07 ~08:24 UTC | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Проверка перед исправлением окна предмета из сундука в ultrawide на OnePlus. |
+| 2026-11-06 ~21:32 UTC | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Проверка перед установкой уже испытанной Fullscreen-сборки на OnePlus по запросу пользователя. |
+| 2026-11-06 ~21:22 UTC | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Повторная проверка перед правкой пропорций текста и значка Skip в Fullscreen. |
+| 2026-11-06 ~20:45 UTC | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Проверка GitHub Releases на старте и перед локальным патчем для переходов L/R в Fullscreen. |
+| 2026-11-06 ~11:28 UTC | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Read-only release check before repeating grass A/B on a copy of the player's scene. Tag and upstream main matched. |
+| 2026-11-06T10:29Z | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Session start for the local grass-mask A/B. Published tag and upstream main matched. |
+| 2026-11-05T20:01Z | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Session start for the SavageWindRecomp port feasibility review. |
+| 2026-11-05T19:58Z | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Session start for the requested save import on the tablet. |
+| 2026-11-05T19:54Z | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Session start for the requested OnePlus save export. |
+| 2026-11-05T19:54Z | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Session start for the MacNativeGames port feasibility review. |
+| 2026-11-05T19:31Z | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Session start for the requested OnePlus driver update. |
+| 2026-11-05T19:06Z | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Session start for the separately requested OnePlus setup. |
+| 2026-11-05T17:51Z | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Session start for the out-of-plan world reproduction checks. Remote main identical to the tag. |
+| 2026-11-05T17:25Z, 17:34Z | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Read-only issue triage outside the plan. Remote main identical to the tag, zero post-release commits. |
+| 2026-11-05T16:16Z | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Session-start GitHub Releases check for the cache × thermal experiment. |
+| 2026-11-05T15:55Z | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Session-start GitHub Releases check for offline benchmark analysis. |
 | 2026-11-05T15:48Z | `v0.3.1-beta` (published 2026-11-04 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Before PR #278; tag = `upstream/main`, no newer release. |
 | 2026-11-04T19:55Z | `v0.3.1-beta` (published 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Step 11b refinements; tag = `upstream/main`, no newer release. |
 | 2026-11-04T18:38Z | `v0.3.1-beta` (published 14:03:45Z) | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | End of step 11b, pinned to this SHA; tag = `upstream/main`, no newer release. |
@@ -49,6 +75,18 @@ Release-check record (newest first):
 | 2026-11-01T17:36Z | `v0.2.10-beta` (published 15:14:53Z) | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.10-beta` `4bad6dc` (migrated; campaign pinned) | No newer release or untagged main commit after the 0.2.10 regression. |
 | 2026-11-01T15:17Z, rechecked 15:18Z before publication | `v0.2.10-beta` (published 15:14:53Z); `v0.2.9-beta` `b753dcd` published 12:24:22Z | `4bad6dcb0390ae81d0e5d2e174809422d7198d97` | `v0.2.8-beta` `b02302c` (campaign pinned) | Both appeared during the pinned 0.2.8 regression; not switched mid-campaign. Migration proposed below. |
 | 2026-11-01T09:53Z | `v0.2.8-beta` (published 2026-10-31T21:53:54Z) | `b02302c73fc2a0df7bd70b2e51a56d9d99af9421` | `v0.2.5-beta` `3d66ac0` → migrated to `b02302c` | No newer untagged commits at that time. |
+
+## Внеплановая кампания Fullscreen 16:10, 2026-11-07
+
+Прямое поручение пользователя: постепенно реализовать полноценный Fullscreen на подключённом планшете 16:10 и создать новый worktree. Это отдельная кампания, не разрешение на шаги 11c/11d или публикацию исходников. База зафиксирована: `v0.3.1-beta` `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` + испытанные runtime-фиксы из `ultrawide-fixes`. Новый worktree `.mali/worktrees/fullscreen-16x10/`, ветка `fullscreen-16x10`; прежние worktree сохраняются.
+
+Первый ограниченный этап по текущему поручению: устранить асимметрию коррекции пропорций ниже 16:9. Мир занимает весь экран с корректной проекцией; базовые UI-панели и текст сохраняют пропорции и целиком помещаются по ширине (временно центрированная по вертикали раскладка 16:9 поверх полного мира). Сначала проверенный backup планшета, затем только scratch-профили. Критерии: A/B с исходным Fullscreen и Original16:9, камера aspect1.6, круглые элементы HUD без растяжения/обрезки, выборочная проверка списка сейвов, Inventory/System/Adventure Log и карты, Android-сборка и целевые host-проверки. Не менять `patches.py`, `GAMELIB_ID`, хуки версий или реальные сейвы. По окончании — отчёт с ограничениями и остановка.
+
+Статус первого этапа: **COMPLETE с ограничениями**, 8 ноября MSK (7 ноября UTC). Глобальное растяжение устранено и проверено Native/Recompiled, сборка/host/negative controls прошли; исходная установленная сборка и реальные файлы восстановлены/сверены. UI ещё не использует всю высоту; масштаб модели Inventory и touch-shortcut остаются открытыми. См. профильный раздел `MALI_PROGRESS.md` и локальный `REPORT.md`.
+
+Последующие этапы пока только направление: заполнение дополнительной высоты с корректными якорями HUD; карта/переходы/диалоги/катсцены и отдельные раскладки по результатам первого этапа; регрессия на ультрашироком устройстве. Их выполнение не следует автоматически из окончания первого этапа.
+
+**Второй ограниченный этап — разрешён и запущен** прямой командой пользователя «приступай к следующему шагу» после отчёта phase1 (8 ноября MSK). Scope: вертикальные якоря игрового HUD для добавленной высоты16:10 с сохранением uniform-fit размеров, согласованное перемещение групп/текста/scissors и hit-test миникарты. Сравнить с принятым phase1 на том же планшете, с touch-controls включёнными/выключенными; исключить побочное перемещение меню/карты/центральных окон; выборочный Native/Recompiled/Original smoke, host-тесты и Android-сборка. Проверить synthetic touch shortcut либо честно зафиксировать оставшийся blocker. База `c48606c` + принятые phase1 source-хэши; прежний worktree. Backup за8 ноября до запуска, только scratch-профили. Масштаб/компоновка3D Линка в Inventory, полноценная новая раскладка карты/меню, FOV-политика и следующие этапы **не** входят. После отчёта остановиться; без source commits/push/PR.
 
 ## 4→5. Upstream migration phase: 0.2.5-beta → 0.2.8-beta (COMPLETE, 2026-11-01)
 
@@ -333,3 +371,12 @@ Superseded proposal: the earlier "migrate to 0.2.10 before milestone 5" item is 
 ### 11d. What needs hooks, Native only.
 
 **Done when:** absolute camera (and the path without gravity and collisions, if taken up) works behind the switch in Native through `fixes[]` in `native.c`, with `tools/patches.py` and `GAMELIB_ID` unchanged and Recompiled reporting the feature as unavailable. Stop criterion from FEASIBILITY.md holds: if Link cannot complete 60 s without death or state change within the spike, the path is dropped and scenes stay on the pan.
+
+
+
+
+## Benchmark v2 — отдельно разрешённая кампания, 2026-11-08
+
+Разрешены FF fork/local main до upstream/main и benchmark-v2 на `7bb5bc9`: причины длинных кадров (SavageWindRecomp MIT, атрибуция), ограниченное ожидание thermal перед каждой сценой, headroom, раздельные периоды игры/показа. Проверка: R, три сцены × два повтора, холодный старт и flag-off. Backup, только scratch. Локальные source-коммиты разрешены, push/PR запрещены. Исторические 11c/11d не запускаются.
+
+Результат кампании benchmark-v2 (2026-11-08): COMPLETE, source `f50e05a` на pinned `7bb5bc9`; R3×2, cold, flag-off + negative controls выполнены. Исторические 11c/11d не запускались. Подробности в MALI_PROGRESS.md и `.mali/benchmark/v2/REPORT.md`.

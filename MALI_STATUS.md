@@ -1,49 +1,28 @@
 # MALI status (read this first; keep it short)
 
-Updated: 2026-11-04 (Europe/Moscow). History lives in `MALI_PROGRESS.md`: find a section by heading, never read the whole file.
+Updated: 2026-11-08 (Europe/Moscow). History: `MALI_PROGRESS.md`, select the needed heading.
 
-## Base
-- Active baseline: upstream `v0.3.1-beta`, tag `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` = `upstream/main` = fork `main` = local `main`. Last release check 2026-11-05T15:48Z (see table in `MALI_PLAN.md`); recheck at session start.
-- Tablet (Immortalis-G925; serial from `adb devices`): stock 0.3.1 debug APK `9e11940d...54fe` verified on device 2026-11-05 after the `shader_cache_at_start` control; app stopped, scratch dirs removed.
-- Checkout: `benchmark-mvp`, clean.
-- `BOTWRecompAndroid-checkpoint/` (untracked dir at repo root) is an old local copy; ignore it.
+## Base and checkouts
+- Active release baseline: `v0.3.2-beta`, tag = upstream/main = fork main = local main `7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5`. GitHub Releases checked 2026-11-08 07:12 and 07:29 UTC; published 04:57:53Z. Both main refs advanced from c48606c after ancestor checks; ordinary FF push to fork main only.
+- Current managed worktree: `C:/Users/propinbo/.codex/worktrees/benchmark-v2/BOTWRecompAndroid-Mali`, branch `benchmark-v2`, clean, HEAD `f50e05a66df63782e64add54aa12d1d251f7593c` (two local source commits). No benchmark branch push or PR. `.mali` points to the original workspace's local evidence.
+- Original checkout remains `grass-masks-ab` at c48606c with its two experimental source edits. Existing `.mali/worktrees/ultrawide/` and `fullscreen-16x10/` with uncommitted work preserved. Fullscreen HUD work was not executed by this task.
 
-## Branches (fork `Propinbo/BOTWRecompAndroid`)
-- `mali-workspace`: documentation checkpoint only (published through the step 11b refinements; find the commit with `git log origin/mali-workspace`).
-- `benchmark-mvp` `08fb8f5` (4 commits on `c48606c`): pushed to fork, PR #278 open, ready for review.
-- `pr-maintenance5` `e9ef72c`: pushed to fork, PR #255 open.
-- `format-probe` `24cd72b`: pushed to fork only, no PR (test_vk_formats probe for #244).
-- Local only, not pushed: `audit-fixes-030`, `audit-fixes-0213`, `pr210-followups`, `vuid-fixes-030`, `vuid-fixes-0213`.
-- Merged upstream earlier: #183 (`pace-vsync-phase`), #210 (`mali-bc-render-target-0213`), #245 (`fix-test-nvn-lifetime`).
+## Benchmark v2 — COMPLETE
+- User-authorized scope complete: per-frame raw counters for pipeline build/wait, GPU wait, texture upload/BC/ASTC decode and guest file reads; likely causes for periods > budget; window summaries in report.json; thermal_max/thermal_wait_s before each scene/repeat; CPU/GPU headroom; separate game and actual presentation metrics. SavageWindRecomp 257b1f3 MIT attribution + full notice included.
+- Local commits: dbb1d3a implementation; f50e05a clocks with flag off reused and missing GPU samples kept unknown. Base pinned 7bb5bc9. Patch `.mali/benchmark/v2/benchmark-v2.patch`.
+- Final APK f50e05a, R, three scenes × two repeats: 6/6 ok, each 30.00 FPS, zero game frames >50 ms. Game p99 33.541–33.803 ms; headroom p50 5.988–6.487 ms. Display data separately shows occasional late presentation; zero missing feedback in all six windows. CSV→JSON independent recomputation PASS.
+- Cold start (empty separate scratch cache): 1529 completed builds, 5385.880 ms blocking build wait across the trace. Confirmed frame 1430.459 ms with 1379.183 ms pipeline wait; BC-decode stalls also visible. Excluding the first incomplete interval: 14 frames >50 ms attributed to pipeline wait. After warmup, measured window 30 FPS. Raw loading/warmup kept in frames.csv, window=1 selects the measured period.
+- Flag off vs stock 0.3.2, 100 s each / last900 frames: period p50 33.33/33.33 ms; CPU 19.715/19.185 ms (+2.76%); GPU 27.395/27.350 ms (+0.16%); zero >50ms, zero benchmark logs or report files. Limited regression check, not proof of zero branch cost.
+- APK build, Android host tests, counter/classifier/display-ID/missing-data/cooling policy tests PASS. Broken-classifier negative control rejected. Invalid thermal_max rejected as bad_scene_file. Thermal status was 0 at all six scene starts; hot timeout was tested synthetically, not forced on the tablet.
+- Causes are a measured-counter heuristic: background compilation is marked correlation, unknown is retained. GPU samples are the existing asynchronous busy estimates; actual presentation uses GOOGLE feedback, never substituted CPU timestamps.
+- Full evidence: `.mali/benchmark/v2/REPORT.md`, `summary.json`, `runs/`, build/test logs. First FULL-R on dbb1d3a is supplementary; mandatory FULL2-R + COLD-R ran on final f50e05a, passport clean.
 
-## Open upstream items (`mamcjr/BOTWRecompAndroid`)
-- PR #255 (maintenance5 for points without PointSize, no empty `vkCmdCopyBuffer` regions): open, mergeable, 0 comments at last check; validation, FPS and runner checks passed.
-- PR #278 (built-in benchmark, first version): open, not draft.
-- Issue #214 (built-in benchmark proposal): open; maintainer accepted scenes, scratch-save memory writes, 1.9.0 only, fixed cap via env; hooks Native-only for the prototype.
-- Issue #244 (formats without feature report, UB): open; our probe report published as a comment, 2 comments total at last check.
-- Issue #174: see its sections in `MALI_PROGRESS.md`; maintainer asked for more data, not pursued now.
+## Tablet and save safety
+- Backup `.mali/user-backup/2026-11-08/benchmark-v2/`: 41 files, archive a4eb18df…12fe, all hashes verified. Player save/settings and original active cache unchanged after every run. Only scratch saves/settings/caches were used.
+- Exact original installed APK 0.3.1 debug `9e11940d…54fe` restored with adb downgrade without data removal; installed hash verified, all41 save/settings hashes matched backup, app stopped. Scratch cleanup recorded in `.mali/benchmark/v2/cleanup.json`.
+- OnePlus's last known separate menulr package and save state were untouched by this task.
 
-## Authorized now
-- Nothing in progress. Step 11b is COMPLETE and published as PR #278 (results: `MALI_PROGRESS.md` "Step 11b published as PR #278", `.mali/benchmark/mvp-11b/`).
-- Standing: documentation-only checkpoints of the four docs to `mali-workspace` (including `MALI_STATUS.md` since 2026-11-04).
-
-## Awaiting the user's decision
-- Steps 11c, 11d: each needs its own command (`Приступай к шагу N`).
-- A way to start the benchmark without adb: none in the app. Upstream pushes, new PRs, source commits: need separate authorization. `audit-fixes-030` stays unpushed by the user's decision.
-
-## Key user decisions (pointers into `MALI_PROGRESS.md` by heading)
-- Role contract: user owns product, agent owns technical choices; protect the user's saves; scratch copies only. See `AGENTS.md` and "Built-in benchmark proposal and role contract".
-- Rolling-upstream policy (2026-11-01) and PR text rules (no "Generated with" line, no unpushed branches mentioned). See "Migration to 0.3.1 and branch `pr-maintenance5`".
-- Step 11 and its split 11a-11d approved after the maintainer's answer. See "Step 11 added to the plan".
-- Test strategy: metamorphic checks first, negative control before a test is binding, `fps_mode=4` instead of `LARECOMP_FPS=40`. See "Benchmark test strategy for step 11".
-- PR auto-fix events: CI/conflict fixes stay local, show diff, wait for confirmation (memory rule).
-
-## Where the main reports are
-- User save and settings backups: `.mali/user-backup/<date>/`; `backup.py` beside them (rule in `AGENTS.md`).
-- Benchmark: `.mali/benchmark/FEASIBILITY.md`, `TEST_STRATEGY.md`, `probe-11a/`, `mvp-11b/`.
-- PR #255 evidence: `.mali/pr-maintenance5-031/` (`PR.md`, `device/sheet.jpg`, `runner.log`, APKs).
-- Format probe: `.mali/format-probe/` (report JSON, `run.log`, reply draft).
-- G925 audit: `.mali/audit-g925-20261103/` (`SUMMARY.md`, `FINDINGS.md`, `FIXES.md`).
-- VUID triage: `.mali/vuid-triage/`; migration 0.3.0: `.mali/migration-030/`; fix-nvn-lifetime: `.mali/fix-nvn-lifetime/`.
-- Teleport dissolve and milestones 1-10: `.mali/milestone-*`, `.mali/issue-174-*`.
-- Checkpoint manifest: `.mali/checkpoint-manifest.json`.
+## PRs, workflow and next actions
+- PR #278 MERGED (2026-11-08 02:42:45Z), merge 681be27. Benchmark code, hooks, scene file and commit stamping identical to benchmark-mvp 08fb8f5; other merge-tree differences are independent upstream changes. PR #255 also MERGED in 0.3.2.
+- `mali-workspace` remains documentation-only, separate from contribution branches. This task's source and documentation stay local; no checkpoint push under the explicit no-push instruction.
+- No further task or milestone started. Historical 11c/11d still require separate user commands. For previous work and decisions, use the appropriate headings in MALI_PROGRESS.md and MALI_PLAN.md.
