@@ -30,6 +30,7 @@ Release-check record (newest first):
 
 | Checked (UTC) | Newest published release | Tag SHA | Active baseline | Note |
 |---|---|---|---|---|
+| 2026-11-08 08:00 UTC | `v0.3.2-beta` | `7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5` | `v0.3.2-beta` `7bb5bc9` | Flag-off overhead follow-up: Releases API + tag/main unchanged; no migration. |
 | 2026-11-08 07:29 UTC | `v0.3.2-beta` | `7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5` | `v0.3.2-beta` `7bb5bc9` | Repeat API + tag/main check during benchmark-v2; unchanged, campaign remains pinned. |
 | 2026-11-08 07:12 UTC | `v0.3.2-beta` (published 2026-11-08 04:57:53Z) | `7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5` | `v0.3.2-beta` `7bb5bc9` | Releases API + tag/main verified; authorized FF main and benchmark-v2. |
 | 2026-11-07 21:39 UTC (8 ноября MSK) | `v0.3.1-beta` | `c48606cfafaaa4f41083830bbec2fd8b9ab01b47` | `v0.3.1-beta` `c48606c` | Начало второго этапа Fullscreen16:10: Releases API + git ls-remote, нового релиза нет. Кампания остаётся на прежней базе + принятый phase1. |

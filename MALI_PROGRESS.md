@@ -4,6 +4,18 @@ Checkpoint ID: MALI-M10-COMPLETE-2026-11-02 (milestone 10 complete, H-A supporte
 
 Updated: 2026-11-08, Europe/Moscow (UTC+03:00).
 
+## Benchmark v2: flag-off overhead audit, 2026-11-08 (user-authorized)
+
+- Задание: проверить +2.76% CPU из прежнего одиночного сравнения; аудит флага, stock/v2 по3 прогона в ABBA-порядке, локальный коммит без push.
+- База закреплена на7bb5bc9/v0.3.2, release check08:00UTC без изменений. Порядок ABBAAB: A=stock032, B=60813bb, по3 каждой версии; первые4 — ABBA, последние2 — продолжение того же шаблона. R, один и тот же Hateno seed, scratch save/settings/cache заново на каждом boot, 100s, последние900 frames для CPU p50. Порог thermal<=1 перед стартом, ожидание максимум300s.
+- Аудит: atomic updates уже были под g_benchmark; bench_clock не читает часы при false; frame/handoff/present hooks также под bool. Нашлось eager вычисление аргумента bench_add: дополнительный SDL clock в BC decode при отдельно включённом LARECOMP_TEXTURE_TRACE. В прежнем OFF trace был выключен, поэтому это не объяснение +2.76%.
+- Коммит60813bb: bench_add — lazy macro с одной проверкой bool перед аргументами/atomic; predicates decode используют bench_on вместо чтения часов ради bool. Тест проверяет ноль вычислений аргумента/clock reads/atomic updates при flag-off; старый helper отвергнут negative control134. Android host suite + APK build PASS.
+- Перед запусками41 файл сверены с сегодняшним backup, архив проверен по каждому файлу; исходный APK9e11940d…54fe совпал. Данные `.mali/benchmark/off-abba/`, серия COMPLETE. Новых milestone/публикаций нет.
+
+- COMPLETE: ABBAAB, CPU p50 по порядку18.690/19.180/19.540/19.430/19.820/18.980ms. Stock median19.430, range18.690–19.820(1.130ms,5.82%); B median19.180, range18.980–19.540(0.560ms,2.92%). B−A=−0.250ms(−1.29%), по модулю меньше обоих межпрогонных размахов. Разность меньше разброса: устойчивая цена счётчиков не обнаружена, прежние+2.76% согласуются с шумом. Это не доказательство ровно нулевой стоимости bool-веток; B60813bb, отдельной повторной серии старойf50e05a не было.
+- Все6 стартовали thermal0; после первых5=0, после последнегоB=1. Ограниченная термостабильность зафиксирована, не скрыта. Во всех последних900frames:0period>50ms, periodp5033.33–33.34ms. Benchmark logs/artifacts отсутствуют, guard-before/after совпали6/6. Результаты independently recomputed from raw logs.
+- Сохранность:41 файл совпал с backup; точный исходный APK9e11940d…54fe восстановлен через-r-d без очистки, приложение остановлено. Все6 scratch-директорий удалены после проверки canonical paths. Raw/сводки в `.mali/benchmark/off-abba/`; source60813bbaf17b7ab451b61fd158fe5d5f119cbf44, APK3a8a660e…4c056; только локальные source/doc commits, push не было.
+
 ## Benchmark v2 и FF main, 2026-11-08 (user-authorized)
 
 - Releases 2026-11-08 07:12 UTC: новый `v0.3.2-beta`, tag/main `7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5` (04:57:53Z). Кампания закреплена.
