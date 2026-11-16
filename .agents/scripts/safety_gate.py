@@ -226,16 +226,21 @@ def check_git_statement(tokens: list[str], cwd: str) -> dict[str, Any] | None:
         repo_override: str | None = None
         has_force_with_lease = False
         has_delete_flag = False
+        has_bulk_refs = False
         j = 0
         while j < len(args):
             a = args[j]
-            if a in ("--force", "--force-if-includes") or has_short_flag(a, "f"):
+            if a == "--force" or has_short_flag(a, "f"):
                 return decision(
                     "deny",
                     "Blocked raw force push; use --force-with-lease on an explicit non-main origin branch.",
                 )
             if a == "--force-with-lease" or a.startswith("--force-with-lease="):
                 has_force_with_lease = True
+                j += 1
+                continue
+            if a in ("--tags", "--all", "--mirror", "--prune"):
+                has_bulk_refs = True
                 j += 1
                 continue
             if a == "--delete" or has_short_flag(a, "d"):
@@ -284,16 +289,30 @@ def check_git_statement(tokens: list[str], cwd: str) -> dict[str, Any] | None:
                 return decision("deny", "Blocked deleting remote main/master branch.")
 
         if has_force_with_lease:
+            if has_bulk_refs or has_delete_flag:
+                return decision(
+                    "deny",
+                    "Blocked force-with-lease push combined with bulk ref or deletion flags.",
+                )
             if target_remote != "origin" or not refspecs:
                 return decision(
                     "deny",
                     "Blocked force-with-lease push without explicit origin and non-main branch refspec.",
                 )
             for ref in refspecs:
+                if ref.startswith(":"):
+                    return decision(
+                        "deny",
+                        f"Blocked force-with-lease deletion refspec ({ref}).",
+                    )
                 dst = ref.split(":", 1)[-1]
                 if dst.startswith("refs/heads/"):
                     dst = dst[len("refs/heads/") :]
-                if dst in ("", "main", "master", "HEAD") or dst.startswith("refs/tags/"):
+                if (
+                    dst in ("", "main", "master", "HEAD", "@")
+                    or dst.startswith("@")
+                    or dst.startswith("refs/tags/")
+                ):
                     return decision(
                         "deny",
                         f"Blocked force-with-lease push targeting protected ref ({ref}).",

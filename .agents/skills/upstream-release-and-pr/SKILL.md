@@ -8,7 +8,7 @@ description: >-
 
 ## 1. Rolling Upstream Release Check
 
-1. Run at session start, before designing/implementing a fix, and before packaging a PR:
+1. Check releases when starting upstream-bound source work, evaluating/syncing baselines, or rebasing/packaging a PR (skip on unrelated local tasks or mid-campaign turns pinned to a chosen SHA):
    - `gh release list -R mamcjr/BOTWRecompAndroid -L 5`
    - `git ls-remote upstream refs/heads/main refs/tags/<newest_tag> refs/tags/<newest_tag>^{}`
 2. Inspect release notes (`gh release view <tag> -R mamcjr/BOTWRecompAndroid`) and open/merged PRs (`gh pr list -R mamcjr/BOTWRecompAndroid --author Propinbo`) to check for overlapping upstream fixes or regressions.
@@ -30,10 +30,7 @@ description: >-
 
 ## 3. Pre-PR Audit and Local Packaging (`CONTRIBUTING.md`)
 
-1. Verify the branch merges cleanly against current `upstream/main` (`git merge-tree --write-tree`).
-2. Audit `git diff --stat <base>..HEAD` and `git log -n 5`:
-   - Single focused change per PR (`CONTRIBUTING.md`).
-   - **Zero** Nintendo assets, dumps, generated code, Switch fonts, `.mali/`, `.agents/`, `AGENTS.md`, `MALI_*.md`, or unintended edits to `tools/patches.py` / `GAMELIB_ID` / `.gitignore`.
-   - All code, comments, and commit messages in **English**.
+1. Run [workspace_check.py](../../scripts/workspace_check.py) (`python -B -S .agents/scripts/workspace_check.py pr <worktree> --base upstream/main`) for instant validation of working-tree cleanliness, `git merge-tree --write-tree`, forbidden paths (`Dump/`, `extracted/`, `generated*`, `.bfttf`, `.mali/`, `.agents/`, `AGENTS.md`, `MALI_*.md`), protected files (`tools/patches.py`, `GAMELIB_ID`, `.gitignore`), and English-only commits/diffs.
+2. Audit `git diff --stat <base>..HEAD` and `git log -n 5` to confirm one focused change per PR (`CONTRIBUTING.md`).
 3. Export a clean `.patch` file and draft English `PR_DRAFT.md` + `REPORT.md` locally under `.mali/<topic>/upstream-pr/`.
-4. Run an independent verifier subagent on the final diff and test logs, then request explicit owner approval before running `git push` or `gh pr create`.
+4. Run relevant host/Bionic/device tests (and optionally dispatch `independent-verifier` only for subtle or high-risk runtime changes), then request explicit owner approval before running `git push` or `gh pr create`.

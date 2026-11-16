@@ -1,6 +1,7 @@
 ---
 trigger: glob
 globs: "**/runtime/nvn/**, **/runtime/hle/**, **/tools/test_*, **/tools/**/test_*"
+description: "NVN, Vulkan, Mali vs. Adreno+Turnip invariants and fast unit-first verification loop for runtime and test files."
 ---
 
 # NVN / Vulkan / Mali & Adreno Technical Invariants
@@ -26,3 +27,6 @@ Apply these verified codebase invariants whenever reading, modifying, or reviewi
 4. **Lifecycle, Reset, and Flag-Off Hygiene:**
    - Any per-boot runtime state must be cleaned via `RT_ON_RESET` (`runtime/hle.h`) and safe against async compiler/translator workers.
    - Diagnostic or benchmark hooks (`bench_on()`, `LARECOMP_*`) must use lazy checks with zero clock reads or atomic writes when disabled.
+
+5. **Fast Inner-Loop Verification:**
+   - Run fast host Python suites (`python -B tools/test_*.py`, `<2s`) and standalone NDK/WSL2/Bionic C unit binaries (`tools/test_*.c`, `tools/test_android_runtime.ps1`, `~3s`) before spending `20-40s` on full `gradlew.bat assembleDebug` + physical-device APK runs.

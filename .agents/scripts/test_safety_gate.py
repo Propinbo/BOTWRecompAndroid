@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import unittest
@@ -89,8 +90,14 @@ class SafetyGateTests(unittest.TestCase):
             "git push --force-with-lease origin main",
             "git push --force-with-lease origin HEAD:main",
             "git push --force-with-lease origin HEAD",
+            "git push --force-with-lease origin @",
+            "git push --force-with-lease --tags origin mali-workspace",
+            "git push --force-with-lease --all origin",
+            "git push --force-with-lease --delete origin mali-workspace",
+            "git push --force-with-lease origin :mali-workspace",
             "git push --force-with-lease upstream mali-workspace",
             "git push --delete origin main",
+            "git push origin :main",
             "git push upstream main",
             "git push --repo=upstream main",
         ]:
@@ -141,6 +148,7 @@ class SafetyGateTests(unittest.TestCase):
             "git push origin mali-workspace",
             "git push origin fix/upstream-sync",
             "git push --force-with-lease origin mali-workspace",
+            "git push --force-with-lease --force-if-includes origin mali-workspace",
             "git push --force-with-lease=mali-workspace:deadbeef origin mali-workspace",
             "git push --force-with-lease origin pr315-benchmark-v2:benchmark-v2",
             "gh pr create --title test --body test",
@@ -204,7 +212,7 @@ class SafetyGateTests(unittest.TestCase):
 
     def test_windows_cmd_invocation_from_agents_dir(self) -> None:
         proc = subprocess.run(
-            ["cmd", "/c", "python scripts/safety_gate.py"],
+            ["cmd", "/c", "python -B -S scripts/safety_gate.py"],
             cwd=str(AGENTS_DIR),
             input=json.dumps(run_cmd_payload("git status")),
             text=True,
@@ -212,6 +220,37 @@ class SafetyGateTests(unittest.TestCase):
             check=True,
         )
         self.assertEqual(json.loads(proc.stdout.strip())["decision"], "allow")
+
+    def test_hooks_json_matcher_scopes_only_mutating_tools(self) -> None:
+        hooks_cfg = json.loads((AGENTS_DIR / "hooks.json").read_text(encoding="utf-8"))
+        group = hooks_cfg["botw-safety-gate"]["PreToolUse"][0]
+        matcher = group["matcher"]
+        cmd = group["hooks"][0]["command"]
+        self.assertIn("-B", cmd)
+        self.assertIn("-S", cmd)
+        for tool in (
+            "run_command",
+            "write_file",
+            "edit_file",
+            "write_to_file",
+            "replace_file_content",
+            "multi_replace_file_content",
+        ):
+            self.assertIsNotNone(re.fullmatch(matcher, tool), f"Expected matcher to match {tool}")
+        for tool in (
+            "read_file",
+            "search_web",
+            "exit_plan_mode",
+            "enter_plan_mode",
+            "ask_question",
+            "manage_task",
+            "invoke_subagent",
+            "send_message",
+            "manage_subagents",
+            "run_workflow",
+        ):
+            self.assertIsNone(re.search(matcher, tool), f"Expected matcher NOT to match {tool}")
+            self.assertIsNone(re.fullmatch(matcher, tool), f"Expected fullmatch NOT to match {tool}")
 
 
 if __name__ == "__main__":
