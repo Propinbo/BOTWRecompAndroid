@@ -1,35 +1,42 @@
-# MALI status (read this first; keep it short)
+# MALI Status
 
-Updated: 2026-11-08 (Europe/Moscow). History: `MALI_PROGRESS.md`, select the needed heading.
+Last updated: `2026-11-16` (`Europe/Moscow`)
 
-## Flag-off overhead follow-up — COMPLETE
-- Audit/source commit `60813bb`: atomic updates and normal diagnostic clocks were already off. Fixed eager argument evaluation (extra BC clock only when separate TEXTURE_TRACE enabled) with one lazy bool guard; decode predicates use bool without clock. Tests/build PASS; old helper rejected by negative control.
-- ABBAAB, A=stock032, B=60813bb without benchmark flag;3 boots each, one Hateno scene,100s, last900 frames/boot. Stock CPU p50:18.690/19.430/19.820ms, median19.430, range1.130ms(5.82%). V2:19.180/19.540/18.980ms, median19.180, range0.560ms(2.92%). Difference−0.250ms(−1.29%) is smaller than both ranges. Stable overhead was not detected; previous single-pair+2.76% is consistent with noise, not established counter cost.
-- All starts thermal0; first5 ends0, finalB ended1. Zero periods>50ms, zero benchmark logs/artifacts. This comparison cannot resolve a small bool-branch cost or prove zero overhead; B was the corrected60813bb, not a repeat series of oldf50e05a.
-- All41 files match today's verified backup; original APK9e11940d…54fe restored with -r-d, app stopped, all6 scratch roots removed. Player/save/settings/cache guards matched throughout.
-- Evidence `.mali/benchmark/off-abba/REPORT.md`, `summary.json`, `series.json`, per-run logs/screenshots/guards, tests/build/negative logs, `restored.json`, `cleanup.json`. Local commits only, no push. Release check08:00UTC unchanged v0.3.2-beta/7bb5bc9.
+## Upstream & Repository Baseline
 
-## Base and checkouts
-- Active release baseline: `v0.3.2-beta`, tag = upstream/main = fork main = local main `7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5`. GitHub Releases checked 2026-11-08 07:12 and 07:29 UTC; published 04:57:53Z. Both main refs advanced from c48606c after ancestor checks; ordinary FF push to fork main only.
-- Current managed worktree: `C:/Users/propinbo/.codex/worktrees/benchmark-v2/BOTWRecompAndroid-Mali`, branch `benchmark-v2`, clean, HEAD `60813bb` (three local source commits). No benchmark branch push or PR. `.mali` points to the original workspace's local evidence.
-- Original checkout remains `grass-masks-ab` at c48606c with its two experimental source edits. Existing `.mali/worktrees/ultrawide/` and `fullscreen-16x10/` with uncommitted work preserved. Fullscreen HUD work was not executed by this task.
+- **Newest upstream release:** `mamcjr/BOTWRecompAndroid` **`v0.4.5-beta`** (`6113c61a1d0e6f78532eb7fdde9cc9348613ad4b`, `2026-11-16T18:47:36Z`): restart shader free (resolves parked `12e`), `#450` Mali shader eviction `>1000`, MediaTek `13 -> 19.2 MHz` Native clock fix (untested on hardware), full-span copy texture hash, vertex cache retention; `#296` still listed in Known Issues.
+- **Fork `main`:** Fast-forwarded to **`v0.4.5-beta`** (`6113c61a1d0e6f78532eb7fdde9cc9348613ad4b`), clean tree (`main == origin/main == upstream/main`).
 
-## Benchmark v2 — COMPLETE
-- User-authorized scope complete: per-frame raw counters for pipeline build/wait, GPU wait, texture upload/BC/ASTC decode and guest file reads; likely causes for periods > budget; window summaries in report.json; thermal_max/thermal_wait_s before each scene/repeat; CPU/GPU headroom; separate game and actual presentation metrics. SavageWindRecomp 257b1f3 MIT attribution + full notice included.
-- Local commits: dbb1d3a implementation; f50e05a clocks with flag off reused and missing GPU samples kept unknown. Base pinned 7bb5bc9. Patch `.mali/benchmark/v2/benchmark-v2.patch`.
-- Final APK f50e05a, R, three scenes × two repeats: 6/6 ok, each 30.00 FPS, zero game frames >50 ms. Game p99 33.541–33.803 ms; headroom p50 5.988–6.487 ms. Display data separately shows occasional late presentation; zero missing feedback in all six windows. CSV→JSON independent recomputation PASS.
-- Cold start (empty separate scratch cache): 1529 completed builds, 5385.880 ms blocking build wait across the trace. Confirmed frame 1430.459 ms with 1379.183 ms pipeline wait; BC-decode stalls also visible. Excluding the first incomplete interval: 14 frames >50 ms attributed to pipeline wait. After warmup, measured window 30 FPS. Raw loading/warmup kept in frames.csv, window=1 selects the measured period.
-- Historical single-pair flag off vs stock 0.3.2 (superseded for overhead interpretation by the follow-up above), 100 s each / last900 frames: period p50 33.33/33.33 ms; CPU 19.715/19.185 ms (+2.76%); GPU 27.395/27.350 ms (+0.16%); zero >50ms, zero benchmark logs or report files. Limited regression check, not proof of zero branch cost.
-- APK build, Android host tests, counter/classifier/display-ID/missing-data/cooling policy tests PASS. Broken-classifier negative control rejected. Invalid thermal_max rejected as bad_scene_file. Thermal status was 0 at all six scene starts; hot timeout was tested synthetically, not forced on the tablet.
-- Causes are a measured-counter heuristic: background compilation is marked correlation, unknown is retained. GPU samples are the existing asynchronous busy estimates; actual presentation uses GOOGLE feedback, never substituted CPU timestamps.
-- Full evidence: `.mali/benchmark/v2/REPORT.md`, `summary.json`, `runs/`, build/test logs. First FULL-R on dbb1d3a is supplementary; mandatory FULL2-R + COLD-R ran on final f50e05a, passport clean.
+## Active Worktrees
 
-## Tablet and save safety
-- Backup `.mali/user-backup/2026-11-08/benchmark-v2/`: 41 files, archive a4eb18df…12fe, all hashes verified. Player save/settings and original active cache unchanged after every run. Only scratch saves/settings/caches were used.
-- Exact original installed APK 0.3.1 debug `9e11940d…54fe` restored with adb downgrade without data removal; installed hash verified, all41 save/settings hashes matched backup, app stopped. Scratch cleanup recorded in `.mali/benchmark/v2/cleanup.json`.
-- OnePlus's last known separate menulr package and save state were untouched by this task.
+| Worktree | Branch | HEAD | Purpose |
+|---|---|---|---|
+| Root `.` | `main` | `6113c61` | Clean `v0.4.5-beta` baseline & workspace docs |
+| `.mali/worktrees/fix-rt-load-upload-296` | `fix/rt-load-upload-296` | `0230d2f` | **OPEN PR #461** (`#296`/`#438` on `280048bc`) |
+| `.mali/worktrees/soft-linear-upstream` | `fix/soft-linear-filter` | `ab828a1` | **OPEN PR #436** (`soft_linear` on `5946454c`) |
+| `.mali/worktrees/pr315-benchmark-v2` | `pr315-benchmark-v2` | `674c8b0` | **OPEN PR #315** (`origin/benchmark-v2`) |
+| `.mali/worktrees/benchmark-scenes-v2` | `benchmark-scenes-v2` | `7b69caa` | Unpushed 11-scene set (`44360ae..7b69caa`) |
 
-## PRs, workflow and next actions
-- PR #278 MERGED (2026-11-08 02:42:45Z), merge 681be27. Benchmark code, hooks, scene file and commit stamping identical to benchmark-mvp 08fb8f5; other merge-tree differences are independent upstream changes. PR #255 also MERGED in 0.3.2.
-- `mali-workspace` remains documentation-only, separate from contribution branches. This task's source and documentation stay local; no checkpoint push under the explicit no-push instruction.
-- No further task or milestone started. Historical 11c/11d still require separate user commands. For previous work and decisions, use the appropriate headings in MALI_PROGRESS.md and MALI_PLAN.md.
+## Physical Devices & Backup Guards
+
+| Device | GPU / Driver | Installed App | Verified Backup & Caches |
+|---|---|---|---|
+| **SM-X730** | Mali-G925 MC12 (stock Mali) | `v0.4.3-beta` (`3d3ad8e7...10846`) | `2026-11-16`: `69/69` (`diffs=0`, `ActivityThread.IDS.xml` system-updated); `3047` SPIR-V |
+| **CPH2653** | Adreno 830 (**Turnip `Turnip_Gen8_V38_Patched`** `2bbb279a...` only) | `v0.4.3-beta` (`3d3ad8e7...10846`) | `2026-11-16`: `84/84` (`diffs=0`); `1865` SPIR-V |
+| **SM-X926B** | Immortalis-G720 MC12 (`r44p1`, no Turnip) | Official `v0.3.4-beta` (`7b94efcc...3dcb`) | Setup `2026-11-12` (`43/43` payload, `botwgame.so`) |
+
+Rollback APK: `.mali/apk/v0.4.3-beta/BOTWRecompAndroid-0.4.3-beta-signed.apk` (`3d3ad8e7...10846`).
+
+## Open PRs & Active Priorities
+
+- **PR #461** (`OPEN`, `MERGEABLE`/`CLEAN` vs `6113c61a`): `#296`/`#438` writeback RT sync & 128B linear pitch (`0230d2f`).
+- **PR #436** (`OPEN`, `MERGEABLE`/`CLEAN` vs `6113c61a`): `soft_linear` fallback for formats without HW linear support (`ab828a1`).
+- **PR #315** (`OPEN`, `CONFLICTING`): Benchmark v2 stalls/cooling/timing (`674c8b0`); needs rebase before `benchmark-scenes-v2` (`7b69caa`).
+- **Next:** Paired device update to `v0.4.5-beta` (`SM-X730` + `CPH2653` when both attached) & testing MediaTek `13 MHz` Native clock + `#450` shader eviction on `SM-X730`. Parked: `Fullscreen 16:10`, `Memory 12b–12d/12f`, `Benchmark 11c–11d`.
+
+## Recent Milestones
+
+- `[2026-11-16]` **Workspace Cleanup, `main` FF & Antigravity Migration:** Freed `57.59 GiB`, purged local legacy agent remnants/refs, fast-forwarded `main` to `v0.4.5-beta` (`6113c61a`), synced `mali-workspace` checkpoint. See `MALI_PROGRESS.md`.
+- `[2026-11-16]` **PR #461 & `#296`/`#438` Root Cause:** Fixed missing `lv=0` RT upload & Case 1/2 sync (`0230d2f`); `19/19` Bionic/host, `SM-X730` (`93` WB, `30.0 fps`) & `CPH2653` Turnip (`93` WB, `40.0 fps`). See `.mali/underwater-walk-296/upstream-pr/REPORT.md`.
+- `[2026-11-15]` **Mali RAM Audits (30-min & Entry vs Turnip):** `VmRSS +625.06 MiB`, `0` passive leak; `3.4 GB` vs `1.5–2.0 GB` attributed (`placed`, `mtrack`, `BC 0`, `scudo`); Turnip-only rule added. See `.mali/memory-long-mali-20261115/REPORT.md`.
+- `[2026-11-15]` **PR #436 (`soft_linear`) & `v0.4.3-beta` Update:** Fixed Mali Dueling Peaks water cube (`ab828a1`); updated `SM-X730` & `CPH2653` to `v0.4.3-beta`. See `.mali/water-artifact/upstream-pr/REPORT.md`.

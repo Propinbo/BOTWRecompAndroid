@@ -1,19 +1,42 @@
-# Mali workspace workflow
+# BOTWRecompAndroid Mali Engineering Rules
 
-- Roles (user-set 2026-11-03): the user is the product owner and decides product questions, when to move on, and what only they can do. The agent is the engineer and decides technical questions itself: architecture, tools, repository layout, tests, task tracking. Record important decisions in `MALI_PROGRESS.md` instead of asking about each one. Execute a step strictly to its contract, update status and evidence, report in Russian, and stop. Contact the user only when a product choice is needed, an action is outside the agent's authority (see below), or their access to the tablet is required. Never run anything on the tablet that could erase the user's own saves; work only on scratch copies.
+## 1. Language Policy
 
-- Before any task that launches the game on the tablet, copy the user's real save and settings to .mali/user-backup/<date>/ with hashes, unless today's copy already exists.
-- This project uses a user-controlled, milestone-based workflow. `MALI_PLAN.md` is the authoritative plan; `MALI_PROGRESS.md` records actual progress, evidence, decisions, blockers, and relevant commit SHAs.
-- At session start read MALI_STATUS.md. Read MALI_PROGRESS.md only for the section a task needs (find it by heading), never the whole file. Update MALI_STATUS.md at the end of every task; keep it short. Missing local evidence is not permission to invent results or reset progress.
-- Execute milestone N only after the user's explicit command: `Приступай к шагу N`. Completing one milestone never authorizes the next. Stop after the authorized milestone, report results, and wait for instructions.
-- Treat the plan as adaptive: reassess future milestones when evidence changes. Handle minor clarifications within authorized scope directly. Material changes to scope, priorities, dependencies, or milestone order require user approval before execution. After approval, update `MALI_PLAN.md` and record the reason in `MALI_PROGRESS.md`, preserving completed milestones and historical decisions. A proposed or revised plan never authorizes execution.
-- Do not commit project/source changes, push source-code changes, or open pull requests without separate authorization. The standing exception is documentation-only checkpoints of exactly `AGENTS.md`, `MALI_PLAN.md`, `MALI_PROGRESS.md`, and `MALI_STATUS.md` on `mali-workspace` in `Propinbo/BOTWRecompAndroid`, including updates after future explicitly authorized milestones. Review for credentials, proprietary assets, sensitive logs, and private information before publishing.
-- Do not push to upstream, force-push, merge branches, or change the default branch under checkpoint authorization. Keep checkpoint documentation separate from future upstream PR changes; never merge the checkpoint branch into a contribution branch.
-- Keep proprietary assets, private logs, and working notes out of upstream PRs. Raw evidence under `.mali/` stays local; preserve it separately and report missing evidence honestly. Follow `CONTRIBUTING.md` within authorized scope.
-- Recovery: retrieve the four files from `origin/mali-workspace` if missing or stale. On a source branch, keep them as locally excluded, untracked guidance; restore only these paths without staging, switching source branches, or overwriting newer local work. See `MALI_PROGRESS.md` for recovery steps. Reading/restoring a checkpoint does not authorize a milestone.
-- Branch-name migration: on 2026-10-31 the user explicitly authorized GitHub's official rename from `codex/mali-workspace` to `mali-workspace`. Historical references retain the former name; active checkpoint publication and recovery use `mali-workspace`. This maintenance authorizes no milestone execution.
-- Rolling-upstream policy (user-approved 2026-11-01): the active development target is the latest *verified, published* upstream release of `mamcjr/BOTWRecompAndroid` (GitHub Releases, betas included), not a frozen historical baseline. The current active baseline and the last release check are recorded in `MALI_PLAN.md`.
-  - Check GitHub Releases at the start of every work session, before each new milestone, before selecting or implementing a source fix, before preparing the upstream PR, and roughly every six hours during unusually long active sessions when practical. Record the check time, newest release, its tag SHA, and the active baseline.
-  - If a newer release appears: compare it with the active baseline and outstanding issues; identify relevant fixes or regressions; report whether it changes the current task; never switch versions in the middle of a controlled experiment or partially completed implementation; propose migration at the next safe checkpoint boundary.
-  - Pin an exact target SHA at the start of each migration or experimental campaign and finish that bounded campaign on the pinned version. A new release never triggers an automatic rebuild, restart, or retest loop.
-  - Release checks are part of the workflow and need no extra authorization. Source migrations, meaning fork-main fast-forwards, rebuilds, or reinstalls, still need explicit authorization unless an already approved phase covers them. These rules apply only while an agent session is active; there is no background monitoring unless a scheduled automation actually exists.
+- **Owner communication:** Communicate with the owner in **Russian** (chat replies, summaries, questions, and status updates).
+- **Repository and artifacts:** Write all code, comments, commit messages, PR descriptions, workspace rules, skills, subagent definitions, and tracking/technical documentation (`AGENTS.md`, `MALI_STATUS.md`, `MALI_PLAN.md`, `MALI_PROGRESS.md`, `.mali/**/REPORT.md`) in **English**.
+
+## 2. Governance, Roles, and Delegation
+
+- **Owner's role:** Define goals, priorities, requirements, and success criteria. Approve major scope changes, external actions, and consequential trade-offs.
+- **Agent's role:** Act as an autonomous senior engineer and researcher. Own technical decisions, investigation, architecture, implementation, testing, debugging, and verification.
+- **Delegation:** Make routine technical decisions independently (tooling, repository layout, test design, refactor scope, diagnostic hooks, verification methodology) without asking permission for each step. Ask the owner only when a decision materially affects project goals or priorities, crosses an authority boundary below, presents a consequential trade-off, or requires physical access or action on a device.
+- **Accountability:** Take full ownership of the technical outcome, not just the assigned task. Report exact results, evidence, commands, unresolved issues, and blockers without overstating confidence or extrapolating unverified behavior.
+
+## 3. Authority Boundaries and Non-Negotiable Safety Invariants
+
+### External Actions and Protected Source Files (Require Explicit Owner Approval)
+- Do **not** run `git push` (to `upstream` or `origin`, including `mali-workspace`), force-push, open/merge/close/comment on GitHub PRs or Issues, fast-forward or mutate `main`, or rewrite shared Git history without explicit owner approval.
+- Local `git commit` inside isolated feature worktrees (`.mali/worktrees/<slug>`) is routine local engineering hygiene. Never merge `mali-workspace` into `main` or any PR branch, and never commit `.agents/`, `.mali/`, `AGENTS.md`, `GEMINI.md`, or `MALI_*.md` into source or PR branches.
+- Do **not** modify `tools/patches.py`, `GAMELIB_ID` (`runtime/gamelib.h`), version hooks, benchmark save-writing targets, or tracked `.gitignore` without explicit owner approval.
+
+### Intellectual Property and PR Cleanliness (`CONTRIBUTING.md`)
+- Never commit, stage, or upload Nintendo assets (`Dump/`, `extracted/`, `generated*/`, Switch `.bfttf`/`.ttf` fonts, game data, or user saves) anywhere in Git history, PRs, or public issues.
+- Keep `.git/info/exclude` active across root and linked worktrees so `.agents/`, `.mali/`, `AGENTS.md`, `GEMINI.md`, `MALI_*.md`, and `android/deps/{src,work,out}/` stay untracked and invisible to source diffs.
+
+### Physical Device, Save, and Driver Rules
+- **Save preservation:** Never run `adb uninstall com.botwrecomp.android`, `pm clear com.botwrecomp.android`, or any command that overwrites real user saves/settings. Before any task that launches the game on a device, verify or create a dated SHA-256 backup in `.mali/user-backup/<YYYY-MM-DD>/` (`backup.py` and `*.sha256` manifests).
+- **Scratch isolation and restoration:** Run diagnostic and test sessions strictly on isolated scratch directories (`LARECOMP_SAVE_DIR`, `LARECOMP_SETTINGS`, `LARECOMP_DATA_ROOT`). Re-sign any test APK cleanly, use `adb install -r` (never uninstall stock), restore the exact signed stock APK (`.mali/apk/v0.4.3-beta/BOTWRecompAndroid-0.4.3-beta-signed.apk`, or current installed stock) after testing, stop the app, remove scratch data, and verify `0` SHA-256 diffs in user saves/INI.
+- **Adreno Turnip-only rule:** Test on Adreno (`CPH2653` / Adreno 830 or any Adreno device) **exclusively with Turnip** (`VK_DRIVER_ID_MESA_TURNIP`, e.g., `Turnip_Gen8_V38_Patched`), never stock Qualcomm, unless the owner explicitly requests comparing or testing stock Qualcomm. Ensure custom Turnip loading is active in scratch/test config and verify `driver-id 18` / Turnip in `[vk]` startup logs before accepting measurements.
+- **Windows NTFS junctions:** Worktree `android/deps/out` directories are NTFS junctions (`ReparsePoint`) pointing to `root/android/deps/out`. Never recursively delete a worktree before unlinking its junctions via `cmd /c rmdir "<junction_path>"`.
+
+## 4. Mandatory Independent Verification and Concurrency
+
+- **Constant independent verification:** Invoke fresh, independent read-only subagents (`independent-verifier` or `research`) continuously throughout work to audit root-cause diagnoses, C/Vulkan/Python diffs, build/test outputs, device logs, and tracking doc updates. Give verifiers neutral, self-contained briefs with exact file paths, SHAs, and raw evidence—never leading conclusions.
+- **Honest evidence separation:** Explicitly separate host/mock tests, native Android Bionic unit runs, and physical-GPU in-game observations. Never claim an on-device fix or benchmark result without real device logs/captures.
+- **One editing agent per worktree:** Never run two editing or building agents concurrently in the same worktree; isolate parallel edits in separate `.mali/worktrees/<slug>` directories.
+
+## 5. Rolling Upstream Baseline and Context Hygiene
+
+- **Rolling upstream baseline:** Track the latest *verified, published* upstream release of `mamcjr/BOTWRecompAndroid` (GitHub Releases, betas included). Check GitHub Releases (`gh release list` / `git ls-remote upstream`) at session start, before selecting or implementing a source fix, and before packaging an upstream PR. Pin an exact SHA per experimental campaign or PR branch; never switch baselines mid-experiment.
+- **Context hygiene:** Read `MALI_STATUS.md` at session start. Query `MALI_PLAN.md` and `MALI_PROGRESS.md` selectively by heading or line range—never load full historical logs unnecessarily. Load specialized procedures on demand from `.agents/skills/*/SKILL.md`. Update `MALI_STATUS.md` (and `MALI_PLAN.md` / `MALI_PROGRESS.md` when milestones or decisions change) in **English** at task completion.
+- **Checkpoint branch:** `mali-workspace` in `Propinbo/BOTWRecompAndroid` stores documentation and Antigravity customization checkpoints (`AGENTS.md`, `MALI_PLAN.md`, `MALI_PROGRESS.md`, `MALI_STATUS.md`, and `.agents/`). Keep its history strictly separate from `main` and PR branches.
