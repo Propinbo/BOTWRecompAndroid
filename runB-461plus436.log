@@ -1,0 +1,470 @@
+BOTWRecompAndroid 0.4.5-beta (versionCode 44), samsung SM-X730, Android 16 (API 36)
+[android] guest window 0x100000000-0x420000000
+[android] the last run ended: user requested (reason 10, status 0) at 2026-11-17 08:27:24, pss 0 MB, rss 0 MB: [FORCE STOP] stop com.botwrecomp.android due to from pid 24395
+[android] boot count 47, previous session 47, uptime 1003450 s; same system boot
+[paths] data: /data/data/com.botwrecomp.android/files/prverify-20261117/v190 (game version 190)
+[loader] main build cd57b23f...: game version 190
+loaded main  at 100000000 size 1e98000 syms 510
+loaded sdk   at 104000000 size c58000 syms 23066
+relocated main  (223994 packed relative, 48 imports bound to host stubs)
+relocated sdk   (15013 packed relative, 0 imports bound to host stubs)
+[settings] loaded /data/user/0/com.botwrecomp.android/files/prverify-20261117/v190/scratch.ini
+[native] the game's code runs on the CPU (counter 13000000 Hz: not the Switch's 19.2 MHz - its reads are scaled to it)
+[native] main: 94 svc, 0 TLS, 0 counter reads rewritten (scaled to 19.2 MHz), 0 rate reads, 5 fixes; stubs at 101ea0000 (16 KB)
+[native] sdk: 58 svc, 129 TLS, 43 counter reads rewritten (scaled to 19.2 MHz), 0 rate reads, 0 fixes; stubs at 104c60000 (32 KB)
+main thread: prio 44, stack 0x100000
+nn::init::Start at 104110ee0 (init, init, fini)
+[kernel] GetInfo used memory -> 0x4000000 (heap 0)
+[kernel] GetInfo total memory -> 0xcd500000
+init sdk (DT_INIT 104000400, 83 init_array entries)
+[sm] GetService lm
+[ipc] control 3 on lm (handle 103)
+[ipc] control 0 on lm (handle 103)
+[sm] GetService apm
+[sm] GetService appletOE
+[ipc] control 3 on appletOE (handle 105)
+[ipc] control 0 on appletOE (handle 105)
+[am] ICommonStateGetter cmd 900 (unhandled, ok)
+[am] ISelfController cmd 91 (unhandled, ok)
+[kernel] CreateThread entry=104148470 arg=104b90000 stack=305250fe0 prio=28 core=3 -> 10a (by 101)
+[am] IWindowController cmd 10 (unhandled, ok)
+[am] ISelfController cmd 13 (unhandled, ok)
+[am] ISelfController cmd 16 (unhandled, ok)
+[sm] GetService aoc:u
+[sm] GetService ectx:aw
+[ipc] no HLE implementation for service 'ectx:aw', using logging stub
+[ipc] control 3 on ectx:aw (handle 10c)
+[ipc] control 0 on ectx:aw (handle 10c)
+[sm] GetService pctl
+[ipc] control 3 on pctl (handle 10d)
+[ipc] control 0 on pctl (handle 10d)
+[sm] GetService pctl:s
+[ipc] control 3 on pctl:s (handle 10e)
+[ipc] control 0 on pctl:s (handle 10e)
+[ipc] close session pctl:s (handle 10e)
+[sm] GetService pctl:a
+[ipc] control 3 on pctl:a (handle 10e)
+[ipc] control 0 on pctl:a (handle 10e)
+[ipc] close session pctl:a (handle 10e)
+[sm] GetService pctl:r
+[ipc] control 3 on pctl:r (handle 10e)
+[ipc] control 0 on pctl:r (handle 10e)
+[ipc] close session pctl:r (handle 10e)
+[pctl] IParentalControlService cmd 1 (ok)
+[sm] GetService time:u
+[ipc] control 3 on time:u (handle 10e)
+[ipc] control 0 on time:u (handle 10e)
+[time] shared memory mapped at 122a36000
+[kernel] SetHeapSize 3120 MB
+[vk] Turnip LRZ off (automatic: Mali-G925-Immortalis MC12), TU_DEBUG=nolrz
+[vk] gpu 0: Mali-G925-Immortalis MC12 (api 1.3.278)
+[vk] using Mali-G925-Immortalis MC12 (Vulkan 1.3)
+[vk-cap] memory export: fd yes, dma-buf yes, Android hardware buffer yes, placed maps no, host import no
+[vk-cap] gpu Mali-G925-Immortalis MC12 vendor 0x13b5 device 0xd8300010 api 1.3.278 driver-id 9 name Mali-G925-Immortalis MC12 info v1.r49p1-03bet0.f8a98b506b89b21c80a508d70abfcb3f
+[vk-cap] storage16 1 timeline 1 mirror-clamp 1 scalar 1 dynamic-rendering 1 sync2 1 demote 1 terminate 1 maintenance4 1 int64 1 int8 1 storage8 1 uniform-storage8 1 BC 0 ASTC 1 timestamps 1
+[vk-cap] storage range 2048 MB, storage offset alignment 64, memory types 0:0x7 1:0xb 2:0x11 3:0x21
+[vk-cap] maintenance5 on
+[vk] Vulkan 1.3 device, 7 extensions
+[vk] RAM saving off (11511 MB; automatic)
+[vk] swapchain: surface 2560x1600 transform 0x1, window 2560x1600, present mode 1, images 5-80
+[vk] no heap import: shader global memory through CPU copies
+[android] page write tracking on 0x340000000-0x410000000
+init main (DT_INIT 10000e8e0, 1040 init_array entries)
+[lm] cmd 0, in_buf b=0x7b8c0aabf8 addr=104be25f8 size=188 (nx=1, na=1)
+[lm] D:/home/Cafe/U-King/trunk/Game/Lib/sead/engine/library/modules/src/basis/nin/seadRawPrintNin.cpp | PrintStringImpl |  | MainThread | 0000002e
+
+[am] ICommonStateGetter cmd 66 (unhandled, ok)
+[am] ISelfController cmd 14 (unhandled, ok)
+[am] ISelfController cmd 11 (unhandled, ok)
+[am] ISelfController cmd 12 (unhandled, ok)
+[am] ISelfController cmd 13 (unhandled, ok)
+[am] ISelfController cmd 16 (unhandled, ok)
+[sm] GetService fsp-srv
+[ipc] control 3 on fsp-srv (handle 111)
+[ipc] control 0 on fsp-srv (handle 111)
+[ipc] control 2 on fsp-srv (handle 111)
+[ipc] control 2 on fsp-srv (handle 112)
+[motion] accelerometer: LSM6DSVTR Accelerometer
+[motion] gyroscope: LSM6DSVTR Gyroscope
+[fs] romfs index: 41062 files
+[fs] romfs reads: 1 (0 KB)
+[fs] romfs reads: 2 (0 KB)
+[fs] romfs reads: 4 (36 KB)
+[motion] the screen is turned 90 degrees from its natural orientation
+[vk] Mali-G925-Immortalis MC12, swapchain 2560x1600, 6 images
+[nvn] device initialized
+[nvn] window origin mode 1
+[nvn] sampler pool 0xb400007d522c0520: memory 34328b000, 4096 entries of 72 bytes (lr 0)
+[nvn] texture pool 0xb400007d522bfcb0: memory 3432ab000, 33068 entries of 32 bytes (lr 0)
+[nvn] window with 2 textures
+[kernel] CreateThread entry=104148470 arg=3446ca020 stack=30fae6fe0 prio=30 core=-2 -> 118 (by 101)
+[kernel] CreateThread entry=104148470 arg=3446dc020 stack=30d73bfe0 prio=48 core=-2 -> 119 (by 101)
+[kernel] CreateThread entry=104148470 arg=3446e9020 stack=30e9c5fe0 prio=43 core=-2 -> 11a (by 119)
+[sm] GetService hid
+[ipc] control 3 on hid (handle 11b)
+[input] GetNpadStyleSet id 0
+[input] GetNpadState id 0 lr 100eb1afc
+[vk] async: command lists translated on a render thread (1 frame ahead)
+[motion] sensor handles: player 0 style 0x1 -> 1
+[motion] sensor 0x3 started
+[input] GetNpadStyleSet id 0x1
+[input] GetNpadStyleSet id 0x2
+[input] GetNpadStyleSet id 0x3
+[kernel] CreateThread entry=104148470 arg=3446ec020 stack=3183e0fe0 prio=44 core=-2 -> 11e (by 101)
+[pace] the game sets its present interval to 2 (lr 1011267c4, x19 342283080 [+0x240] 8589934594)
+[am] GetDesiredLanguage -> ru
+[am] GetDesiredLanguage -> ru
+[sm] GetService acc:u0
+[ipc] control 3 on acc:u0 (handle 11e)
+[ipc] control 0 on acc:u0 (handle 11e)
+[acc] acc:u0 cmd 160 (ok)
+[kernel] CreateThread entry=104148470 arg=347c2f020 stack=33a590fe0 prio=44 core=-2 -> 11f (by 101)
+[kernel] CreateThread entry=104148470 arg=347d30020 stack=326fa1fe0 prio=44 core=-2 -> 120 (by 101)
+[kernel] CreateThread entry=104148470 arg=347e31020 stack=335b8afe0 prio=44 core=-2 -> 121 (by 101)
+[kernel] CreateThread entry=104148470 arg=34e1ca020 stack=315ea4fe0 prio=45 core=-2 -> 122 (by 101)
+[kernel] CreateThread entry=104148470 arg=34e1cc020 stack=337e3cfe0 prio=47 core=-2 -> 123 (by 101)
+[kernel] CreateThread entry=104148470 arg=3a9089020 stack=319fa4fe0 prio=47 core=-2 -> 124 (by 101)
+[kernel] CreateThread entry=104148470 arg=3a909e020 stack=3352f9fe0 prio=48 core=-2 -> 125 (by 101)
+[kernel] CreateThread entry=104148470 arg=3a90b3020 stack=32d0bffe0 prio=48 core=-2 -> 126 (by 101)
+[kernel] CreateThread entry=104148470 arg=3a90be020 stack=33af23fe0 prio=48 core=-2 -> 127 (by 101)
+[kernel] CreateThread entry=104148470 arg=3ca352020 stack=339157fe0 prio=48 core=-2 -> 128 (by 101)
+[fs] romfs reads: 8 (2566 KB)
+[aoc] ListAddOnContent: 2 of the DLC's packs
+[fs] the DLC's data: /storage/emulated/0/Android/data/com.botwrecomp.android/files/dlc/aoc.bin
+[fs] the DLC's romfs index: 7094 files
+[input] GetNpadState id 0 lr 100eb1afc
+[input] GetNpadState id 0 lr 100eb1afc
+[input] GetNpadState id 0 lr 100eb1afc
+[fs] romfs reads: 16 (56451 KB)
+[input] GetNpadState id 0 lr 100eb1afc
+[input] GetNpadState id 0 lr 100eb1afc
+[sm] GetService audren:u
+[audren] GetWorkBufferSize -> 0xcb000
+[audren] GetWorkBufferSize -> 0xcb000
+[audren] GetWorkBufferSize -> 0xcb000
+Low latency audio enabled
+[audren] renderer 48000 Hz, 240 samples/frame, 96 voices, 2 mixes, 30 mix buffers, 0 splitters (0 destinations), 14 effects
+[audren] mix 0 used 1 vol 1.000 bufs 6 dest 2147483647 splitter -1:
+[audren] mix 1 used 1 vol 1.000 bufs 24 dest 0 splitter -1: 0>0=1.000 1>1=1.000 2>2=1.000 3>3=1.000 4>4=1.000 5>5=1.000 6>0=1.000 7>1=1.000 8>2=1.000 9>3=1.000 10>4=1.000 11>5=1.000 12>0=1.000 13>1=1.000 14>2=1.000 15>3=1.000 16>4=1.000 17>5=1.000 18>0=1.000 19>1=1.000 20>2=1.000 21>3=1.000 22>4=1.000 23>5=1.000
+[audren] revision REV?, update in: 3f564552 10 31c0 9300 2a00 a80 1280 140 10 0 0 0 0 0 0 10d60
+[audren] update out: 3f564552 b0 18e0 600 0 7e0 0 20 10 0 10 0 0 0 0 27f0 (out buffer 10224 bytes)
+[kernel] CreateThread entry=104148470 arg=101dba830 stack=316269fe0 prio=31 core=1 -> 12a (by 101)
+[kernel] CreateThread entry=104148470 arg=101db9000 stack=30668cfe0 prio=32 core=1 -> 12e (by 101)
+[audren] device 48000 Hz, 960 frames/period; queue target 2160 samples
+[ipc] control 3 on IAudioDevice (handle 12f)
+[ipc] close session IAudioDevice (handle 12f)
+[audren] IAudioRenderer cmd 12 (ok)
+[ipc] control 3 on IAudioDevice (handle 12f)
+[ipc] close session IAudioDevice (handle 12f)
+[ipc] control 3 on IAudioDevice (handle 12f)
+[ipc] close session IAudioDevice (handle 12f)
+[ipc] control 3 on IAudioDevice (handle 12f)
+[ipc] close session IAudioDevice (handle 12f)
+[kernel] CreateThread entry=104148470 arg=3ddc9c000 stack=3295a7fe0 prio=46 core=-2 -> 12f (by 101)
+[ipc] close session IAudioDevice (handle 130)
+[ipc] close session IAudioDevice (handle 130)
+[kernel] CreateThread entry=104148470 arg=3de1f2000 stack=3217f1fe0 prio=36 core=-2 -> 130 (by 101)
+[kernel] CreateThread entry=104148470 arg=3dfa63020 stack=304bc8fe0 prio=47 core=-2 -> 133 (by 101)
+[kernel] CreateThread entry=104148470 arg=3dfaf28f8 stack=3229bcfe0 prio=44 core=-2 -> 134 (by 101)
+[kernel] CreateThread entry=104148470 arg=3dfaf2b20 stack=3200b4fe0 prio=44 core=-2 -> 135 (by 101)
+[kernel] CreateThread entry=104148470 arg=3dfaf2d48 stack=31362efe0 prio=44 core=-2 -> 136 (by 101)
+[sm] GetService nfp:user
+[kernel] CreateThread entry=104148470 arg=3dfaf4bf8 stack=32f5cffe0 prio=44 core=-2 -> 138 (by 101)
+[kernel] CreateThread entry=104148470 arg=3dfaf4e20 stack=31cb01fe0 prio=44 core=-2 -> 139 (by 101)
+[kernel] CreateThread entry=104148470 arg=3dfaf5048 stack=31cce2fe0 prio=44 core=-2 -> 13a (by 101)
+[ipc] control 3 on nfp:user (handle 137)
+[ipc] control 0 on nfp:user (handle 137)
+[kernel] CreateThread entry=104148470 arg=3dfbc2000 stack=330b65fe0 prio=48 core=-2 -> 13b (by 101)
+[kernel] CreateThread entry=104148470 arg=3dfd4c000 stack=3368ecfe0 prio=48 core=-2 -> 13c (by 101)
+[kernel] CreateThread entry=104148470 arg=3dfe7e000 stack=31f971fe0 prio=48 core=-2 -> 13d (by 101)
+[kernel] CreateThread entry=104148470 arg=3dffb0000 stack=332e4ffe0 prio=48 core=-2 -> 13e (by 101)
+[kernel] CreateThread entry=104148470 arg=3e00ce020 stack=31b5f1fe0 prio=46 core=-2 -> 13f (by 101)
+[ipc] control 2 on nfp:user (handle 137)
+[ipc] control 2 on nfp:user (handle 140)
+[fs] mounted host directory /data/user/0/com.botwrecomp.android/files/prverify-20261117/v190/save/save_0
+[ipc] control 2 on nfp:user (handle 141)
+[kernel] CreateThread entry=104148470 arg=3e7002020 stack=3063c3fe0 prio=45 core=-2 -> 143 (by 101)
+[kernel] CreateThread entry=104148470 arg=3e7024020 stack=32bae0fe0 prio=45 core=-2 -> 144 (by 101)
+[kernel] CreateThread entry=104148470 arg=3e71e7020 stack=32e9e6fe0 prio=48 core=-2 -> 145 (by 101)
+[kernel] CreateThread entry=104148470 arg=3e72e8020 stack=32cbd4fe0 prio=48 core=-2 -> 146 (by 101)
+[kernel] CreateThread entry=104148470 arg=3e73e9020 stack=32ec9afe0 prio=48 core=-2 -> 147 (by 101)
+[am] ICommonStateGetter cmd 66 (unhandled, ok)
+[fs] IFileSystem cmd 7 /data/user/0/com.botwrecomp.android/files/prverify-20261117/v190/save/save_0/exhibition: result 0x202
+[kernel] GetInfo used memory -> 0xc7000000 (heap 0xc3000000)
+[kernel] GetInfo total memory -> 0xcd500000
+[kernel] CreateThread entry=104148470 arg=3e752c020 stack=33a6eafe0 prio=45 core=-2 -> 145 (by 101)
+[time] StandardUserSystemClock::GetCurrentTime (host clock)
+[kernel] CreateThread entry=104148470 arg=3e996e020 stack=318addfe0 prio=48 core=-2 -> 148 (by 101)
+[fs] IFileSystem cmd 8 /data/user/0/com.botwrecomp.android/files/prverify-20261117/v190/save/save_0/6/caption.sav: result 0x202
+[fs] IFileSystem cmd 8 /data/user/0/com.botwrecomp.android/files/prverify-20261117/v190/save/save_0/7/caption.sav: result 0x202
+[am] ICommonStateGetter cmd 66 (unhandled, ok)
+[pace] presenting thread t82
+[pace] settings changed: fresh fixed pacing history
+[nvn] ReportCounter type 16
+[nvn] ReportCounter type 0
+[vk] render targets without mutable formats (their sRGB twin in a format list)
+[am] ICommonStateGetter cmd 54 (unhandled, ok)
+[am] IApplicationFunctions cmd 67 (unhandled, ok)
+[kernel] CreateThread entry=104148470 arg=3e71e7020 stack=33c05dfe0 prio=48 core=-2 -> 149 (by 101)
+[vk] transient ring: memory type 0 (device-local host-visible )
+[android] memory mappings: 4497 (the game's memory 0, the GPU driver's 109, other 4388; most: (no name) 1074, [anon:.bss] 204, [anon:scudo:secondary] 122)
+[android] malloc 112 MB in use (119 MB mapped by large blocks); command shadow pages 6, host command chunks 0; programs 1, pipelines 1 + compute 0, textures 2 (17 MB, render targets 17 MB), ring 64 MB in 1, buffer cache 0 MB, known keys 1 programs / 1 pipelines; malloc grown by shader modules 0 MB, pipelines 0 MB + compute 0 MB, images 1 MB
+[vk] buffer cache: up to 768 MB on the GPU
+[vk] pipelines kept: at most 1500 (the least recently used ones destroyed)
+[vk] programs kept: at most 1000 (the ones unused for minutes freed)
+[vk] the window asks for 0 fps content (0)
+[widescreen] frame 0: window 2560 x 1600
+[am] ICommonStateGetter cmd 66 (unhandled, ok)
+[post] 1920x1080 fxaa -> 2560x1440
+[ui] menus in ru: glyphs from /system/fonts/RobotoStatic-Regular.ttf
+[perf] 3 CPU clusters, temperature from (none readable)
+[touch] Sheikah skin loaded (1254x1254)
+[pace] display vsync 8.334 ms
+[android] performance hints with the GPU's time: yes
+[android] performance hint single session (2 threads): on
+[vk] no BC textures on this GPU: decoded on the CPU at upload
+[audren] effect type 2 used: slot 0 mix 1 enabled 1
+[audren] auxiliary buffer: 6 channels, ring of 7200 samples, send 3ddcb3000 return 3ddcba100
+[am] ICommonStateGetter cmd 66 (unhandled, ok)
+[vk] command counts: 0:89 3:1499 4:5537 5:1158 6:1158 7:660 9:660 10:1499 11:1499 12:1201 13:17100 15:1499 17:89 18:89 19:1509 20:2189 21:2189 22:2189 23:1158 28:660 33:260 35:156 38:1499 48:1837 51:1255 54:445 60:660
+[vk] t=4.1 frame 89 30.0 fps max 37ms level - (1499 draws, 0 skipped, 1360 passes, 0 dispatches (0 chained), 199 flushes, wait 54ms, compile 20 (waited 20ms), fbcopy 0 (read 0, breaks 0), upload 9.6MB, binds 1380 pipe 1499 sets, gpu mem 160MB, 17 textures)
+[motion] gyroscope at rest: bias -0.0008 -0.0009 -0.0007 rad/s taken off
+[vk] global memory arena: 128 MB (what shaders store stays on the GPU), memory type 1 (flags 0xb: flushed and invalidated)
+[vk] gmem off: stage 0 shader 0xb400007d32264e10 loads (1 such shaders)
+[vk] gmem off: stage 0 shader 0xb400007d322614c0 loads (2 such shaders)
+[time] StandardUserSystemClock::GetCurrentTime (host clock)
+[kernel] CreateThread entry=104148470 arg=3e71e7020 stack=322830fe0 prio=48 core=-2 -> 149 (by 101)
+[kernel] CreateThread entry=104148470 arg=3e805d020 stack=339941fe0 prio=48 core=-2 -> 14a (by 145)
+[vk] command counts: 0:147 3:6336 4:21222 5:5241 6:5241 7:2436 9:2436 10:6336 11:6336 12:5220 13:41674 14:720 15:6336 17:147 18:147 19:5043 20:6071 21:6071 22:6071 23:5241 28:2436 33:704 35:1204 38:6336 48:6453 51:4287 54:735 60:2436
+[vk] t=6.1 frame 147 28.7 fps max 127ms level - (4837 draws, 0 skipped, 4350 passes, 0 dispatches (0 chained), 116 flushes, wait 65ms, compile 5 (waited 6ms), fbcopy 0 (read 0, breaks 0), upload 10.8MB, binds 4239 pipe 4837 sets, gpu mem 416MB, 46 textures)
+[vk] command counts: 0:208 3:12558 4:40986 5:10670 6:10670 7:4632 9:4632 10:12558 11:12558 12:10161 13:71320 14:1696 15:12558 17:208 18:208 19:9252 20:10646 21:10646 22:10646 23:10670 28:4632 33:1253 35:2546 38:12558 48:11882 51:7886 54:1040 60:4632
+[vk] t=8.1 frame 208 30.0 fps max 35ms level - (6222 draws, 0 skipped, 5307 passes, 0 dispatches (0 chained), 122 flushes, wait 31ms, compile 0 (waited 0ms), fbcopy 0 (read 0, breaks 0), upload 10.5MB, binds 5795 pipe 6222 sets, gpu mem 416MB, 46 textures)
+[vk] t=10.1 frame 268 30.0 fps max 36ms level - (6120 draws, 0 skipped, 5220 passes, 0 dispatches (0 chained), 120 flushes, wait 31ms, compile 0 (waited 0ms), fbcopy 0 (read 0, breaks 0), upload 10.4MB, binds 5700 pipe 6120 sets, gpu mem 416MB, 46 textures)
+[vk] 3D target 8x8x8 level 0: a slice as 2D
+[vk] 3D target 8x8x8 level 0: a slice as 2D
+[vk] 3D target 8x8x8 level 0: a slice as 2D
+[vk] 3D target 8x8x8 level 0: a slice as 2D
+[widescreen] a message box in the middle (y 0)
+[vk] gmem off: stage 0 shader 0xb400007d32275410 loads (3 such shaders)
+[vk] write-back 85x20 f0x1 at 3d3211c00 (submission 614)
+[vk] t=12.1 frame 328 30.0 fps max 53ms level - (11024 draws, 0 skipped, 5277 passes, 0 dispatches (0 chained), 120 flushes, wait 79ms, compile 37 (waited 31ms), fbcopy 0 (read 0, breaks 0), upload 17.3MB, binds 7222 pipe 11024 sets, gpu mem 416MB, 74 textures)
+[vk] t=14.1 frame 388 30.0 fps max 61ms level - (14532 draws, 0 skipped, 5220 passes, 0 dispatches (0 chained), 120 flushes, wait 61ms, compile 2 (waited 4ms), fbcopy 0 (read 0, breaks 0), upload 20.2MB, binds 8165 pipe 14532 sets, gpu mem 672MB, 74 textures)
+[vk] t=16.2 frame 449 30.0 fps max 35ms level - (9760 draws, 0 skipped, 5307 passes, 0 dispatches (0 chained), 122 flushes, wait 33ms, compile 0 (waited 0ms), fbcopy 0 (read 0, breaks 0), upload 14.0MB, binds 6710 pipe 9760 sets, gpu mem 672MB, 74 textures)
+[vk] write-back 120x23 f0x1 at 3d3146c00 (submission 962)
+[vk] t=18.2 frame 510 30.0 fps max 36ms level - (9570 draws, 0 skipped, 5321 passes, 0 dispatches (0 chained), 122 flushes, wait 33ms, compile 3 (waited 7ms), fbcopy 0 (read 0, breaks 0), upload 13.9MB, binds 6442 pipe 9570 sets, gpu mem 672MB, 83 textures)
+[am] ICommonStateGetter cmd 66 (unhandled, ok)
+[sm] GetService prepo:u
+[ipc] no HLE implementation for service 'prepo:u', using logging stub
+[ipc] control 3 on prepo:u (handle 14b)
+[ipc] control 0 on prepo:u (handle 14b)
+[ipc] STUB prepo:u cmd 10105 (in 40 bytes, x1 a1 b0 c0) -> ok
+[vk] write-back 85x20 f0x1 at 3d3144800 (submission 1111)
+[fs] romfs reads: 32 (209451 KB)
+[vk] BC1 textures as ASTC 4x4
+[fs] romfs reads: 64 (215384 KB)
+[fs] romfs reads: 128 (224460 KB)
+[fs] romfs reads: 256 (238156 KB)
+[nvn] device info 57 -> 128
+[vk] write-back 1x1 f0x25 at 3e7e77e00 (submission 1144)
+[vk] write-back 1x1 f0x2e at 3e7639e00 (submission 1145)
+[vk] 32x32x32 (nvn 0x1) first drawn into at a level past 0: its CPU contents uploaded first
+[vk] BC texture 32x32x32 (nvn 0x49) drawn into as 95: blocks decoded after the draws
+[vk] BC 32x32x32: decode 1 at frame 555: 63 slices (18541 of 18744 bytes nonzero), GPU wait 7.24 ms, decode 0.12 ms
+[vk] write-back 192x192 f0x6 at 3dc299000 (submission 1149)
+[vk] write-back 1x1 f0x2e at 3dbf49a00 (submission 1164)
+[vk] write-back 1x1 f0x2e at 3dbf49c00 (submission 1164)
+[vk] t=21.0 frame 556 16.7 fps max 1263ms level - (3197 draws, 0 skipped, 2017 passes, 0 dispatches (0 chained), 124 flushes, wait 34ms, compile 35 (waited 43ms), fbcopy 0 (read 0, breaks 0), upload 122.2MB, binds 2474 pipe 3197 sets, gpu mem 672MB, 124 textures)
+[vk] write-back 192x192 f0x6 at 3dc2b9000 (submission 1167)
+[vk] format 91 can't be filtered linearly on this GPU: its textures sampled nearest
+[vk] sampled format 91 (nvn 0x2a, 64x64) has no linear filtering here
+[vk] write-back 256x256 f0xd at 3e8428000 (submission 1195)
+[vk] write-back 512x512 f0x25 at 3e8449000 (submission 1196)
+[vk] write-back 128x128 f0x25 at 36558e000 (submission 1202)
+[vk] write-back 128x128 f0x25 at 36559e000 (submission 1202)
+[vk] write-back 128x128 f0x25 at 3655ae000 (submission 1202)
+[vk] write-back 128x128 f0x25 at 3655be000 (submission 1202)
+[vk] write-back 128x128 f0x25 at 3655ce000 (submission 1202)
+[vk] write-back 128x128 f0x25 at 3655de000 (submission 1202)
+[vk] write-back 128x128 f0x25 at 3655ee000 (submission 1202)
+[vk] write-back 128x128 f0x25 at 3655fe000 (submission 1202)
+[vk] write-back 64x64 f0x25 at 36560f000 (submission 1202)
+[vk] write-back 64x64 f0x25 at 365613000 (submission 1202)
+[vk] write-back 64x64 f0x25 at 365617000 (submission 1202)
+[vk] write-back 64x64 f0x25 at 36561b000 (submission 1202)
+[vk] write-back 64x64 f0x25 at 36561f000 (submission 1202)
+[vk] write-back 64x64 f0x25 at 365623000 (submission 1203)
+[vk] write-back 64x64 f0x25 at 365627000 (submission 1203)
+[vk] write-back 64x64 f0x25 at 36562b000 (submission 1203)
+[vk] write-back 256x256 f0x6 at 365433000 (submission 1203)
+[vk] write-back 256x256 f0x6 at 365453000 (submission 1203)
+[vk] write-back 256x256 f0x6 at 365473000 (submission 1203)
+[vk] write-back 256x256 f0x6 at 365493000 (submission 1203)
+[vk] write-back 256x256 f0x6 at 3654b3000 (submission 1203)
+[vk] write-back 256x256 f0x6 at 3654d3000 (submission 1203)
+[vk] write-back 256x256 f0x6 at 3654f3000 (submission 1203)
+[vk] write-back 256x256 f0x6 at 365513000 (submission 1203)
+[vk] write-back 64x64 f0x2a at 365630000 (submission 1203)
+[vk] write-back 64x64 f0x2a at 365638000 (submission 1204)
+[vk] write-back 64x64 f0x2a at 365640000 (submission 1204)
+[vk] write-back 64x64 f0x2a at 365648000 (submission 1205)
+[vk] write-back 64x64 f0x2a at 365650000 (submission 1206)
+[vk] write-back 64x64 f0x2a at 365658000 (submission 1206)
+[vk] write-back 64x64 f0x2a at 365660000 (submission 1207)
+[vk] write-back 64x64 f0x2a at 365668000 (submission 1208)
+[fs] romfs reads: 512 (256317 KB)
+[kernel] CreateThread entry=104148470 arg=400764020 stack=31a1aafe0 prio=48 core=-2 -> 14c (by 145)
+[kernel] CreateThread entry=104148470 arg=401569020 stack=3001e4fe0 prio=48 core=-2 -> 14d (by 145)
+[kernel] CreateThread entry=104148470 arg=4020f5020 stack=324420fe0 prio=48 core=-2 -> 14e (by 145)
+[kernel] CreateThread entry=104148470 arg=402125020 stack=30604cfe0 prio=49 core=-2 -> 14f (by 145)
+[fs] romfs reads: 1024 (350855 KB)
+[vk] t=23.0 frame 600 21.8 fps max 628ms level - (5443 draws, 0 skipped, 2301 passes, 0 dispatches (0 chained), 155 flushes, wait 29ms, compile 47 (waited 218ms), fbcopy 0 (read 0, breaks 0), upload 78.6MB, binds 2866 pipe 5423 sets, gpu mem 928MB, 523 textures)
+[vk] write-back 45x45 f0x1 at 3d3158c00 (submission 1404)
+[vk] write-back 36x36 f0x1 at 3d314e400 (submission 1404)
+[vk] write-back 36x36 f0x1 at 3d314c000 (submission 1404)
+[vk] write-back 23x23 f0x25 at 3cc786200 (submission 1404)
+[vk] write-back 23x23 f0x25 at 3cc787400 (submission 1404)
+[vk] write-back 23x23 f0x1 at 3d314a400 (submission 1404)
+[vk] write-back 36x36 f0x1 at 3d3148800 (submission 1404)
+[vk] write-back 36x36 f0x1 at 3d29c0e00 (submission 1404)
+[vk] write-back 36x36 f0x1 at 3d29bea00 (submission 1404)
+[vk] write-back 23x23 f0x1 at 3d3147e00 (submission 1404)
+[vk] write-back 36x36 f0x1 at 3d29bbc00 (submission 1404)
+[am] ICommonStateGetter cmd 66 (unhandled, ok)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[vk] frame 627: a draw into 1600x900 with depth skipped (shader still building)
+[nvn] ReportCounter type 1
+[vk] gmem off: stage 5 shader 0xb400007d3231b0d0 STORES (4 such shaders)
+[vk] write-back 1x1 f0x3f at 3cf300c00 (submission 1423)
+[vk] write-back 40x28 f0x5 at 3cf304200 (submission 1424)
+[vk] write-back 20x14 f0x5 at 3cf301000 (submission 1425)
+[vk] write-back 10x7 f0x5 at 3cf301600 (submission 1425)
+[vk] write-back 5x4 f0x5 at 3cf301000 (submission 1425)
+[vk] write-back 3x2 f0x5 at 3cf301400 (submission 1425)
+[vk] write-back 2x2 f0x5 at 3cf301000 (submission 1425)
+[vk] write-back 12x1 f0x3f at 3dbed9400 (submission 1426)
+[vk] write-back 8x8 f0x2e at 3dbf49200 (submission 1435)
+[vk] write-back 20x11 f0x3f at 3cd593600 (submission 1439)
+[vk] write-back 1x1 f0x2e at 3dbf20600 (submission 1439)
+[vk] write-back 1x1 f0x2e at 3dbf20800 (submission 1439)
+[vk] write-back 1x1 f0x29 at 3dc32c000 (submission 1440)
+[vk] write-back 12x12 f0x29 at 3cd593600 (submission 1442)
+[vk] write-back 12x12 f0x29 at 3cd594000 (submission 1442)
+[vk] write-back 6x6 f0x29 at 3cd594a00 (submission 1442)
+[vk] write-back 6x6 f0x29 at 3cd594e00 (submission 1442)
+[vk] write-back 3x3 f0x29 at 3dbf4a800 (submission 1442)
+[vk] write-back 3x3 f0x29 at 3dbf4aa00 (submission 1442)
+[post] scene 1600x900 -> fsr1 1920x1080 (format 64)
+[gdt] rune 5, runes 0xbf
+[touch] icon Weapon_Sword_070: loaded
+[touch] icon Weapon_Bow_036: loaded
+[touch] icon Weapon_Shield_030: loaded
+[touch] icon Obj_DRStone_Get: loaded
+[touch] icon Obj_RemoteBombBall: loaded
+[touch] equipped: Weapon_Sword_001, Weapon_Bow_001, Weapon_Shield_035, NormalArrow
+[vk] targets a draw writes, sampled by it: copies (automatic)
+[vk] gmem off: stage 5 shader 0xb400007d323187e0 STORES (5 such shaders)
+[vk] gmem off: stage 5 shader 0xb400007d3231c960 STORES (6 such shaders)
+[vk] write-back 8x8 f0x2e at 3dbf49600 (submission 1457)
+[vk] write-back 1x1 f0x29 at 3dbf4a600 (submission 1461)
+[vk] write-back 3x3 f0x29 at 3dbf49e00 (submission 1462)
+[vk] write-back 3x3 f0x29 at 3dbf4a000 (submission 1462)
+[vk] gmem off: stage 5 shader 0xb400007d32424a20 STORES (7 such shaders)
+[vk] gmem off: stage 5 shader 0xb400007d32425250 STORES (8 such shaders)
+[vk] gmem off: stage 5 shader 0xb400007d3241b6c0 STORES (9 such shaders)
+[vk] gmem off: stage 5 shader 0xb400007d3242c4f0 STORES (10 such shaders)
+[vk] gmem off: stage 5 shader 0xb400007d324316d0 STORES (11 such shaders)
+[pace] display vsync 20.837 ms
+[vk] t=25.2 frame 631 13.9 fps max 586ms level - (5175 draws, 4457 skipped, 1514 passes, 54 dispatches (0 chained), 184 flushes, wait 35ms, compile 801 (waited 305ms), fbcopy 23 (read 364, breaks 0), upload 145.9MB, binds 2270 pipe 4602 sets, gpu mem 1184MB, 862 textures)
+[pace] display vsync 8.333 ms
+[vk] global memory: shaders reach heap 9775e524 outside their tables - 97740000+50000 goes in every table
+[vk] gmem off: stage 5 shader 0xb400007d32456450 STORES (12 such shaders)
+[vk] gmem off: stage 5 shader 0xb400007d324834d0 STORES (13 such shaders)
+[vk] gmem off: stage 5 shader 0xb400007d3247eb20 STORES (14 such shaders)
+[vk] gmem off: stage 5 shader 0xb400007d3248a770 STORES (15 such shaders)
+[vk] t=27.2 frame 689 28.7 fps max 95ms level - (116583 draws, 304 skipped, 9942 passes, 1264 dispatches (0 chained), 506 flushes, wait 82ms, compile 236 (waited 45ms), fbcopy 522 (read 10093, breaks 0), upload 882.5MB, binds 31119 pipe 97611 sets, gpu mem 1184MB, 1022 textures)
+[vk] global memory: shaders reach heap 9ea43154 outside their tables - 9ea30000+50000 goes in every table
+[vk] t=29.2 frame 750 30.0 fps max 35ms level - (120870 draws, 0 skipped, 9463 passes, 1342 dispatches (0 chained), 533 flushes, wait 17ms, compile 2 (waited 4ms), fbcopy 549 (read 10614, breaks 0), upload 901.8MB, binds 32922 pipe 101712 sets, gpu mem 1184MB, 1031 textures)
+[kernel] core 0, last 30 s: 46275 takes, waited 758 ms in all (longest 124.9 ms), held 22% of the time
+[vk] pipeline cache saved (32256 KB)
+[vk] global memory: shaders reach heap 9e8cac54 outside their tables - 9e8b0000+50000 goes in every table
+[vk] global memory: shaders reach heap 9eb29154 outside their tables - 9eb10000+50000 goes in every table
+[vk] t=31.3 frame 804 26.5 fps max 52ms level - (108344 draws, 2504 skipped, 8350 passes, 1188 dispatches (0 chained), 431 flushes, wait 728ms, compile 56 (waited 13ms), fbcopy 486 (read 9396, breaks 0), upload 801.3MB, binds 29137 pipe 90617 sets, gpu mem 1184MB, 1045 textures)
+[time] StandardUserSystemClock::GetCurrentTime (host clock)
+[vk] gmem off: stage 5 shader 0xb400007d324fb8e0 STORES (16 such shaders)
+[vk] gmem off: stage 5 shader 0xb400007d325141e0 STORES (17 such shaders)
+[vk] gmem off: stage 5 shader 0xb400007d32533d80 STORES (18 such shaders)
+[vk] write-back 23x15 f0x25 at 3cc788c00 (submission 3283)
+[vk] write-back 23x15 f0x25 at 3cc789600 (submission 3283)
+[vk] write-back 46x30 f0x1 at 3d3144000 (submission 3284)
+[vk] write-back 20x20 f0x25 at 3cc78a400 (submission 3285)
+[vk] write-back 20x20 f0x25 at 3cc78b600 (submission 3285)
+[vk] write-back 40x40 f0x1 at 3d24e7400 (submission 3285)
+[vk] write-back 40x40 f0x1 at 3d24e5000 (submission 3285)
+[vk] write-back 40x40 f0x1 at 3d24e2c00 (submission 3285)
+[vk] write-back 40x40 f0x1 at 3d24e0800 (submission 3286)
+[vk] write-back 99x13 f0x1 at 3d24a7800 (submission 3287)
+[vk] write-back 24x24 f0x25 at 3cc7b6600 (submission 3296)
+[vk] write-back 24x24 f0x25 at 3cc7b7800 (submission 3296)
+[vk] write-back 24x24 f0x25 at 3cc7b3400 (submission 3296)
+[vk] write-back 45x16 f0x25 at 3cc7b7800 (submission 3298)
+[vk] write-back 45x16 f0x25 at 3cc7b8600 (submission 3298)
+[vk] write-back 45x16 f0x1 at 3d2499400 (submission 3298)
+[vk] t=33.3 frame 854 24.5 fps max 78ms level - (135456 draws, 141 skipped, 8358 passes, 1433 dispatches (0 chained), 416 flushes, wait 694ms, compile 172 (waited 80ms), fbcopy 450 (read 8815, breaks 0), upload 767.7MB, binds 29556 pipe 103225 sets, gpu mem 1184MB, 1221 textures)
+[vk] global memory: shaders reach heap 97993f20 outside their tables - 97980000+50000 goes in every table
+[vk] global memory: shaders reach heap 9eb60a54 outside their tables - 9eb60000+40000 goes in every table
+[vk] t=35.3 frame 906 26.0 fps max 47ms level - (145527 draws, 0 skipped, 9650 passes, 1090 dispatches (0 chained), 429 flushes, wait 778ms, compile 4 (waited 5ms), fbcopy 468 (read 9100, breaks 0), upload 784.9MB, binds 33967 pipe 112499 sets, gpu mem 1184MB, 1222 textures)
+[vk] global memory: shaders reach heap 97811e20 outside their tables - 97800000+50000 goes in every table
+[vk] global memory: shaders reach heap 9e570654 outside their tables - 9e560000+50000 goes in every table
+[vk] t=37.3 frame 964 28.8 fps max 47ms level - (163950 draws, 0 skipped, 10710 passes, 838 dispatches (0 chained), 492 flushes, wait 358ms, compile 11 (waited 7ms), fbcopy 522 (read 10146, breaks 0), upload 876.1MB, binds 38138 pipe 126766 sets, gpu mem 1184MB, 1222 textures)
+[vk] global memory: shaders reach heap 9ea2ea54 outside their tables - 9ea10000+20000 goes in every table
+[vk] t=39.3 frame 1024 30.0 fps max 35ms level - (173154 draws, 86 skipped, 11151 passes, 868 dispatches (0 chained), 555 flushes, wait 15ms, compile 13 (waited 4ms), fbcopy 540 (read 10978, breaks 0), upload 907.9MB, binds 39973 pipe 132957 sets, gpu mem 1184MB, 1224 textures)
+[vk] global memory: shaders reach heap 9e918c54 outside their tables - 9e900000+50000 goes in every table
+[vk] t=41.3 frame 1084 30.0 fps max 34ms level - (173150 draws, 0 skipped, 11010 passes, 942 dispatches (0 chained), 539 flushes, wait 13ms, compile 0 (waited 0ms), fbcopy 540 (read 11160, breaks 0), upload 907.4MB, binds 39566 pipe 132521 sets, gpu mem 1184MB, 1215 textures)
+[vk] global memory: shaders reach heap 97bdb020 outside their tables - 97bc0000+50000 goes in every table
+[vk] global memory: shaders reach heap 978d5620 outside their tables - 978c0000+50000 goes in every table
+[vk] t=43.3 frame 1144 30.0 fps max 35ms level - (171303 draws, 0 skipped, 11170 passes, 905 dispatches (0 chained), 544 flushes, wait 15ms, compile 0 (waited 0ms), fbcopy 540 (read 10756, breaks 0), upload 908.3MB, binds 39345 pipe 131825 sets, gpu mem 1184MB, 1216 textures)
+[vk] global memory: shaders reach heap 97a57020 outside their tables - 97a40000+50000 goes in every table
+[vk] t=45.3 frame 1204 30.0 fps max 35ms level - (169691 draws, 20 skipped, 11152 passes, 909 dispatches (0 chained), 546 flushes, wait 14ms, compile 14 (waited 0ms), fbcopy 540 (read 10712, breaks 0), upload 911.9MB, binds 38649 pipe 130918 sets, gpu mem 1184MB, 1241 textures)
+[vk] global memory: shaders reach heap 9e55f954 outside their tables - 9e540000+20000 goes in every table
+[vk] global memory: shaders reach heap 9e6ecf54 outside their tables - 9e6d0000+50000 goes in every table
+[vk] global memory: shaders reach heap 97b18620 outside their tables - 97b00000+50000 goes in every table
+[vk] t=47.3 frame 1264 30.0 fps max 35ms level - (175858 draws, 4 skipped, 11112 passes, 947 dispatches (0 chained), 560 flushes, wait 16ms, compile 4 (waited 0ms), fbcopy 540 (read 11076, breaks 0), upload 912.6MB, binds 40029 pipe 134803 sets, gpu mem 1184MB, 1253 textures)
+[vk] t=49.3 frame 1324 30.0 fps max 35ms level - (176451 draws, 0 skipped, 11025 passes, 943 dispatches (0 chained), 560 flushes, wait 17ms, compile 0 (waited 0ms), fbcopy 540 (read 11100, breaks 0), upload 911.6MB, binds 40056 pipe 135264 sets, gpu mem 1184MB, 1253 textures)
