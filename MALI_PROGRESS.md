@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-05 to 2026-11-17). Query sele
 
 ## Table of Contents
 
+- [2026-11-17] pr-475-prewarm-and-evidence — Evidence Branch (`#436`/`#461`) & PR #475 (`#294` Pipeline Prewarming) (OPEN)
 - [2026-11-17] pr-push-and-benchmark-v3 — PR Pushes/Replies, 12-Scene Upgrade (`63f8747`), `60 fps` DVFS & `#450` Check (COMPLETE)
 - [2026-11-17] pr-reviews-and-scenes-audit — PR #315/#461/#436 Review Updates, MediaTek Clock Check & 11-Scene Audit (COMPLETE)
 - [2026-11-16] workspace-agy-reorg — Workspace Cleanup, Antigravity Migration & `v0.4.5-beta` Check (COMPLETE)
@@ -39,6 +40,16 @@ Active indexed English engineering ledger (2026-11-05 to 2026-11-17). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-05)
 
 ---
+
+## [2026-11-17] pr-475-prewarm-and-evidence — Evidence Branch (`#436`/`#461`) & PR #475 (`#294` Pipeline Prewarming) (OPEN)
+
+- **Evidence orphan branch & GitHub comment/PR cleanup (`8dc2d6d`):**
+  - Pushed orphan branch `evidence/pr436-pr461` (`8dc2d6d33efbbbab26c995379fb52ce2342650fa`) to `origin` containing the 4 clean `SM-X730` A/B PNGs (`runA-461only-{yard,river}.png`, `runB-461plus436-{yard,river}.png`) and 2 logs (`runA-461only.log`, `runB-461plus436.log`), verified HTTP `200`.
+  - Patched comments `6940299980` (`PR #315`), `6940300929` (`PR #436`), and `6940300463` (`PR #461`) + `PR #436` body: removed draft headings, embedded Before/After screenshots table in `#436`, and added `.log` links in `#436` and `#461`.
+- **Opt-in loading-screen pipeline prewarming PR #475 (`feat/pipeline-prewarm-294`, `56716f0` on `6113c61`, `6` files):**
+  - Implemented `bool pipe_prewarm` (`Video > Pipeline prewarming (experimental)`, off by default; `LARECOMP_PIPE_PREWARM=1`/`0` override; `LARECOMP_PIPE_PREWARM_MAX=1..512`, default `256`), `pipeline_prewarm.inc` (`BOTWPW01` `cache/pipeline-prewarm.bin` with `64`-byte hardware/driver/UUID/game-version header, payload hash, field bounds & duplicate rejection, atomic `.tmp` + `rename` flush every `10 s` / loading / reset), `exec.c` hooks (`jobs_active`/`jobs_workers`/`tjobs_active`, `PwProgId` in `compile_program()`, read-only `pw_cache_find` probe, `PW_HEADROOM=256`, `pw_pending` cleanup in `pipe_free()`, `g_scene_frame = 0` on reset), and Bionic unit suite `tools/test_pipeline_prewarm.c`.
+  - Verified host WASM checks (`test_vulkan_compat.py` `16`, `test_vulkan_startup.py` `33`, `test_shader_cache.py` `17`), `6/6` Bionic C suites on `SM-X730` (`test_pipeline_prewarm` `-Wall -Wextra -Werror`, `test_pipeline_cache_save`, `test_kernel_affinity`, `test_bc_shadow`, `test_buffer_copy`, `test_object_cache`), `./gradlew :app:assembleDebug` (`BUILD SUCCESSFUL` + `clean`), `workspace_check.py pr` (`PASS`), and conflict-free `git merge-tree` against `upstream/main` (`572868a8`) plus PRs `#315`, `#436`, and `#461`.
+  - **Physical `SM-X730` 3-pass Hateno verification (`LARECOMP_NATIVE=0`, `30 fps`):** Pass 1 (`record`) created `pipeline-prewarm.bin` (`186,432` B, `256` entries, `baked_size=696`, SHA-256 `56a11e760a93...`); Pass 2 (`LARECOMP_PIPE_PREWARM=1`, cold `vk_pipelines.bin` + `3,066` SPIR-V) logged `loaded 256`, `6 queued while loading`, and `boot summary queued 6, seen 5, ready_at_first_draw 5` (`29.77`/`27.22 fps`, `0` errors); Pass 3 (default OFF) logged `0` prewarm lines with unchanged binary hash (`27.20 fps`). Restored signed stock `v0.4.3-beta` (`3d3ad8e7...10846`), `pid=''`, `67/67` saves + `3/4` non-sys prefs (`ActivityThread.IDS.xml`), `3047` SPIR-V intact. Opened https://github.com/mamcjr/BOTWRecompAndroid/pull/475 (`MERGEABLE`/`CLEAN`) and commented on Issue `#294`.
 
 ## [2026-11-17] pr-push-and-benchmark-v3 — PR Pushes/Replies, 12-Scene Upgrade (`63f8747`), `60 fps` DVFS & `#450` Check (COMPLETE)
 

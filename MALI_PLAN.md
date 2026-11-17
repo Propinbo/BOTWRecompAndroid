@@ -15,7 +15,7 @@ The active development target tracks the latest *verified, published* `mamcjr/BO
 
 | Checked (UTC) | Newest Published Release | Tag SHA | Fork `main` Baseline | Relevance / Notes |
 |---|---|---|---|---|
-| `2026-11-16 18:54` | `v0.4.5-beta` | `6113c61a1d0e6f78532eb7fdde9cc9348613ad4b` | `v0.4.5-beta` (`6113c61`) | Fast-forwarded fork/local `main` (`7bb5bc9 -> 6113c61`). Restart shader free, `#450` Mali shader eviction >1000, MediaTek 13 MHz Native clock fix, full-span copy texture hash, vertex cache retention. PRs `#461` (`6f83821`), `#436` (`f92454e`), & `#315` (`d928ccc`) updated locally onto `6113c61`. |
+| `2026-11-16 18:54` | `v0.4.5-beta` | `6113c61a1d0e6f78532eb7fdde9cc9348613ad4b` | `v0.4.5-beta` (`6113c61`) | Fast-forwarded fork/local `main` (`7bb5bc9 -> 6113c61`). Restart shader free, `#450` Mali shader eviction >1000, MediaTek 13 MHz Native clock fix, full-span copy texture hash, vertex cache retention. PRs `#461` (`6f83821`), `#436` (`f92454e`), `#315` (`d928ccc`), & `#475` (`56716f0`) on `6113c61`. |
 | `2026-11-16 05:11` | `v0.4.4-beta` | `280048bc43b05d76af0659a51c828ff393d4434e` | `v0.3.2-beta` (`7bb5bc9`) | PR `#461` (`0230d2f`) branched here; `0780cb6` (`#450`) merged cleanly (`git merge-tree`). |
 | `2026-11-15 10:39` | `v0.4.3-beta` | `5946454c9fbdc414e0ab025f751f9c2011d23c3b` | `v0.3.2-beta` (`7bb5bc9`) | Installed stock APK on `SM-X730` & `CPH2653` (`3d3ad8e7...`); PR `#436` (`ab828a1`) branched here. |
 | `2026-11-14 08:34` | `v0.4.0-beta` | `d0bda062b382334d70f709fc65c2d80a669f643c` | `v0.3.2-beta` (`7bb5bc9`) | Used for `#294` pipeline prewarming `13a–13b.1` and initial Water Cube root-cause proof. |
@@ -28,10 +28,11 @@ Full 83-row historical release-check polling log (2026-10-31 to 2026-11-16): `.m
 ## 3. Active & Parked Engineering Initiatives
 
 ### A. Upstream PR Follow-Through & Benchmark Scene Set
-- **PR #461 (`fix/rt-load-upload-296`, `6f83821` on `6113c61`, `6` files):** Rebased, narrowed strictly to `#296`/`#438` write-back RT sync (`LOAD_OP_LOAD` + `undiscard()`), pushed to `origin`, description updated, and maintainer reply posted (`MERGEABLE`/`CLEAN`).
-- **PR #436 (`fix/soft-linear-filter`, `f92454e` on `6113c61`, `6` files):** Updated with lazy `vk_any_format_no_linear()`, `CLAMP`/`REPEAT` wrap support (`soft_linear_rep_u`/`soft_linear_rep_v`), `soft_linear_mip`, and `last_prog` init; pushed to `origin`, description updated, and maintainer reply posted (`MERGEABLE`/`CLEAN`).
-- **PR #315 (`pr315-benchmark-v2 -> benchmark-v2`, `d928ccc` on `6113c61`, `16` files):** Rebased cleanly (`seq_wait_done` + `BP_GPU_WAIT_NS`, headers restored, `test_nvn_lifetime` stubs), pushed to `origin`, and reply posted (`MERGEABLE`/`CLEAN`).
-- **Benchmark Scenes v2 (`benchmark-scenes-v2`, `63f8747` on `d928ccc`):** Upgraded from 11 to 12 shrine-free, visually verified MainField scenes (adding `hateno-dye-interior`, `korok-plaza`, `akkala-foliage`, `faron-jungle`, `zora-plaza`, unobstructed `lake-hylia-shore`, `lurelin-shore`; dropping obstructed/redundant views), validated `24/24 ok` (`cap30`) + `4/4 ok` (`cap60` DVFS separation) on `SM-X730`, and pushed to `origin` awaiting PR `#315` merge before opening the upstream PR.
+- **PR #475 (`feat/pipeline-prewarm-294`, `56716f0` on `6113c61`, `6` files):** Opt-in loading-screen graphics pipeline prewarming (`Video > Pipeline prewarming (experimental)` / `LARECOMP_PIPE_PREWARM`, `BOTWPW01` `cache/pipeline-prewarm.bin`, `PW_HEADROOM=256`, idle worker+translator guard); `6/6` Bionic + 3-pass `SM-X730` verified, `MERGEABLE`/`CLEAN`, Issue `#294` commented.
+- **PR #461 (`fix/rt-load-upload-296`, `6f83821` on `6113c61`, `6` files):** Narrowed to `#296`/`#438` write-back RT sync (`LOAD_OP_LOAD` + `undiscard()`); reply cleaned and linked to `runA-461only.log` (`evidence/pr436-pr461`).
+- **PR #436 (`fix/soft-linear-filter`, `f92454e` on `6113c61`, `6` files):** Lazy `vk_any_format_no_linear()`, `CLAMP`/`REPEAT`, `soft_linear_mip`, `last_prog`; Before/After `#461`-only vs `#461+#436` screenshots (`runA`/`runB` `yard` + `river`) & logs embedded from `evidence/pr436-pr461` (`8dc2d6d`).
+- **PR #315 (`pr315-benchmark-v2 -> benchmark-v2`, `d928ccc` on `6113c61`, `16` files):** Rebased cleanly, pushed, and reply cleaned (`MERGEABLE`/`CLEAN`).
+- **Benchmark Scenes v2 (`benchmark-scenes-v2`, `63f8747` on `d928ccc`):** Upgraded to 12 shrine-free MainField scenes (`24/24 ok` `cap30`, `4/4 ok` `cap60`), pushed to `origin` awaiting `#315` merge.
 
 ### B. `v0.4.5-beta` Physical Mali Validation
 1. **MediaTek 13 MHz Native-Mode Clock Fix (`Verified active on SM-X730`):** Under `LARECOMP_NATIVE=1` on `SM-X730` (`Dimensity 9400+`), `v0.4.5-beta` logged `counter 13000000 Hz: not the Switch's 19.2 MHz - its reads are scaled to it` (`sdk: 58 svc, 129 TLS, 43 counter reads rewritten`), running at `30.0 fps` (`0` errors).
