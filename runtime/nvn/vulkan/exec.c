@@ -25,6 +25,7 @@
 #include "../../kernel.h"
 #include "shaders.h"
 #include "vk.h"
+#include "shader_meta_cache.h"
 #include "buffer_copy.h"
 #include "timing_trace.h"
 #include "object_cache.h"
@@ -1357,30 +1358,68 @@ static VkSpan guest_copy(uint64_t addr, uint64_t size) {
 // ================================================================== worker threads (shader / pipeline builds)
 // First-use compiles run off the render thread; draws needing them are skipped until ready (as on Metal).
 // LARECOMP_SYNC_SHADERS=1 builds on first use, blocking (deterministic tests).
-typedef struct Job { void (*fn)(void *); void *arg; struct Job *next; } Job;
+typedef MwJob Job;
 static Job *jobs_head, *jobs_tail;
 static pthread_mutex_t jobs_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t jobs_cond = PTHREAD_COND_INITIALIZER;
+static int jobs_active;
+
+// Lock hierarchy when nesting: build_done_lock -> jobs_lock -> tjobs_lock (workers unlock queues before signaling).
+static pthread_mutex_t build_done_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t build_done_cond = PTHREAD_COND_INITIALIZER;
+static _Atomic bool jobs_abort;
+static __thread bool g_inline_steal;
+
+// Head-enqueue keep==true builds and wake waiters via build_done_cond (LARECOMP_URGENT_SHADERS=0: upstream FIFO).
+static bool urgent_shaders_on(void) {
+    static _Atomic int on = -1;
+    int v = atomic_load_explicit(&on, memory_order_relaxed);
+    if (v < 0) {
+        const char *e = getenv("LARECOMP_URGENT_SHADERS");
+#ifdef __ANDROID__
+        v = e ? atoi(e) != 0 : 1;
+#else
+        v = e ? atoi(e) != 0 : 0;
+#endif
+        atomic_store_explicit(&on, v, memory_order_relaxed);
+    }
+    return v != 0;
+}
+
+static void signal_build_done(_Atomic int *state, int val) {
+    atomic_store_explicit(state, val, memory_order_release);
+    pthread_mutex_lock(&build_done_lock);
+    pthread_cond_broadcast(&build_done_cond);
+    pthread_mutex_unlock(&build_done_lock);
+}
+
+static void finish_active_job(pthread_mutex_t *lock, Job **head, int *active) {
+    if (mw_job_finish(lock, head, active)) {
+        pthread_mutex_lock(&build_done_lock);
+        pthread_cond_broadcast(&build_done_cond);
+        pthread_mutex_unlock(&build_done_lock);
+    }
+}
 
 static void *worker(void *a) {
     (void)a;
     for (;;) {
-        pthread_mutex_lock(&jobs_lock);
-        while (!jobs_head) pthread_cond_wait(&jobs_cond, &jobs_lock);
-        Job *j = jobs_head;
-        jobs_head = j->next;
-        if (!jobs_head) jobs_tail = NULL;
-        pthread_mutex_unlock(&jobs_lock);
+        Job *j = mw_job_pop_active(&jobs_lock, &jobs_cond, &jobs_head, &jobs_tail, &jobs_active);
         j->fn(j->arg);
         free(j);
+        finish_active_job(&jobs_lock, &jobs_head, &jobs_active);
     }
     return NULL;
 }
 
 static bool sync_shaders(void) {
-    static int v = -1;
-    if (v < 0) v = getenv("LARECOMP_SYNC_SHADERS") != NULL;
-    return v;
+    static _Atomic int v = -1;
+    int cached = atomic_load_explicit(&v, memory_order_relaxed);
+    if (cached < 0) {
+        cached = getenv("LARECOMP_SYNC_SHADERS") != NULL ? 1 : 0;
+        atomic_store_explicit(&v, cached, memory_order_relaxed);
+    }
+    return cached != 0;
 }
 
 // Shader translation: one dedicated thread (the translator isn't re-entrant - translate.c's RSC2 string ring - and
@@ -1389,73 +1428,150 @@ static pthread_mutex_t translate_lock = PTHREAD_MUTEX_INITIALIZER;  // graphics 
 static Job *tjobs_head, *tjobs_tail;
 static pthread_mutex_t tjobs_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t tjobs_cond = PTHREAD_COND_INITIALIZER;
+static int tjobs_active;
 static void *translator(void *a) {
     (void)a;
     for (;;) {
-        pthread_mutex_lock(&tjobs_lock);
-        while (!tjobs_head) pthread_cond_wait(&tjobs_cond, &tjobs_lock);
-        Job *j = tjobs_head;
-        tjobs_head = j->next;
-        if (!tjobs_head) tjobs_tail = NULL;
-        pthread_mutex_unlock(&tjobs_lock);
+        Job *j = mw_job_pop_active(&tjobs_lock, &tjobs_cond, &tjobs_head, &tjobs_tail, &tjobs_active);
         j->fn(j->arg);
         free(j);
+        finish_active_job(&tjobs_lock, &tjobs_head, &tjobs_active);
     }
     return NULL;
 }
-static bool sync_shaders(void);
-static void run_translate(void (*fn)(void *), void *arg) {
-    if (sync_shaders()) { fn(arg); return; }
-    static bool started;
-    if (!started) { started = true; pthread_t t; pthread_create(&t, NULL, translator, NULL); }
-    Job *j = malloc(sizeof *j);
-    j->fn = fn; j->arg = arg; j->next = NULL;
+
+static bool jobs_all_idle(void) {
+    pthread_mutex_lock(&jobs_lock);
     pthread_mutex_lock(&tjobs_lock);
-    if (tjobs_tail) tjobs_tail->next = j; else tjobs_head = j;
-    tjobs_tail = j;
-    pthread_cond_signal(&tjobs_cond);
+    bool idle = !jobs_head && jobs_active == 0 && !tjobs_head && tjobs_active == 0;
     pthread_mutex_unlock(&tjobs_lock);
+    pthread_mutex_unlock(&jobs_lock);
+    return idle;
 }
 
-static void run_job(void (*fn)(void *), void *arg) {
-    if (sync_shaders()) { fn(arg); return; }
-    static bool started;
-    if (!started) {
-        started = true;
-        // first entry into an area builds dozens of pipelines at once: use most of the CPU (draws wait for them)
-        int cores = SDL_GetNumLogicalCPUCores();
-        int n = cores - 4;
-#ifdef __ANDROID__
-        n = cores / 2;
-        if (n > 4) n = 4;  // leave CPU capacity for the game and Vulkan translation
-#endif
-        const char *workers = getenv("LARECOMP_SHADER_WORKERS");
-        if (workers) n = atoi(workers);
-        if (n < 1) n = 1;
-        if (n > 16) n = 16;
-        for (int i = 0; i < n; i++) { pthread_t t; pthread_create(&t, NULL, worker, NULL); }
-    }
-    Job *j = malloc(sizeof *j);
-    j->fn = fn; j->arg = arg; j->next = NULL;
-    pthread_mutex_lock(&jobs_lock);
-    if (jobs_tail) jobs_tail->next = j; else jobs_head = j;
-    jobs_tail = j;
-    pthread_cond_signal(&jobs_cond);
-    pthread_mutex_unlock(&jobs_lock);
+static void jobs_drain(void) {
+    atomic_store_explicit(&jobs_abort, true, memory_order_release);
+    pthread_mutex_lock(&build_done_lock);
+    while (!jobs_all_idle()) pthread_cond_wait(&build_done_cond, &build_done_lock);
+    pthread_mutex_unlock(&build_done_lock);
+    atomic_store_explicit(&jobs_abort, false, memory_order_release);
 }
+
+static void enqueue_job_ex(pthread_mutex_t *lock, pthread_cond_t *cond, Job **head, Job **tail,
+                           void (*fn)(void *), void *arg, bool urgent) {
+    if (!mw_job_push(lock, cond, head, tail, fn, arg, urgent)) {
+        fn(arg);
+        return;
+    }
+    if (urgent) {
+        pthread_mutex_lock(&build_done_lock);
+        pthread_cond_broadcast(&build_done_cond);
+        pthread_mutex_unlock(&build_done_lock);
+    }
+}
+
+static Job *steal_job(pthread_mutex_t *lock, Job **head, Job **tail, const void *arg) {
+    return mw_job_steal(lock, head, tail, arg);
+}
+
+static pthread_once_t translator_once = PTHREAD_ONCE_INIT;
+static void start_translator(void) {
+    pthread_t t;
+    if (pthread_create(&t, NULL, translator, NULL) == 0) pthread_detach(t);
+}
+
+static pthread_once_t workers_once = PTHREAD_ONCE_INIT;
+static void start_workers(void) {
+    // first entry into an area builds dozens of pipelines at once: use most of the CPU (draws wait for them)
+    int cores = SDL_GetNumLogicalCPUCores();
+    int n = cores - 4;
+#ifdef __ANDROID__
+    n = cores / 2;
+    if (n > 4) n = 4;  // leave CPU capacity for the game and Vulkan translation
+#endif
+    const char *workers = getenv("LARECOMP_SHADER_WORKERS");
+    if (workers) n = atoi(workers);
+    if (n < 1) n = 1;
+    if (n > 16) n = 16;
+    for (int i = 0; i < n; i++) {
+        pthread_t t;
+        if (pthread_create(&t, NULL, worker, NULL) == 0) pthread_detach(t);
+    }
+}
+
+static void run_translate_ex(void (*fn)(void *), void *arg, bool urgent) {
+    if (sync_shaders() || g_inline_steal) { fn(arg); return; }
+    pthread_once(&translator_once, start_translator);
+    enqueue_job_ex(&tjobs_lock, &tjobs_cond, &tjobs_head, &tjobs_tail, fn, arg, urgent);
+}
+
+static void run_job_ex(void (*fn)(void *), void *arg, bool urgent) {
+    if (sync_shaders() || g_inline_steal) { fn(arg); return; }
+    pthread_once(&workers_once, start_workers);
+    enqueue_job_ex(&jobs_lock, &jobs_cond, &jobs_head, &jobs_tail, fn, arg, urgent);
+}
+
+static void run_job(void (*fn)(void *), void *arg) { run_job_ex(fn, arg, false); }
 
 // A skipped draw is lost for good when its target is built once and kept: BOTW's terrain height array (1024x1024x8,
 // each layer drawn once from the one before - the first draw of that shader skipped left layer 3 and all after it
 // empty: no ground on the plateau). Draws into arrays, cubemaps, 3D textures and mipmapped targets wait for their
 // shader and pipeline instead (LARECOMP_WAIT_PERSISTENT=0: skip them like the rest).
 static uint64_t stat_build_wait_ns;
-static void wait_built(_Atomic int *state) {
-    if (atomic_load(state)) return;
+static _Atomic uint64_t boot_build_wait_ns, stat_build_wait_max_ns, stat_build_waits, stat_stolen_jobs;
+static _Atomic uint64_t stat_meta_hits, stat_meta_misses;
+
+static void account_build_wait(uint64_t dt) {
+    stat_build_wait_ns += dt;
+    bench_add(BP_BUILD_WAIT_NS, dt);
+    atomic_fetch_add_explicit(&boot_build_wait_ns, dt, memory_order_relaxed);
+    atomic_fetch_add_explicit(&stat_build_waits, 1, memory_order_relaxed);
+    uint64_t cur = atomic_load_explicit(&stat_build_wait_max_ns, memory_order_relaxed);
+    while (dt > cur && !atomic_compare_exchange_weak_explicit(&stat_build_wait_max_ns, &cur, dt,
+                                                             memory_order_relaxed, memory_order_relaxed)) {}
+}
+
+void vk_shader_build_report(const char *where) {
+    uint64_t wns = atomic_exchange_explicit(&boot_build_wait_ns, 0, memory_order_relaxed);
+    uint64_t wmax = atomic_exchange_explicit(&stat_build_wait_max_ns, 0, memory_order_relaxed);
+    uint64_t waits = atomic_exchange_explicit(&stat_build_waits, 0, memory_order_relaxed);
+    uint64_t stolen = atomic_exchange_explicit(&stat_stolen_jobs, 0, memory_order_relaxed);
+    uint64_t hits = atomic_exchange_explicit(&stat_meta_hits, 0, memory_order_relaxed);
+    uint64_t misses = atomic_exchange_explicit(&stat_meta_misses, 0, memory_order_relaxed);
+    LOG("[vk] shader-build (%s): wait %.2f ms (max %.2f ms, %llu waits, %llu stolen), meta %llu hits / %llu misses, live %d progs / %d gpipes\n",
+        where ? where : "?", wns / 1e6, wmax / 1e6, (unsigned long long)waits, (unsigned long long)stolen,
+        (unsigned long long)hits, (unsigned long long)misses, atomic_load(&live_programs), atomic_load(&live_gpipes));
+}
+
+static void wait_built_job(_Atomic int *state, _Atomic int *urgent_flag, void *steal_arg) {
+    if (atomic_load_explicit(state, memory_order_acquire)) return;
     uint64_t t0 = plat_now_ns();
-    while (!atomic_load(state)) usleep(200);
-    uint64_t elapsed = plat_now_ns() - t0;
-    bench_add(BP_BUILD_WAIT_NS, elapsed);
-    stat_build_wait_ns += elapsed;
+    bool urg = urgent_shaders_on();
+    if (urg && urgent_flag) atomic_store_explicit(urgent_flag, 1, memory_order_relaxed);
+    while (!atomic_load_explicit(state, memory_order_acquire)) {
+        if (urg && steal_arg) {
+            Job *j = steal_job(&jobs_lock, &jobs_head, &jobs_tail, steal_arg);
+            if (!j) j = steal_job(&tjobs_lock, &tjobs_head, &tjobs_tail, steal_arg);
+            if (j) {
+                atomic_fetch_add_explicit(&stat_stolen_jobs, 1, memory_order_relaxed);
+                bool prev_steal = g_inline_steal;
+                g_inline_steal = true;
+                j->fn(j->arg);
+                g_inline_steal = prev_steal;
+                free(j);
+                continue;
+            }
+        }
+        struct timespec until;
+        clock_gettime(CLOCK_REALTIME, &until);
+        until.tv_nsec += 1000000;
+        if (until.tv_nsec >= 1000000000L) { until.tv_sec++; until.tv_nsec -= 1000000000L; }
+        pthread_mutex_lock(&build_done_lock);
+        if (!atomic_load_explicit(state, memory_order_acquire))
+            pthread_cond_timedwait(&build_done_cond, &build_done_lock, &until);
+        pthread_mutex_unlock(&build_done_lock);
+    }
+    account_build_wait(plat_now_ns() - t0);
 }
 static bool rt_is_persistent(NvnTexture *t) {
     static int on = -1;
@@ -1675,9 +1791,11 @@ const char *renderer_stats(void) {
 
 // Baked state changes and pass restarts invalidate the last pipeline; dynamic state does not.
 static bool pipeline_dirty = true;
+static uint64_t vi_gen = 1;
 
 static void st_defaults(void) {
     pipeline_dirty = true;
+    vi_gen++;
     memset(&st, 0, sizeof st);
     for (int i = 0; i < 16; i++) {
         st.viewport[i][2] = 1280; st.viewport[i][3] = 720;
@@ -1692,6 +1810,21 @@ static void st_defaults(void) {
     for (int i = 0; i < 8; i++) { st.blend[i][1] = 2; st.blend[i][2] = 1; st.blend[i][3] = 2; st.blend[i][4] = 1; st.blend[i][5] = 1; st.blend[i][6] = 1; }
 }
 
+#ifdef __ANDROID__
+static bool structure_on(void);
+static bool qcom_no_switch(void);
+static bool cbwin_wanted(void);
+static bool gmem_miss_log_on(void) {
+    static _Atomic int off = -1;
+    int v = atomic_load_explicit(&off, memory_order_relaxed);
+    if (v < 0) {
+        v = getenv("LARECOMP_NO_GMISS") != NULL ? 1 : 0;
+        atomic_store_explicit(&off, v, memory_order_relaxed);
+    }
+    return gcopy_mode && v == 0;
+}
+#endif
+
 void vk_exec_init(void) {
     prof = getenv("LARECOMP_VK_PROF") != NULL;
 #ifdef __ANDROID__
@@ -1703,6 +1836,10 @@ void vk_exec_init(void) {
     // (nor with an exported file to map there: vk_heap_place turns it on if that fails)
     extern bool vk_heap_file_asked(void);
     if (gcopy_mode && !g_vk.map_placed && !vk_heap_file_asked()) plat_write_tracking_enable(HEAP_BASE, HEAP_BASE + HEAP_MAX);
+    structure_on();
+    qcom_no_switch();
+    cbwin_wanted();
+    gmem_miss_log_on();
 #endif
     if (prof) {
         prof_up_ns = 0;
@@ -1739,7 +1876,7 @@ static int debug_pass_no;
 // LARECOMP_VK_STATE_FILTER=0: every draw sets everything, as before.
 enum { SS_PIPE = 1 << 0, SS_DT = 1 << 1, SS_DW = 1 << 2, SS_DOP = 1 << 3, SS_STEN = 1 << 4, SS_SFACE0 = 1 << 5, SS_SFACE1 = 1 << 6,
        SS_BC = 1 << 7, SS_CULL = 1 << 8, SS_FF = 1 << 9, SS_TOPO = 1 << 10, SS_PRE = 1 << 11, SS_DBE = 1 << 12, SS_DB = 1 << 13,
-       SS_VP = 1 << 14, SS_SC = 1 << 15, SS_IB = 1 << 16, SS_SETS = 1 << 17 };
+       SS_VP = 1 << 14, SS_SC = 1 << 15, SS_IB = 1 << 16, SS_SETS = 1 << 17, SS_VI = 1 << 18 };
 static struct {
     uint32_t known;  // SS_* bits: the value below is what the command buffer has
     uint32_t vb_known;  // per vertex binding
@@ -1757,6 +1894,8 @@ static struct {
     VkBuffer vb[17]; VkDeviceSize vo[17];
     VkPipelineLayout layout; VkDescriptorSet sets[2];  // (SS_SETS: the graphics sets bound and their layout,
     uint32_t ndyn, dyn[64];                             // and their dynamic uniform buffer offsets)
+    uint64_t vi_gen;
+    uint32_t vi_mask;
 } ss;
 static int ss_on = -1;
 static void ss_forget(void) { ss.known = 0; ss.vb_known = 0; }
@@ -2733,6 +2872,9 @@ typedef struct {
                            // render thread on the POCO F7 Ultra: draw_writes)
     uint8_t fs_gather;  // (up_fix) the fragment stage's first gathered texture: 1 none, 2 + its slot
     _Atomic int state;  // 0 building, 1 ready, 2 failed
+    _Atomic int urgent; // 1: synchronous draw waiting on this program
+    uint64_t meta_h1[2], meta_h2[2];
+    bool meta_key_ok[2];
     uint8_t evict;      // (prog_evict, vk_exec_reset) 1: to be freed, 2: kept - a pipeline of its still building
     uint32_t used_s;    // when a draw last used it (g_exec_s), and that submission (prog_evict)
     uint64_t used_seq;
@@ -2793,16 +2935,63 @@ static void subst_glsl(ShaderInfo *si, uint64_t addr, const char *suffix) {
 }
 #endif
 
-static void compile_program(void *arg) {
-    BENCH_BUILD();
-    Prog *p = arg;
-    size_t nv = 0, nf = 0;
-    uint32_t *sv = vk_glsl_to_spirv(p->vi->msl, STAGE_VERTEX, "vs", &nv);
-    uint32_t *sf = sv ? vk_glsl_to_spirv(p->fi->msl, STAGE_FRAGMENT, "fs", &nf) : NULL;
-    // Translation metadata and Vulkan modules remain cached, but their source is no longer needed.
-    free(p->vi->msl); p->vi->msl = NULL;
-    free(p->fi->msl); p->fi->msl = NULL;
-    if (!sv || !sf) { free(sv); free(sf); atomic_store(&p->state, 2); return; }
+// Persist Maxwell translation metadata (.smeta) beside .spv so warm restarts skip maxwell_translate and shaderc (LARECOMP_META_CACHE=0: off).
+static bool meta_cache_on(void) {
+#ifdef __ANDROID__
+    const char *e = getenv("LARECOMP_META_CACHE");
+    if (e && atoi(e) == 0) return false;
+    if (getenv("LARECOMP_VK_NO_SPIRV_CACHE") || getenv("LARECOMP_SAVE_MSL") ||
+        getenv("LARECOMP_DUMP_FS") || getenv("LARECOMP_SHADER_SUBST") || getenv("LARECOMP_SHADER_PATCH") ||
+        maxwell_dbg_code || maxwell_dbg_vs)
+        return false;
+    return true;
+#else
+    return false;
+#endif
+}
+
+static uint32_t current_trans_flags(int stage) {
+    uint32_t tf = 0;
+    if (getenv("LARECOMP_NO_VS_SNAP") != NULL) tf |= MW_TF_NO_VS_SNAP;
+    if (getenv("LARECOMP_FS_SNAP") != NULL) tf |= MW_TF_FS_SNAP;
+    if (getenv("LARECOMP_NO_GATHER_SNAP") != NULL) tf |= MW_TF_NO_GATHER_SNAP;
+    if (getenv("LARECOMP_NO_BANK2") != NULL) tf |= MW_TF_NO_BANK2;
+    if (getenv("LARECOMP_NO_DISCARD") != NULL) tf |= MW_TF_NO_DISCARD;
+    if (getenv("LARECOMP_NO_STEP_CLAMP") != NULL) tf |= MW_TF_NO_STEP_CLAMP;
+    if (getenv("LARECOMP_NO_UNORM_ROUND") != NULL) tf |= MW_TF_NO_UNORM_ROUND;
+#ifdef __ANDROID__
+    if (!g_vk.shader_int64 || g_settings.shader_int32 || getenv("LARECOMP_VK_INT32") != NULL) tf |= MW_TF_NO_INT64;
+    if (gcopy_mode || gwin_mode) tf |= MW_TF_GMEM_MAP_ALL;
+    if (gmem_miss_log_on()) tf |= MW_TF_GMEM_MISS_LOG;
+    if (!getenv("LARECOMP_BRX_ALL_LABELS")) tf |= MW_TF_BRX_WINDOW;
+    if (!getenv("LARECOMP_DYN_STACKS")) tf |= MW_TF_STATIC_STACKS;
+    if (structure_on()) tf |= MW_TF_STRUCTURED;
+    if (!getenv("LARECOMP_NO_STRUCT_SKIPS")) tf |= MW_TF_STRUCT_SKIPS;
+    if (qcom_no_switch()) tf |= MW_TF_NO_SWITCH;
+    if (qcom_no_switch() && !getenv("LARECOMP_QCOM_LOCAL")) tf |= MW_TF_NO_LOCAL_STRUCT;
+    if (!getenv("LARECOMP_BITWISE_HALF")) tf |= MW_TF_NATIVE_HALF;
+    if (!getenv("LARECOMP_SAFE_MATH")) tf |= MW_TF_FAST_MINMAX;
+    if (cbwin_wanted()) tf |= MW_TF_CB_WINDOW;
+    if (getenv("LARECOMP_VK_OPT") != NULL) tf |= MW_TF_VK_OPT;
+    uint32_t api = g_vk.api ? g_vk.api : VK_API_VERSION_1_3;
+    if (api < VK_API_VERSION_1_2) tf |= MW_TF_API_11;
+    else if (api < VK_API_VERSION_1_3) tf |= MW_TF_API_12;
+    unsigned gm = getenv("LARECOMP_GMISS_STAGES") ? (unsigned)strtoul(getenv("LARECOMP_GMISS_STAGES"), NULL, 0) : ~0u;
+    if ((gm >> stage) & 1u) tf |= MW_TF_GMISS_STAGE;
+#else
+    (void)stage;
+    if (getenv("LARECOMP_VK_OPT") != NULL) tf |= MW_TF_VK_OPT;
+#endif
+    return tf;
+}
+
+static void compile_program_from_spirv(Prog *p, uint32_t *sv, size_t nv, uint32_t *sf, size_t nf) {
+    if (!sv || !sf || atomic_load_explicit(&jobs_abort, memory_order_acquire)) {
+        free(sv);
+        free(sf);
+        signal_build_done(&p->state, 2);
+        return;
+    }
     p->nbinds = vk_reflect(sv, nv, p->binds, MAX_BIND);
     p->nbinds += vk_reflect(sf, nf, p->binds + p->nbinds, MAX_BIND - p->nbinds);
     p->vs = vk_module(sv, nv);
@@ -2813,7 +3002,7 @@ static void compile_program(void *arg) {
         if (p->vs) vkDestroyShaderModule(g_vk.dev, p->vs, NULL);
         if (p->fs) vkDestroyShaderModule(g_vk.dev, p->fs, NULL);
         p->vs = p->fs = VK_NULL_HANDLE;
-        atomic_store(&p->state, 2);
+        signal_build_done(&p->state, 2);
         return;
     }
 #ifdef __ANDROID__
@@ -2839,7 +3028,33 @@ static void compile_program(void *arg) {
     p->layout = make_layout(p, 2, VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_FRAGMENT_BIT);
     atomic_fetch_add(&stat_compiles, 1);
     atomic_fetch_add(&live_programs, 1);
-    atomic_store(&p->state, p->vs && p->fs ? 1 : 2);
+    signal_build_done(&p->state, p->vs && p->fs ? 1 : 2);
+}
+
+static void compile_program(void *arg) {
+    Prog *p = arg;
+    if (atomic_load_explicit(&jobs_abort, memory_order_acquire)) {
+        if (p->vi) { free(p->vi->msl); p->vi->msl = NULL; }
+        if (p->fi) { free(p->fi->msl); p->fi->msl = NULL; }
+        signal_build_done(&p->state, 2);
+        return;
+    }
+    BENCH_BUILD();
+    size_t nv = 0, nf = 0;
+    uint64_t vs_spv_h = 0, fs_spv_h = 0;
+    uint32_t *sv = vk_glsl_to_spirv_ex(p->vi->msl, STAGE_VERTEX, "vs", &nv, &vs_spv_h);
+    uint32_t *sf = sv ? vk_glsl_to_spirv_ex(p->fi->msl, STAGE_FRAGMENT, "fs", &nf, &fs_spv_h) : NULL;
+    // Translation metadata and Vulkan modules remain cached, but their source is no longer needed.
+    free(p->vi->msl); p->vi->msl = NULL;
+    free(p->fi->msl); p->fi->msl = NULL;
+    if (sv && sf && !atomic_load_explicit(&jobs_abort, memory_order_acquire) && meta_cache_on() && vs_spv_h && fs_spv_h) {
+        vk_shader_cache_ensure_dirs();
+        if (p->meta_key_ok[0])
+            mw_meta_store("cache/spirv", p->meta_h1[0], p->meta_h2[0], STAGE_VERTEX, p->vi, vs_spv_h, p->vs_uses_vid, 0);
+        if (p->meta_key_ok[1])
+            mw_meta_store("cache/spirv", p->meta_h1[1], p->meta_h2[1], STAGE_FRAGMENT, p->fi, fs_spv_h, false, p->fs_gather);
+    }
+    compile_program_from_spirv(p, sv, nv, sf, nf);
 }
 
 #ifdef __ANDROID__
@@ -2878,13 +3093,17 @@ static bool cbwin_wanted(void);  // (below gmem_placed)
 
 static void translate_program(void *arg) {
     Prog *p = arg;
+    if (atomic_load_explicit(&jobs_abort, memory_order_acquire)) {
+        signal_build_done(&p->state, 2);
+        return;
+    }
     pthread_mutex_lock(&translate_lock);
     maxwell_gmem_base = HEAP_BASE;
     maxwell_gmem_size = HEAP_MAX;
 #ifdef __ANDROID__
     maxwell_no_int64 = !g_vk.shader_int64 || g_settings.shader_int32 || getenv("LARECOMP_VK_INT32") != NULL;
     maxwell_gmem_map_all = gcopy_mode || gwin_mode;
-    maxwell_gmem_miss_log = gcopy_mode && !getenv("LARECOMP_NO_GMISS");
+    maxwell_gmem_miss_log = gmem_miss_log_on();
     if (getenv("LARECOMP_GMISS_STAGES"))  // (a test: which stages log misses - 1 vertex, 2 fragment, 32 compute)
         maxwell_gmem_miss_stages = (unsigned)strtoul(getenv("LARECOMP_GMISS_STAGES"), NULL, 0);
     maxwell_brx_window = !getenv("LARECOMP_BRX_ALL_LABELS");
@@ -2906,12 +3125,18 @@ static void translate_program(void *arg) {
     pthread_mutex_unlock(&translate_lock);
     if (!p->vi->msl) {
         LOG("[shader] VS translate failed: %s (code %llx)\n", p->vi->error, (unsigned long long)p->code[0]);
-        atomic_store(&p->state, 2);
+        signal_build_done(&p->state, 2);
         return;
     }
     if (!p->fi->msl) {
         LOG("[shader] FS translate failed: %s\n", p->fi->error);
-        atomic_store(&p->state, 2);
+        signal_build_done(&p->state, 2);
+        return;
+    }
+    if (atomic_load_explicit(&jobs_abort, memory_order_acquire)) {
+        free(p->vi->msl); p->vi->msl = NULL;
+        free(p->fi->msl); p->fi->msl = NULL;
+        signal_build_done(&p->state, 2);
         return;
     }
 #ifdef __ANDROID__
@@ -2976,7 +3201,85 @@ static void translate_program(void *arg) {
     p->fs_gather = gather_slot >= 0 && gather_slot < p->fi->ntex && gather_slot < 64 ? (uint8_t)(2 + gather_slot) : 1;
     save_glsl(p->vi->msl, p->code[0], "vs");
     save_glsl(p->fi->msl, p->code[1], "fs");
-    run_job(compile_program, p);
+    if (meta_cache_on()) {
+        if (!p->meta_key_ok[0])
+            p->meta_key_ok[0] = mw_stage_key((const uint8_t *)(uintptr_t)p->code[0], p->cmax[0], p->const_bytes[0],
+                                              STAGE_VERTEX, &p->vkey, current_trans_flags(STAGE_VERTEX),
+                                              HEAP_BASE, HEAP_MAX, &p->meta_h1[0], &p->meta_h2[0]);
+        p->meta_key_ok[1] = mw_stage_key((const uint8_t *)(uintptr_t)p->code[1], p->cmax[1], p->const_bytes[1],
+                                          STAGE_FRAGMENT, &p->fkey, current_trans_flags(STAGE_FRAGMENT),
+                                          HEAP_BASE, HEAP_MAX, &p->meta_h1[1], &p->meta_h2[1]);
+    }
+    if (atomic_load_explicit(&jobs_abort, memory_order_acquire)) {
+        free(p->vi->msl); p->vi->msl = NULL;
+        free(p->fi->msl); p->fi->msl = NULL;
+        signal_build_done(&p->state, 2);
+        return;
+    }
+    run_job_ex(compile_program, p, atomic_load_explicit(&p->urgent, memory_order_relaxed) != 0);
+}
+
+static void prog_fast_or_translate(void *arg) {
+    Prog *p = arg;
+    if (atomic_load_explicit(&jobs_abort, memory_order_acquire)) {
+        signal_build_done(&p->state, 2);
+        return;
+    }
+    ShaderInfo *vi = NULL, *fi = NULL;
+    uint32_t *sv = NULL, *sf = NULL;
+    size_t nv = 0, nf = 0;
+    uint64_t vs_spv_h = 0, fs_spv_h = 0;
+    bool vs_uses_vid = false;
+    uint8_t fs_gather = 1;
+
+    if (mw_stage_key((const uint8_t *)(uintptr_t)p->code[0], p->cmax[0], p->const_bytes[0], STAGE_VERTEX, &p->vkey,
+                     current_trans_flags(STAGE_VERTEX), HEAP_BASE, HEAP_MAX, &p->meta_h1[0], &p->meta_h2[0])) {
+        p->meta_key_ok[0] = true;
+        vi = mw_meta_load("cache/spirv", p->meta_h1[0], p->meta_h2[0], STAGE_VERTEX, &vs_spv_h, &vs_uses_vid, NULL);
+    }
+    if (vi) {
+        ShaderKey fkey = p->fkey;
+        fkey.vs_out_mask = vi->out_mask;
+        if (mw_stage_key((const uint8_t *)(uintptr_t)p->code[1], p->cmax[1], p->const_bytes[1], STAGE_FRAGMENT, &fkey,
+                         current_trans_flags(STAGE_FRAGMENT), HEAP_BASE, HEAP_MAX, &p->meta_h1[1], &p->meta_h2[1])) {
+            p->meta_key_ok[1] = true;
+            fi = mw_meta_load("cache/spirv", p->meta_h1[1], p->meta_h2[1], STAGE_FRAGMENT, &fs_spv_h, NULL, &fs_gather);
+        }
+    }
+    if (vi && fi) {
+        sv = vk_spirv_load_cached(vs_spv_h, &nv);
+        sf = sv ? vk_spirv_load_cached(fs_spv_h, &nf) : NULL;
+        if (sv && sf) {
+            if (atomic_load_explicit(&jobs_abort, memory_order_acquire)) {
+                free(sv);
+                free(sf);
+                maxwell_free(vi);
+                maxwell_free(fi);
+                signal_build_done(&p->state, 2);
+                return;
+            }
+            BENCH_BUILD();
+            p->vi = vi;
+            p->fi = fi;
+            p->fkey.vs_out_mask = vi->out_mask;
+            p->fs_out_mask = fi->out_mask;
+            p->vs_uses_vid = vs_uses_vid;
+            p->fs_gather = fs_gather;
+            atomic_fetch_add_explicit(&stat_meta_hits, 1, memory_order_relaxed);
+            compile_program_from_spirv(p, sv, nv, sf, nf);
+            return;
+        }
+    }
+    free(sv);
+    free(sf);
+    maxwell_free(vi);
+    maxwell_free(fi);
+    if (atomic_load_explicit(&jobs_abort, memory_order_acquire)) {
+        signal_build_done(&p->state, 2);
+        return;
+    }
+    atomic_fetch_add_explicit(&stat_meta_misses, 1, memory_order_relaxed);
+    run_translate_ex(translate_program, p, atomic_load_explicit(&p->urgent, memory_order_relaxed) != 0);
 }
 
 static VkObjectCache prog_cache;
@@ -2988,7 +3291,7 @@ static Prog *prog_used(Prog *p) {
     return p;
 }
 
-static Prog *get_program(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey) {
+static Prog *get_program(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey, bool urgent) {
     if (!(np->stage_mask & 1) || !(np->stage_mask & 2)) return NULL;
     // (the previous draw's program and keys again - most draws: no hashing; the code addresses are part of it, as
     // the program object can be reused for other code)
@@ -2996,8 +3299,11 @@ static Prog *get_program(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey) {
     static uint64_t last_code[2];
     static ShaderKey last_vkey, last_fkey;
     if (last_prog && np == last_np && last_code[0] == np->stages[0].code_addr && last_code[1] == np->stages[1].code_addr &&
-        !memcmp(vkey, &last_vkey, sizeof *vkey) && !memcmp(fkey, &last_fkey, sizeof *fkey))
+        !memcmp(vkey, &last_vkey, sizeof *vkey) && !memcmp(fkey, &last_fkey, sizeof *fkey)) {
+        if (urgent && !atomic_load_explicit(&last_prog->state, memory_order_acquire))
+            atomic_store_explicit(&last_prog->urgent, 1, memory_order_relaxed);
         return prog_used(last_prog);
+    }
     last_np = np, last_code[0] = np->stages[0].code_addr, last_code[1] = np->stages[1].code_addr;
     last_vkey = *vkey, last_fkey = *fkey;
     uint64_t h = 0xcbf29ce484222325ull;
@@ -3009,9 +3315,15 @@ static Prog *get_program(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey) {
 #endif
     if (!h) h = 1;
     VkObjectEntry *entry = vk_object_slot(&prog_cache, h);
-    if (entry->object) return prog_used(last_prog = entry->object);
+    if (entry->object) {
+        Prog *hit_p = entry->object;
+        if (urgent && !atomic_load_explicit(&hit_p->state, memory_order_acquire))
+            atomic_store_explicit(&hit_p->urgent, 1, memory_order_relaxed);
+        return prog_used(last_prog = hit_p);
+    }
     atomic_store(&program_keys, prog_cache.count);
     Prog *p = calloc(1, sizeof *p);
+    if (urgent) atomic_store_explicit(&p->urgent, 1, memory_order_relaxed);
     last_prog = prog_used(p);
     entry->object = p;
     for (int i = 0; i < 2; i++) {
@@ -3021,7 +3333,8 @@ static Prog *get_program(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey) {
     }
     p->vkey = *vkey;
     p->fkey = *fkey;
-    run_translate(translate_program, p);
+    if (meta_cache_on()) run_job_ex(prog_fast_or_translate, p, urgent);
+    else run_translate_ex(translate_program, p, urgent);
     return p;
 }
 
@@ -3453,8 +3766,12 @@ static VkPrimitiveTopology topo_class_base(uint8_t c) {
 }
 
 static void build_pipeline(void *arg) {
-    BENCH_BUILD();
     Pipe *pp = arg;
+    if (atomic_load_explicit(&jobs_abort, memory_order_acquire)) {
+        signal_build_done(&pp->state, 2);
+        return;
+    }
+    BENCH_BUILD();
     PipeKey *k = &pp->k;
     VkPipelineShaderStageCreateInfo stages[2] = {
         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = k->prog->vs, .pName = "main"},
@@ -3504,6 +3821,16 @@ static void build_pipeline(void *arg) {
                                               .attachmentCount = k->ncolor, .pAttachments = cba};
     VkPipelineDynamicStateCreateInfo dy = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
                                            .dynamicStateCount = NDYN, .pDynamicStates = DYN};
+#ifdef __ANDROID__
+    VkDynamicState gdyn[20];
+    if (g_vk.dyn_vi) {
+        uint32_t ngdyn = NDYN;
+        memcpy(gdyn, DYN, ngdyn * sizeof *gdyn);
+        gdyn[ngdyn++] = VK_DYNAMIC_STATE_VERTEX_INPUT_EXT;
+        dy.dynamicStateCount = ngdyn;
+        dy.pDynamicStates = gdyn;
+    }
+#endif
     if (k->fx.on) {  // (no extended dynamic state: the draw's own, PipeFx)
         const PipeFx *x = &k->fx;
         ia.topology = (VkPrimitiveTopology)x->topo;
@@ -3520,9 +3847,10 @@ static void build_pipeline(void *arg) {
                                         .pColorAttachmentFormats = k->color, .depthAttachmentFormat = k->depth,
                                         .stencilAttachmentFormat = k->stencil};
     VkGraphicsPipelineCreateInfo pi = {.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &ri, .stageCount = 2,
-                                       .pStages = stages, .pVertexInputState = &vi, .pInputAssemblyState = &ia, .pViewportState = &vs,
-                                       .pRasterizationState = &rs, .pMultisampleState = &ms, .pDepthStencilState = &ds,
-                                       .pColorBlendState = &cb, .pDynamicState = &dy, .layout = k->prog->layout};
+                                       .pStages = stages, .pVertexInputState = g_vk.dyn_vi ? NULL : &vi, .pInputAssemblyState = &ia,
+                                       .pViewportState = &vs, .pRasterizationState = &rs, .pMultisampleState = &ms,
+                                       .pDepthStencilState = &ds, .pColorBlendState = &cb, .pDynamicState = &dy,
+                                       .layout = k->prog->layout};
     {   // (no dynamic rendering: against a compatible render pass, rpcompat.c)
         VkRenderPass crp = vk_rp_compat(k->ncolor, k->color, k->depth, k->stencil, ms.rasterizationSamples);
         if (crp) pi.pNext = ri.pNext, pi.renderPass = crp;
@@ -3578,7 +3906,15 @@ static void build_pipeline(void *arg) {
         if (n++ < 20) LOG("[vk] graphics pipeline failed (%d): vs %llx fs %llx\n", (int)r,
                           (unsigned long long)k->prog->code[0], (unsigned long long)k->prog->code[1]);
     }
-    atomic_store(&pp->state, r == VK_SUCCESS ? 1 : 2);
+    signal_build_done(&pp->state, r == VK_SUCCESS ? 1 : 2);
+}
+
+static VkFormat dyn_vi_fmt(uint32_t fmt) { return vertex_format_supported(vertex_format(fmt)); }
+
+static void build_pipeline_urgent(Pipe *pp) {
+    uint64_t t0 = plat_now_ns();
+    build_pipeline(pp);
+    account_build_wait(plat_now_ns() - t0);
 }
 
 // ================================================================== feedback snapshots (renderer.m resolve_feedback)
@@ -6090,12 +6426,12 @@ static VkObjectCache compute_cache;  // (compute programs below)
 
 static int compute_reset(void);  // (below compute_program)
 
-// In-place reboot (device.c backend_reset; GPU idle): drop what is keyed by guest addresses - programs by code
-// address, their pipelines, compute programs, shared copies - and the heap import: its pages are replaced
-// (re-imported on first use). The programs and pipelines are freed: only their index was, and each reboot (the
-// title screen, every benchmark scene) leaked them all - malloc 158 -> 1646 MB over 16 scenes on the POCO. Those
-// still building stay allocated (their jobs hold them), out of the index.
+// In-place reboot (device.c backend_reset; GPU idle): drain build workers first (so nothing reads HEAP_BASE across
+// vkFreeMemory(gmem_mem) or writes stale .smeta entries across reset), then drop what is keyed by guest addresses
+// (programs by code address, their pipelines, compute programs, shared copies) and the heap import.
 void vk_exec_reset(void) {
+    jobs_drain();
+    vk_shader_build_report("reboot");
     int np = 0, ng = 0, kept = 0;
     for (size_t i = 0; i < prog_cache.capacity; i++) {
         Prog *p = prog_cache.entries[i].object;
@@ -6122,7 +6458,7 @@ void vk_exec_reset(void) {
     atomic_store(&program_keys, 0);
     atomic_store(&pipeline_keys, 0);
     int nc = compute_reset();
-    LOG("[vk] reboot: %d programs, %d pipelines and %d compute programs freed (%d still building kept)\n", np, ng, nc, kept);
+    LOG("[vk] reboot: %d programs, %d pipelines and %d compute programs freed (%d kept)\n", np, ng, nc, kept);
     gcopy_gen++;
     if (gmem_buf) {
         vkDestroyBuffer(g_vk.dev, gmem_buf, NULL);
@@ -6426,17 +6762,22 @@ static VkDescriptorSet stage_set(Prog *p, VkDescriptorSetLayout layout, uint32_t
 typedef struct { Prog p; ShaderInfo *si; VkPipeline pipe; uint32_t local[3]; uint64_t code_addr; } CsProg;
 
 static void build_compute(void *arg) {
-    BENCH_BUILD();
     CsProg *cp = arg;
+    if (atomic_load_explicit(&jobs_abort, memory_order_acquire)) {
+        if (cp->si) { free(cp->si->msl); cp->si->msl = NULL; }
+        signal_build_done(&cp->p.state, 2);
+        return;
+    }
+    BENCH_BUILD();
     size_t n = 0;
     uint32_t *spv = vk_glsl_to_spirv(cp->si->msl, STAGE_COMPUTE, "cs", &n);
     free(cp->si->msl); cp->si->msl = NULL;
-    if (!spv) { atomic_store(&cp->p.state, 2); return; }
+    if (!spv) { signal_build_done(&cp->p.state, 2); return; }
     cp->p.nbinds = vk_reflect(spv, n, cp->p.binds, MAX_BIND);
     VkShaderModule m = vk_module(spv, n);
     if (!m) {
         free(spv);
-        atomic_store(&cp->p.state, 2);
+        signal_build_done(&cp->p.state, 2);
         return;
     }
     cp->p.layout = make_layout(&cp->p, 1, VK_SHADER_STAGE_COMPUTE_BIT, 0);
@@ -6463,7 +6804,7 @@ static void build_compute(void *arg) {
     }
     vkDestroyShaderModule(g_vk.dev, m, NULL);
     free(spv);
-    atomic_store(&cp->p.state, r == VK_SUCCESS ? 1 : 2);  // (last: from here vk_exec_reset may free it)
+    signal_build_done(&cp->p.state, r == VK_SUCCESS ? 1 : 2);  // (last: from here vk_exec_reset may free it)
 }
 
 static void cs_free(CsProg *cp) {
@@ -6493,7 +6834,7 @@ static CsProg *compute_program(NvnProgram *np) {
 #ifdef __ANDROID__
     maxwell_no_int64 = !g_vk.shader_int64 || g_settings.shader_int32 || getenv("LARECOMP_VK_INT32") != NULL;
     maxwell_gmem_map_all = gcopy_mode || gwin_mode;
-    maxwell_gmem_miss_log = gcopy_mode && !getenv("LARECOMP_NO_GMISS");
+    maxwell_gmem_miss_log = gmem_miss_log_on();
     if (getenv("LARECOMP_GMISS_STAGES"))  // (a test: which stages log misses - 1 vertex, 2 fragment, 32 compute)
         maxwell_gmem_miss_stages = (unsigned)strtoul(getenv("LARECOMP_GMISS_STAGES"), NULL, 0);
     maxwell_brx_window = !getenv("LARECOMP_BRX_ALL_LABELS");
@@ -6518,7 +6859,7 @@ static CsProg *compute_program(NvnProgram *np) {
     cp->p.vi = cp->si;
     if (!cp->si->msl) {
         LOG("[compute] translate failed: %s (code %llx)\n", cp->si->error, (unsigned long long)ss->code_addr);
-        atomic_store(&cp->p.state, 2);
+        signal_build_done(&cp->p.state, 2);
         return cp;
     }
     for (int i = 0; i < 3; i++) {
@@ -6772,11 +7113,10 @@ static void draw_(CmdRec *r, bool indexed) {
     for (int i = 0; i < st.nattrib; i++) vkey.attr_kind[i] = (uint8_t)attr_kind(st.attrib[i] & 0xFF);
     for (int i = 0; i < st.rt.ncolor; i++) if (st.rt.color[i]) fkey.rt_kind[i] = (uint8_t)rt_kind(rt_format(i));
 #ifdef __ANDROID__
-    if (maxwell_gmem_miss_log)  // (copy mode: early depth tests for the shaders that log misses - ShaderKey)
+    if (gmem_miss_log_on())  // (copy mode: early depth tests for the shaders that log misses - ShaderKey)
         fkey.no_ds_write = !st.rt.depth || !((st.ds[0] && st.ds[1]) || (st.ds[3] && ((st.stencil_mask[0] | st.stencil_mask[1]) & 0xFF)));
 #endif
-    Prog *pr = get_program(st.program, &vkey, &fkey);
-    bool keep = false;  // (a target built once and kept: wait for the shader and pipeline - wait_built)
+    bool keep = false;  // (a target built once and kept: wait for the shader and pipeline - wait_built_job)
     {   // (the same targets as the previous draw, same frame: their answer again - reading 6 texture objects a draw
         // showed up)
         static NvnTexture *kc[8], *kd;
@@ -6797,7 +7137,8 @@ static void draw_(CmdRec *r, bool indexed) {
         }
         keep = kkeep;
     }
-    if (pr && keep) wait_built(&pr->state);
+    Prog *pr = get_program(st.program, &vkey, &fkey, keep && urgent_shaders_on());
+    if (pr && keep) wait_built_job(&pr->state, &pr->urgent, pr);
     if (pr && !atomic_load(&pr->state)) stat_skipped_building++;
     if (!pr || atomic_load(&pr->state) != 1) { stat_skipped++; skip_note("shader"); return; }
     {   // fragment-shader hash: interior backdrop detection (widescreen), skip lists, item twinkle (renderer.m)
@@ -7201,6 +7542,10 @@ static void draw_(CmdRec *r, bool indexed) {
         reuse = !e || atoi(e) != 0;
         verify = getenv("LARECOMP_VK_PIPE_VERIFY") != NULL;
     }
+    static VkDynVi cur_vi;
+    if (g_vk.dyn_vi && (cur_vi.gen != vi_gen || cur_vi.attr_mask != pr->vi->attr_mask))
+        vk_build_dyn_vi(pr->vi->attr_mask, st.nattrib, st.attrib, st.nstream, st.stream, g_vk.divisor,
+                        dyn_vi_fmt, &cur_vi, vi_gen);
     bool hit = reuse && !pipeline_dirty && last_pipeline &&
                last_pipeline->k.prog == pr && last_pipeline->k.topo_class == cls && last_pipeline->k.prim_restart == pre_key &&
                (g_vk.eds || !memcmp(&last_pipeline->k.fx, &fx, sizeof fx));
@@ -7216,27 +7561,29 @@ static void draw_(CmdRec *r, bool indexed) {
         k.depth = pass_depth;
         k.stencil = pass_stencil;
         k.samples = pass_samples;
-        for (int i = 0; i < 32; i++) {
-            if (!(pr->vi->attr_mask & (1u << i))) continue;
-            k.attr_mask |= 1u << i;
-            uint32_t a = i < st.nattrib ? st.attrib[i] : 0x2E;
-            uint32_t fmt = a & 0xFF, stream = (a >> 8) & 0x1F, off = a >> 13;
-            if (i >= st.nattrib || fmt == 0 || stream >= 16) {  // unbound attribute: (0, 0, 0, 1) from a constant stream
-                k.attr_fmt[i] = VK_FORMAT_R32G32B32A32_SFLOAT;
-                k.attr_bind[i] = ZERO_BINDING;
-                k.used_streams |= 1u << ZERO_BINDING;
-                continue;
+        if (!g_vk.dyn_vi) {
+            for (int i = 0; i < 32; i++) {
+                if (!(pr->vi->attr_mask & (1u << i))) continue;
+                k.attr_mask |= 1u << i;
+                uint32_t a = i < st.nattrib ? st.attrib[i] : 0x2E;
+                uint32_t fmt = a & 0xFF, stream = (a >> 8) & 0x1F, off = a >> 13;
+                if (i >= st.nattrib || fmt == 0 || stream >= 16) {  // unbound attribute: (0, 0, 0, 1) from a constant stream
+                    k.attr_fmt[i] = VK_FORMAT_R32G32B32A32_SFLOAT;
+                    k.attr_bind[i] = ZERO_BINDING;
+                    k.used_streams |= 1u << ZERO_BINDING;
+                    continue;
+                }
+                k.attr_fmt[i] = vertex_format_supported(vertex_format(fmt));
+                k.attr_off[i] = off;
+                k.attr_bind[i] = stream;
+                k.used_streams |= 1u << stream;
             }
-            k.attr_fmt[i] = vertex_format_supported(vertex_format(fmt));
-            k.attr_off[i] = off;
-            k.attr_bind[i] = stream;
-            k.used_streams |= 1u << stream;
-        }
-        for (int s = 0; s < 16; s++) {
-            if (!(k.used_streams & (1u << s))) continue;
-            k.stride[s] = s < st.nstream ? st.stream[s][0] : 0;
-            k.divisor[s] = s < st.nstream && k.stride[s] ? st.stream[s][1] : 0;
-            if (k.divisor[s] > 1 && !g_vk.divisor) k.divisor[s] = 1;
+            for (int s = 0; s < 16; s++) {
+                if (!(k.used_streams & (1u << s))) continue;
+                k.stride[s] = s < st.nstream ? st.stream[s][0] : 0;
+                k.divisor[s] = s < st.nstream && k.stride[s] ? st.stream[s][1] : 0;
+                if (k.divisor[s] > 1 && !g_vk.divisor) k.divisor[s] = 1;
+            }
         }
         for (uint32_t i = 0; i < k.ncolor && i < 8; i++) {
             if (!st.rt.color[i] || k.color[i] == VK_FORMAT_UNDEFINED) continue;
@@ -7274,11 +7621,13 @@ static void draw_(CmdRec *r, bool indexed) {
             pp = calloc(1, sizeof *pp);
             pp->k = k;
             entry->object = pp;
-            run_job(build_pipeline, pp);
+            if (keep && urgent_shaders_on()) build_pipeline_urgent(pp);
+            else run_job_ex(build_pipeline, pp, false);
         } else if (pp->evicted) {  // (destroyed by pipe_evict: built again)
             pp->evicted = false;
             bench_add(BP_REBUILDS, 1);
-            run_job(build_pipeline, pp);
+            if (keep && urgent_shaders_on()) build_pipeline_urgent(pp);
+            else run_job_ex(build_pipeline, pp, false);
         }
         // Verification rebuilds the original key to detect missing invalidations during later device tests.
         if (hit && memcmp(&k, &last_pipeline->k, sizeof k)) {
@@ -7288,7 +7637,7 @@ static void draw_(CmdRec *r, bool indexed) {
         last_pipeline = pp;
         pipeline_dirty = false;
     }
-    if (keep) wait_built(&pp->state);
+    if (keep) wait_built_job(&pp->state, NULL, pp);
     if (atomic_load(&pp->state) != 1) {
         if (g_debug_frame) LOG("[draw]   skipped: pipeline %s\n", atomic_load(&pp->state) ? "failed" : "still building");
         if (!atomic_load(&pp->state)) stat_skipped_building++;
@@ -7298,6 +7647,13 @@ static void draw_(CmdRec *r, bool indexed) {
     }
     ss_enabled();
     if (ss_need(SS_PIPE, ss.pipe == pp->pipe)) { ss.pipe = pp->pipe; stat_pipe_binds++; vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pp->pipe); }
+#ifdef __ANDROID__
+    if (g_vk.dyn_vi && ss_need(SS_VI, ss.vi_gen == vi_gen && ss.vi_mask == pr->vi->attr_mask)) {
+        ss.vi_gen = vi_gen;
+        ss.vi_mask = pr->vi->attr_mask;
+        vkCmdSetVertexInputEXT(cb, cur_vi.nb, cur_vi.nb ? cur_vi.vb : NULL, cur_vi.na, cur_vi.na ? cur_vi.va : NULL);
+    }
+#endif
     pp->used = SDL_GetTicksNS(), pp->seq = vk_pending_seq();  // (pipe_evict)
     uint64_t prof_td_ = prof ? SDL_GetTicksNS() : 0;
     if (prof) prof_key += prof_td_ - prof_tk_;
@@ -7530,8 +7886,11 @@ static void draw_(CmdRec *r, bool indexed) {
     }
 
     // ---- vertex streams: the range this draw can read, copied once per submission
+    uint32_t used_streams = g_vk.dyn_vi ? cur_vi.used_streams : pp->k.used_streams;
+    const uint32_t *vi_strides = g_vk.dyn_vi ? cur_vi.stride : pp->k.stride;
+    const uint32_t *vi_divisors = g_vk.dyn_vi ? cur_vi.divisor : pp->k.divisor;
     for (int s = 0; s < 17; s++) {
-        if (!(pp->k.used_streams & (1u << s))) continue;
+        if (!(used_streams & (1u << s))) continue;
         VkSpan sp;
         if (s == ZERO_BINDING) {
             static const float zero[4] = {0, 0, 0, 1};
@@ -7544,9 +7903,9 @@ static void draw_(CmdRec *r, bool indexed) {
             // streams, one vertex's worth, the corners from the vertex index) reads zeros there on the Switch; bound
             // directly, the heap past the stream (the next buffers' data) bent the quad into a hard-edged band.
             uint64_t reach = 0;
-            if (pp->k.stride[s] && !use_index)
-                reach = pp->k.divisor[s] ? ((uint64_t)base_inst + inst + pp->k.divisor[s] - 1) / pp->k.divisor[s] * pp->k.stride[s]
-                                     : ((uint64_t)first + count) * pp->k.stride[s];
+            if (vi_strides[s] && !use_index)
+                reach = vi_divisors[s] ? ((uint64_t)base_inst + inst + vi_divisors[s] - 1) / vi_divisors[s] * vi_strides[s]
+                                     : ((uint64_t)first + count) * vi_strides[s];
             if (v.addr && v.size && reach > v.size && reach <= (1u << 20)) {
                 sp = vk_transient(reach, 16);
                 memcpy(sp.ptr, (const void *)(uintptr_t)v.addr, v.size);
@@ -7571,9 +7930,9 @@ static void draw_(CmdRec *r, bool indexed) {
                 if (base_vertex > 0) max_index += (uint32_t)base_vertex;
                 scan_src = NULL;
             }
-            uint64_t stride = pp->k.stride[s], need;
+            uint64_t stride = vi_strides[s], need;
             if (!stride) need = 256;
-            else if (pp->k.divisor[s]) need = ((uint64_t)base_inst + inst + pp->k.divisor[s] - 1) / pp->k.divisor[s] * stride + 256;
+            else if (vi_divisors[s]) need = ((uint64_t)base_inst + inst + vi_divisors[s] - 1) / vi_divisors[s] * stride + 256;
             else need = (uint64_t)max_index * stride + 256;
             if (v.size && need > v.size) need = v.size;
             if (!v.addr) { static const uint8_t zero[256]; sp = vk_transient_copy(zero, 256, 16); }
@@ -8242,7 +8601,7 @@ static void post_pass(VkCommandBuffer cb, const char *fs, const VkImageView *src
     vkCmdSetViewport(cb, 0, 1, &vp);
     vkCmdSetScissor(cb, 0, 1, &sc);
     vkCmdPushConstants(cb, post_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32, pc);
-    ss.known &= ~SS_SETS;  // (another layout: the draws' sets are bound again)
+    ss_forget();  // (static-VI pipeline and another layout: draws re-bind state)
     vkCmdDraw(cb, 3, 1, 0, 0);
     vk_end_rendering(cb);
 }
@@ -8410,7 +8769,7 @@ void vk_present_draw(VkCommandBuffer cb, TexBackend *b, float vx, float vy, floa
     VkViewport vp = {vx, vy, vw, vh, 0, 1};
     vkCmdSetViewport(cb, 0, 1, &vp);
     vkCmdPushConstants(cb, present_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 32, pv);
-    ss.known &= ~SS_SETS;  // (another layout: the draws' sets are bound again)
+    ss_forget();  // (static-VI pipeline and another layout: draws re-bind state)
     vkCmdDraw(cb, 3, 1, 0, 0);
     VkViewport full = {0, 0, (float)g_vk.sc_extent.width, (float)g_vk.sc_extent.height, 0, 1};
     vkCmdSetViewport(cb, 0, 1, &full);
@@ -8490,7 +8849,7 @@ void renderer_save_texture_tex(TexBackend *b, const char *path) {
     vkCmdSetScissor(cb, 0, 1, &sc);
     float pv[8] = {renderer_origin_lower_left() && !strstr(path, "window") ? 1.0f : 0.0f, 0, 0, 0, crop[0], crop[1], crop[2], crop[3]};
     vkCmdPushConstants(cb, present_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 32, pv);
-    ss.known &= ~SS_SETS;  // (another layout: the draws' sets are bound again)
+    ss_forget();  // (static-VI pipeline and another layout: draws re-bind state)
     vkCmdDraw(cb, 3, 1, 0, 0);
     vk_end_rendering(cb);
     vk_full_barrier(cb);
@@ -8574,14 +8933,18 @@ static void exec_list(uint64_t handle, int depth) {
         case CMD_BIND_POLYGON: pipeline_dirty |= st.poly[2] != ((uint8_t *)x)[2]; memcpy(st.poly, x, 4); break;
         case CMD_BIND_VERTEX_ATTRIB: {
             int n = (int)r->x[0] > 16 ? 16 : (int)r->x[0];
-            pipeline_dirty |= n != st.nattrib || memcmp(st.attrib, x, n * 4) != 0;
+            bool chg = n != st.nattrib || memcmp(st.attrib, x, n * 4) != 0;
+            if (chg) vi_gen++;
+            if (!g_vk.dyn_vi) pipeline_dirty |= chg;
             st.nattrib = n;
             memcpy(st.attrib, x, n * 4);
             break;
         }
         case CMD_BIND_VERTEX_STREAM: {
             int n = (int)r->x[0] > 16 ? 16 : (int)r->x[0];
-            pipeline_dirty |= n != st.nstream || memcmp(st.stream, x, n * 8) != 0;
+            bool chg = n != st.nstream || memcmp(st.stream, x, n * 8) != 0;
+            if (chg) vi_gen++;
+            if (!g_vk.dyn_vi) pipeline_dirty |= chg;
             st.nstream = n;
             memcpy(st.stream, x, n * 8);
             break;
