@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-17). Query sele
 
 ## Table of Contents
 
+- [2026-11-17] pr-481-482-483-stutter-split — Round-2 Review, PR #461 Merge & 3-Way Stutter PR Split (#481, #482, #483) (OPEN)
 - [2026-11-17] pr-review-gate-and-stutter-rebase — Mandatory Pre-PR Subagent Review Gate, Progress Archive & `feat/mali-shader-stutter` Rebase (COMPLETE)
 - [2026-11-17] adreno-turnip-045-rollout — CPH2653 Turnip 3-Pass A/B & `v0.4.5-beta` Upgrade (COMPLETE)
 - [2026-11-17] pr-review-responses-and-480 — Upstream PR #315 Merged, PR #480 Opened, PRs #461/#436/#475 Updated & Verified (COMPLETE)
@@ -14,7 +15,7 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-17). Query sele
 - [2026-11-17] pr-reviews-and-scenes-audit — PR #315/#461/#436 Review Updates, MediaTek Clock Check & 11-Scene Audit (COMPLETE)
 - [2026-11-16] workspace-agy-reorg — Workspace Cleanup, Antigravity Migration & `v0.4.5-beta` Check (COMPLETE)
 - [2026-11-16] main-vs-rt-upload-review — `main` Diff Review vs `fix/rt-load-upload-296` (COMPLETE)
-- [2026-11-16] pr-461-rt-load-upload — Upstream PR #461 for `#296`/`#438` Cases 1 & 2 (OPEN)
+- [2026-11-17] pr-461-rt-load-upload — Upstream PR #461 for `#296`/`#438` Cases 1 & 2 (MERGED)
 - [2026-11-16] underwater-walk-296 — Underwater Walk `#296`/`#438` Root Cause & Controlled A/B Fix (COMPLETE)
 - [2026-11-15] mali-30min-ram-vma — 30-Minute RAM & VMA Growth Diagnostics on Mali-G925 (COMPLETE)
 - [2026-11-15] mali-vs-adreno-ram — Entry RAM Comparison (`Mali >3 GB` vs `Adreno+Turnip ~1.5 GB`) & Turnip Rule (COMPLETE)
@@ -24,6 +25,18 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-17). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-14)
 
 ---
+
+## [2026-11-17] pr-481-482-483-stutter-split — Round-2 Review, PR #461 Merge & 3-Way Stutter PR Split (#481, #482, #483) (OPEN)
+
+- **Round-2 Adversarial Review & Fix on `feat/mali-shader-stutter` (`bf9adc1` -> `8d95e8c`):**
+  - Executed 3 fresh read-only `independent-verifier` reviews: `2541c4e0` (`0` CRITICAL/MAJOR/MINOR), `51477155` (`0` CRITICAL/MAJOR, `1` test MINOR), `448ee1a8` (`0` CRITICAL, `1` Windows `_WIN32` `EEXIST` `rename()` MAJOR in `mw_meta_store`, `5` MINOR).
+  - Resolved `_WIN32` `mw_meta_store` replace-existing `rename()` fallback (`remove`+`rename` without `<windows.h>`), expanded `tools/test_mali_shader_stutter.c` (`23` `MW_TF_*` bits, `hdr.version`/`spv_hash=0` payload-hash tests, `memcpy` helpers, `mw_mkdir` retry); verified host WASM (`16`/`33`/`17`), WSL2 Linux `cc`, and `SM-X730` ARM64 Bionic (`PASS`; `CPH2653` unplugged); amended & force-pushed `8d95e8c` (`workspace_check.py pr` `PASS`).
+- **3-Way Single-Concern Upstream PR Split (`eefafaf` base, `689372b` merge-clean):**
+  - Upstream merged PR **#461** into `upstream/main` (`689372b`); `git merge-tree` against `689372b` exited `0` (`MERGEABLE`/`CLEAN`) for all 3 split branches. Updated `.agents/skills/upstream-release-and-pr/SKILL.md` with recursive submodule & Gradle wrapper paths.
+  - **PR #481 (`feat/urgent-shader-builds`, `c1b10cc`, `5` files, `OPEN`):** `runtime/nvn/vulkan/job_queue.h` (`MwJob`), `LARECOMP_URGENT_SHADERS`, `build_done_cond`, `wait_built_job` work-stealing, `build_pipeline_urgent`, `pthread_once` pools, `jobs_drain()`, `vk_shader_build_report()`, `tools/test_shader_job_queue.c`. Verifier `d51c54ba` (`0` C/M; gated `tjobs` steal probe on `urgent_flag != NULL`).
+  - **PR #482 (`feat/shader-meta-cache`, `7759c06`, `5` files, `OPEN`):** `MWSMET01` binary `.smeta` cache (`shader_meta_cache.h`, `LARECOMP_META_CACHE`, `_WIN32` rename), `shaders.{h,c}`, standalone `pthread_once` + `jobs_drain()` + `gmem_miss_log_on()` in `exec.c`, `tools/test_shader_meta_cache.c`. Verifier `8354cefd` (`0` C/M; added `_WIN32` `S_ISDIR` + full field/`glsl` assertions).
+  - **PR #483 (`feat/vk-dyn-vertex-input`, `122ec0c`, `5` files, `OPEN`):** `VK_EXT_vertex_input_dynamic_state` (`vk.h`, `device.c`, `dyn_vi.h`, `LARECOMP_DYN_VI`), `SS_VI` + `vi_gen`, `ss_forget()` in internal static-VI passes, `tools/test_dyn_vertex_input.c` (`git merge-tree` `0` conflicts with `#481` & `#482`). Verifier `a8fe1fe6` (`0` C/M; added `va[]`/`attr_mask`/`stride[]` assertions).
+  - **Verification per split commit:** Host WASM (`16`/`33`/`17`), WSL2 Linux `cc -Wall -Wextra -Werror -O2 -pthread` & `SM-X730` ARM64 Bionic (`PASS`), `tools/test_android_runtime.ps1` (`6/6` `PASS`), JDK 17 `:app:assembleDebug` (`BUILD SUCCESSFUL`, `0` warnings in touched files, `clean`), and `workspace_check.py pr` (`PASS`). Packaged patches/drafts/reviews in `.mali/mali-shader-stutter/upstream-pr/{pr1-urgent,pr2-smeta,pr3-dynvi}/`. `SM-X730` left idle (`2229426f...`, `/data/local/tmp/` clean).
 
 ## [2026-11-17] pr-review-gate-and-stutter-rebase — Mandatory Pre-PR Subagent Review Gate, Progress Archive & `feat/mali-shader-stutter` Rebase (COMPLETE)
 
@@ -130,7 +143,9 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-17). Query sele
 - Executed requested `git diff 7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5` (`--exit-code` rechecked): empty diff (`HEAD = main = git merge-base main fix/rt-load-upload-296 = 7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5`). Branch `fix/rt-load-upload-296` points to `0230d2f2d73c2681cd86bd50c76a5cb6caa96dd9`, outside the requested diff direction; no code changes or tests required.
 - Releases check (`18:04 UTC`, API rate-limited -> verified via official Releases page + `git ls-remote upstream`): `v0.4.4-beta` (`280048bc43b05d76af0659a51c828ff393d4434e`); active fork baseline remained `v0.3.2-beta` (`7bb5bc9`).
 
-## [2026-11-16] pr-461-rt-load-upload — Upstream PR #461 for `#296`/`#438` Cases 1 & 2 (OPEN)
+## [2026-11-17] pr-461-rt-load-upload — Upstream PR #461 for `#296`/`#438` Cases 1 & 2 (MERGED)
+
+- **Merged upstream (`689372b`, head `7077d56`):** Merged into `mamcjr/BOTWRecompAndroid:main` on `2026-11-17`.
 
 - **Release check (`2026-11-16 18:30 UTC`):** Latest published release `v0.4.4-beta` (`280048bc43b05d76af0659a51c828ff393d4434e`); `upstream/main` at `0780cb677d776dca6f05476c781d2ce1bdd8dba7` (`#450`, `git merge-tree --write-tree` with `0230d2f` clean, `exit 0`). Fork `main` unchanged at `7bb5bc9`.
 - **Isolated worktree, push & open PR:** Committed **`0230d2f2d73c2681cd86bd50c76a5cb6caa96dd9`** (replacing earlier local `2d25cbeb...`; `9 files changed, 1932 insertions(+), 73 deletions(-)`) in `.mali/worktrees/fix-rt-load-upload-296`, pushed to `origin/fix/rt-load-upload-296`, and opened upstream **PR #461** (`https://github.com/mamcjr/BOTWRecompAndroid/pull/461` -> `mamcjr/BOTWRecompAndroid:main`, `OPEN`, `MERGEABLE`). Exported patch `.mali/underwater-walk-296/upstream-pr/fix-rt-load-upload-296.patch` (`137,121` bytes, `SHA256=B069CF70F47FC3CF335E66366915A3CD09E72AA7924E987188D8F24A766B56D6`), `PR_DRAFT.md`, and `REPORT.md`.

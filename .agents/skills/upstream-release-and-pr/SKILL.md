@@ -17,11 +17,13 @@ description: >-
 
 ## 2. Isolated Feature Worktrees (Windows NTFS Junctions)
 
-1. Never edit source directly on root `main` when preparing a feature or PR; create an isolated worktree under `.mali/worktrees/<slug>`:
+1. Never edit source directly on root `main` when preparing a feature or PR; create an isolated worktree under `.mali/worktrees/<slug>` and initialize nested submodules (`third_party/libadrenotools/lib/linkernsbypass`) before Android builds:
    ```powershell
    git worktree add -b <branch> .mali/worktrees/<slug> <pinned_sha>
    cmd /c mklink /J "<abs_worktree>\android\deps\out" "<abs_repo_root>\android\deps\out"
+   git -C .mali/worktrees/<slug> submodule update --init --recursive
    ```
+   The Android Gradle wrapper lives at `<abs_worktree>\android\botwrecompandroid\gradlew.bat` (use JDK 17).
 2. Keep strictly one editing/building agent per worktree.
 3. To remove a finished/superseded worktree safely on Windows:
    - First unlink the junction (`cmd /c rmdir "<abs_worktree>\android\deps\out"` — NEVER `Remove-Item -Recurse` on a junction!).
