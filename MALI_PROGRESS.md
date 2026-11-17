@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-17). Query sele
 
 ## Table of Contents
 
+- [2026-11-18] mali-perf-046-and-release-rollout — Upstream `v0.4.6-beta` Sync, PR #485 Async Tex Slots, Mali-G925 60 FPS `ABBA` & Release Rollout (COMPLETE)
 - [2026-11-17] pr480-starter-heights-and-cleanup — Retired PR #461 Worktree, Verified PR #480 Starter-Scene Heights (`3/3 ok`) & Maintainer Sync (COMPLETE)
 - [2026-11-17] pr-481-482-483-stutter-split — Round-2 Review, PR #461 Merge & 3-Way Stutter PR Split (#481, #482, #483) (OPEN)
 - [2026-11-17] pr-review-gate-and-stutter-rebase — Mandatory Pre-PR Subagent Review Gate, Progress Archive & `feat/mali-shader-stutter` Rebase (COMPLETE)
@@ -26,6 +27,25 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-17). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-14)
 
 ---
+
+## [2026-11-18] mali-perf-046-and-release-rollout — Upstream `v0.4.6-beta` Sync, PR #485 Async Tex Slots, Mali-G925 60 FPS `ABBA` & Release Rollout (COMPLETE)
+
+- **Upstream `v0.4.6-beta` (`0897fb8`) Baseline Sync & PR Maintenance:**
+  - Fast-forwarded local/origin `main` to `v0.4.6-beta` (`0897fb889719d0489a7bcbd8dba320b997d377ce`, includes `#436`, `#475`, `#401`), signed stock APK (`.mali/apk/v0.4.6-beta/BOTWRecompAndroid-0.4.6-beta-signed.apk`, `aa9ca25b...`), and retired merged `#436`/`#475` worktrees safely.
+  - Rebased PRs `#481` (`eaec823`), `#482` (`ce13c72`, resolved 2 `MINOR`s from `7fe30906`), and `#483` (`3383e1e`, resolved `MINOR`s from `3eac3855`) onto `0897fb8`; verified host WASM (`16`/`33`/`17`/`23+3+203`), `SM-X730` Bionic binaries, `workspace_check.py pr`, and `:app:assembleDebug`; force-pushed (`#480–#483` all `OPEN`/`MERGEABLE`/`CLEAN`; `.mali/mali-shader-stutter/upstream-pr/CODE_REVIEW.md`).
+- **PR #485 (`feat/mali-async-tex-slots`, `5eea75f` on `0897fb8`, `4` files, `OPEN`/`MERGEABLE`/`CLEAN`):**
+  - Added `#ifdef __ANDROID__` `vk_driver_is_mali()` and `vk_slot_async_default()` (`runtime/nvn/vulkan/{vk.h,device.c}`), enabled deferred texture pool slot retirement by default on Mali in `runtime/nvn/objects.c` (`slot_retire_pending()` / `slot_old_reset()`), and expanded `tools/test_nvn_lifetime.c`.
+  - Audited by Verifiers `c083ffc2` & `ce8bf46b` (`0 CRITICAL, 0 MAJOR`, 3 `MINOR` fixes applied); verified `16`/`33` WASM, `test_nvn_lifetime` `PASS` on `SM-X730`, `:app:assembleDebug`, and **`slot drains 0 (0 ms)`** across `86/86` `[vk-prof]` 2s windows in live 60 FPS gameplay (`.mali/mali-async-tex-slots/upstream-pr/CODE_REVIEW.md`).
+- **`feat/mali-perf-046` (`83bc58c` stacked on `5eea75f`) & Integrated `release/mali-0.4.6-beta` (`65297ca`):**
+  - Implemented `cbwin_snap.h` (`CbwinBaseCache` + compact active-prefix `CbpatchDedupe`), Mali `inplace_reads` default (`vk_driver_is_mali()`, opt-out `LARECOMP_NO_MALI_INPLACE`), and Android compute `dchain` / `dchain_after` barrier chaining in `exec.c`.
+  - Resolved all findings from Verifiers `6ce86e1e` & `d049bbf0` (`_Atomic uint64_t gcopy_gen` + async retire flushes in `wb_apply`/`gcopy_retire`, `dchain_after` / `gfast_prepare` / `(dchain || dchain_after)`, `cbwin_bind` 16B alignment, `vk_driver_is_mali()` deduplication, deterministic 4-way collision in `test_cbwin_snap.c`, Mali pass-break + `cbwin`/`dchain` integration in `test_rt_load_upload.c`, wired into `test_android_runtime.ps1`; `.mali/mali-perf-046/upstream-pr/CODE_REVIEW.md`).
+  - Verified **`12/12` Bionic tests PASS** on `SM-X730` (`8/8` runtime tests + `test_shader_job_queue`, `test_shader_meta_cache`, `test_dyn_vertex_input`, `test_pipeline_prewarm`) on `release/mali-0.4.6-beta` (`65297ca`).
+- **60 FPS Cooled `ABBA` on `SM-X730` (`Mali-G925 MC12`, `.mali/mali-perf-046/REPORT.md`):**
+  - **`zora-plaza`:** `38.07 -> 42.30 fps` (**`+11.1%`**, `opt_1` peak `45.20` `+20.1%`), `gpu_p50 21.515 -> 19.237 ms` (`-10.6%`), `frame_p50 26.232 -> 23.666 ms` (`-9.8%`).
+  - **`korok-plaza`:** `38.41 -> 41.67 fps` (**`+8.5%`**, `opt_1` `43.57`), `gpu_p50 18.267 -> 16.717 ms` (`-8.5%`), `frame_p50 25.884 -> 23.899 ms` (`-7.7%`).
+  - **`kakariko-day`:** `32.31 -> 34.44 fps` (**`+6.6%`**, `opt_1` `36.30`), `gpu_p50 26.729 -> 19.454 ms` (**`-27.2%`**), `frame_p50 30.854 -> 28.910 ms` (`-6.3%`).
+  - **Telemetry & Parity:** Kakariko `upload 1037.3–1039.7 -> 152.0–174.5 MB` (`-83.5%`), `fbcopy 650 -> 0` (`47,742` reads), `dchained 1,008–1,218` (`43–46%`), `99.8–100%` `.smeta` hits, `0` `[wd]`/faults, `6/6` warmup PNGs visually clean.
+- **Release APK Rollout & Cleanup (`SM-X730`):** Built `:app:assembleRelease` -> `.mali/apk/v0.4.6-beta-mali/BOTWRecompAndroid-0.4.6-beta-mali-release.apk` (`449fb940e13a17fc5c8feb1edcf0abd55feb602ab6012204af2fa76b648769c2`, pushed `release/mali-0.4.6-beta`), installed via `adb install -r -d`, verified `pid=''`, `67/67` save/INI (`diffs=0`), `3/4` non-sys prefs (`diffs=0`), `3047` `.spv` & `vk_pipelines.bin` (`5e44112139f6...`). Retired `mali-release-045` & `mali-shader-stutter` after unlinking NTFS junctions (`libshaderc_shared.so` intact).
 
 ## [2026-11-17] pr480-starter-heights-and-cleanup — Retired PR #461 Worktree, Verified PR #480 Starter-Scene Heights (`3/3 ok`) & Maintainer Sync (COMPLETE)
 
