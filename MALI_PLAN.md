@@ -28,11 +28,11 @@ Full 83-row historical release-check polling log (2026-10-31 to 2026-11-16): `.m
 ## 3. Active & Parked Engineering Initiatives
 
 ### A. Upstream PR Follow-Through & Benchmark Scene Set
-- **PR #475 (`feat/pipeline-prewarm-294`, `56716f0` on `6113c61`, `6` files):** Opt-in loading-screen graphics pipeline prewarming (`Video > Pipeline prewarming (experimental)` / `LARECOMP_PIPE_PREWARM`, `BOTWPW01` `cache/pipeline-prewarm.bin`, `PW_HEADROOM=256`, idle worker+translator guard); `6/6` Bionic + 3-pass `SM-X730` verified, `MERGEABLE`/`CLEAN`, Issue `#294` commented.
-- **PR #461 (`fix/rt-load-upload-296`, `6f83821` on `6113c61`, `6` files):** Narrowed to `#296`/`#438` write-back RT sync (`LOAD_OP_LOAD` + `undiscard()`); reply cleaned and linked to `runA-461only.log` (`evidence/pr436-pr461`).
-- **PR #436 (`fix/soft-linear-filter`, `f92454e` on `6113c61`, `6` files):** Lazy `vk_any_format_no_linear()`, `CLAMP`/`REPEAT`, `soft_linear_mip`, `last_prog`; Before/After `#461`-only vs `#461+#436` screenshots (`runA`/`runB` `yard` + `river`) & logs embedded from `evidence/pr436-pr461` (`8dc2d6d`).
-- **PR #315 (`pr315-benchmark-v2 -> benchmark-v2`, `d928ccc` on `6113c61`, `16` files):** Rebased cleanly, pushed, and reply cleaned (`MERGEABLE`/`CLEAN`).
-- **Benchmark Scenes v2 (`benchmark-scenes-v2`, `63f8747` on `d928ccc`):** Upgraded to 12 shrine-free MainField scenes (`24/24 ok` `cap30`, `4/4 ok` `cap60`), pushed to `origin` awaiting `#315` merge.
+- **PR #315 (`MERGED` `ac38c7a9c4`):** `benchmark-v2` merged into `upstream/main`; `pr315-benchmark-v2` worktree retired.
+- **PR #480 (`benchmark-scenes-v2`, `c48d1b1` on `26da3fa`, `5` files):** Rebased & opened after `#315` merge; adds Link `Y_TOLERANCE = 2.0` height verification (`y_settle`, `y_window_start`, `y_window_end`) and 12 shrine-free MainField scenes (`24/24 ok` `cap30`, `4/4 ok` `cap60`, `6/6` Bionic PASS).
+- **PR #461 (`fix/rt-load-upload-296`, `7077d56` on `26da3fa`, `6` files):** Rebased cleanly past `#315` (`textures.c` + `test_android_runtime.ps1` + `test_rt_load_upload.c`), `7/7` Bionic PASS; awaiting owner's 60-min Adreno 830 / `#168` test (`copy_texture` `gpu_owned` noted for separate follow-up).
+- **PR #436 (`fix/soft-linear-filter`, `a106b0c` on `26da3fa`, `6` files):** Added base-program fallback on `state == 2` (`draw_()` + `dispatch_compute()`), memoized `tfmt` in `texture_info()`, and `atomic_fetch_or_explicit` in `vk_any_format_no_linear()`; verified `23` C + `3` SPIR-V + `203` math, `6/6` Bionic, and `SM-X730` Great Plateau grass (`30.0 fps`, `0` errors).
+- **PR #475 (`feat/pipeline-prewarm-294`, `6454ccc` on `26da3fa`, `17` files):** Added all 11 `i18n_*.inc` translations, dropped `"(#294)"` in `menu.mm`, isolated `pw_reset_frame` without touching `g_scene_frame`, replaced `usleep(200)` with non-blocking `prewarm_resolve_collision()`, and reported cold-`vk_pipelines.bin` `ABBA` stutter measurements on `SM-X730`.
 
 ### B. `v0.4.5-beta` Physical Mali Validation
 1. **MediaTek 13 MHz Native-Mode Clock Fix (`Verified active on SM-X730`):** Under `LARECOMP_NATIVE=1` on `SM-X730` (`Dimensity 9400+`), `v0.4.5-beta` logged `counter 13000000 Hz: not the Switch's 19.2 MHz - its reads are scaled to it` (`sdk: 58 svc, 129 TLS, 43 counter reads rewritten`), running at `30.0 fps` (`0` errors).

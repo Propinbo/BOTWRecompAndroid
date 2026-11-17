@@ -381,7 +381,7 @@ def cmd_pr(worktree_arg: str, base: str, allow_protected: bool) -> int:
             cur_file = line[6:]
             continue
         if line.startswith("+") and not line.startswith("+++"):
-            if CYRILLIC_RE.search(line):
+            if cur_file != "runtime/ui/i18n_ru.inc" and CYRILLIC_RE.search(line):
                 errors.append(f"Cyrillic found in added diff line ({cur_file})")
 
     print(

@@ -2,7 +2,7 @@
 
 ## 1. Language Policy
 
-- **Owner communication:** Communicate with the owner in **Russian** (chat replies, summaries, questions, and status updates).
+- **Owner communication:** Communicate with the owner in **Russian** (chat replies, summaries, questions, and status updates). Always end status updates and task completion replies with a concrete recommended next step.
 - **Repository and artifacts:** Write all code, comments, commit messages, PR descriptions, workspace rules, skills, subagent definitions, and tracking/technical documentation (`AGENTS.md`, `MALI_STATUS.md`, `MALI_PLAN.md`, `MALI_PROGRESS.md`, `.mali/**/REPORT.md`) in **English**.
 
 ## 2. Governance, Roles, and Delegation
