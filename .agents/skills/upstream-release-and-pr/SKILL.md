@@ -13,7 +13,7 @@ description: >-
    - `git ls-remote upstream refs/heads/main refs/tags/<newest_tag> refs/tags/<newest_tag>^{}`
 2. Inspect release notes (`gh release view <tag> -R mamcjr/BOTWRecompAndroid`) and open/merged PRs (`gh pr list -R mamcjr/BOTWRecompAndroid --author Propinbo`) to check for overlapping upstream fixes or regressions.
 3. Pin an exact commit SHA at the start of any bounded experiment or PR branch; never switch baselines mid-experiment.
-4. Record any checked release in `MALI_STATUS.md` (and `MALI_PLAN.md` if baseline/active targets change). Wait for explicit owner approval before fast-forwarding `main` or rebuilding/reinstalling stock apps.
+4. Record any checked release in `MALI_STATUS.md` (and `MALI_PLAN.md` if baseline/active targets change). Keep active PR branches pinned to their chosen SHA until rebasing; fast-forward fork/local `main` to verified upstream releases when syncing baselines.
 
 ## 2. Isolated Feature Worktrees (Windows NTFS Junctions)
 
@@ -33,4 +33,4 @@ description: >-
 1. Run [workspace_check.py](../../scripts/workspace_check.py) (`python -B -S .agents/scripts/workspace_check.py pr <worktree> --base upstream/main`) for instant validation of working-tree cleanliness, `git merge-tree --write-tree`, forbidden paths (`Dump/`, `extracted/`, `generated*`, `.bfttf`, `.mali/`, `.agents/`, `AGENTS.md`, `MALI_*.md`), protected files (`tools/patches.py`, `GAMELIB_ID`, `.gitignore`), and English-only commits/diffs.
 2. Audit `git diff --stat <base>..HEAD` and `git log -n 5` to confirm one focused change per PR (`CONTRIBUTING.md`).
 3. Export a clean `.patch` file and draft English `PR_DRAFT.md` + `REPORT.md` locally under `.mali/<topic>/upstream-pr/`.
-4. Run relevant host/Bionic/device tests (and optionally dispatch `independent-verifier` only for subtle or high-risk runtime changes), then request explicit owner approval before running `git push` or `gh pr create`.
+4. Run relevant host/Bionic/device tests (and optionally dispatch `independent-verifier` only for subtle or high-risk runtime changes), then push the branch to `origin` and create or update the PR via `gh pr`.

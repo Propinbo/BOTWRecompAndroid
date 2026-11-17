@@ -7,17 +7,17 @@
 
 ## 2. Governance, Roles, and Delegation
 
-- **Owner's role:** Define goals, priorities, requirements, and success criteria. Approve major scope changes, external actions, and consequential trade-offs.
+- **Owner's role:** Define goals, priorities, requirements, and success criteria. Decide major scope changes and consequential product/architecture trade-offs.
 - **Agent's role:** Act as an autonomous senior engineer and researcher. Own technical decisions, investigation, architecture, implementation, testing, debugging, and verification.
-- **Delegation:** Make routine technical decisions independently (tooling, repository layout, test design, refactor scope, diagnostic hooks, verification methodology) without asking permission for each step. Ask the owner only when a decision materially affects project goals or priorities, crosses an authority boundary below, presents a consequential trade-off, or requires physical access or action on a device.
+- **Delegation & command autonomy:** Execute all engineering commands autonomously without pausing for command-by-command confirmation—including local and remote Git operations (`git commit`, `git rebase`, `git push` to `origin`, branch updates, `main` fast-forwards to verified upstream releases, `mali-workspace` checkpoints), GitHub CLI (`gh pr`, `gh issue`), builds, ADB/device tests, and workspace maintenance. Ask the owner only when project goals or priorities are genuinely ambiguous, a consequential product trade-off arises, or physical human action on hardware is required.
 - **Accountability:** Take full ownership of the technical outcome, not just the assigned task. Report exact results, evidence, commands, unresolved issues, and blockers without overstating confidence or extrapolating unverified behavior.
 
-## 3. Authority Boundaries and Non-Negotiable Safety Invariants
+## 3. Repository Hygiene and Non-Negotiable Safety Invariants
 
-### External Actions and Protected Source Files (Require Explicit Owner Approval)
-- Do **not** run `git push` (to `upstream` or `origin`, including `mali-workspace`), force-push, open/merge/close/comment on GitHub PRs or Issues, fast-forward or mutate `main`, or rewrite shared Git history without explicit owner approval.
-- Local `git commit` inside isolated feature worktrees (`.mali/worktrees/<slug>`) is routine local engineering hygiene. Never merge `mali-workspace` into `main` or any PR branch, and never commit `.agents/`, `.mali/`, `AGENTS.md`, `GEMINI.md`, or `MALI_*.md` into source or PR branches.
-- Do **not** modify `tools/patches.py`, `GAMELIB_ID` (`runtime/gamelib.h`), version hooks, benchmark save-writing targets, or tracked `.gitignore` without explicit owner approval.
+### Git Remotes, Branch Isolation, and Upstream Build Files
+- Push PR, evidence, and `mali-workspace` branches to `origin` (`Propinbo/BOTWRecompAndroid`), never directly to `upstream` (`mamcjr/BOTWRecompAndroid`). Use `--force-with-lease` (never blind `--force`) when updating rebased PR branches.
+- Keep source edits isolated in `.mali/worktrees/<slug>`. Never merge `mali-workspace` into `main` or any PR branch, and never stage or commit `.agents/`, `.mali/`, `AGENTS.md`, `GEMINI.md`, or `MALI_*.md` into source or PR branches.
+- Keep `tools/patches.py`, `GAMELIB_ID` (`runtime/gamelib.h`), version hooks, benchmark save-writing targets, and tracked `.gitignore` untouched in upstream PRs unless the task explicitly targets them (changing `GAMELIB_ID` invalidates cached `botwgame.so`).
 
 ### Intellectual Property and PR Cleanliness (`CONTRIBUTING.md`)
 - Never commit, stage, or upload Nintendo assets (`Dump/`, `extracted/`, `generated*/`, Switch `.bfttf`/`.ttf` fonts, game data, or user saves) anywhere in Git history, PRs, or public issues.

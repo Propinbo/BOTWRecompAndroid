@@ -5,13 +5,13 @@ Authoritative engineering roadmap for Mali-G925 / Immortalis-G720 optimization, 
 ## 1. Governance & Workflow Contract
 
 Governance, language policy, authority boundaries, safety invariants, and verification rules are defined in root [`AGENTS.md`](AGENTS.md) and `.agents/skills/*/SKILL.md`:
-- **Owner:** Defines goals, priorities, requirements, and success criteria; explicitly approves external actions (`git push`, PRs/Issues, `main` fast-forwards), protected-file edits (`tools/patches.py`, `GAMELIB_ID`, `.gitignore`), major scope changes, and physical device access/upgrades.
-- **Agent:** Operates as an autonomous senior engineer and researcher owning technical investigation, architecture, implementation, local worktree commits, testing, debugging, and proportional situational verification.
+- **Owner:** Defines goals, priorities, requirements, and success criteria; decides major scope changes and consequential product/architecture trade-offs.
+- **Agent:** Operates with full command autonomy across Git (`origin` pushes, rebases, `main` fast-forwards, `mali-workspace` checkpoints), GitHub CLI (`gh pr`/`gh issue`), builds, and isolated ADB testing while enforcing IP, save-safety, Turnip-only Adreno, and NTFS junction invariants.
 - **Documentation checkpoint branch:** `mali-workspace` on `Propinbo/BOTWRecompAndroid` tracks only `AGENTS.md`, `MALI_PLAN.md`, `MALI_PROGRESS.md`, `MALI_STATUS.md`, and `.agents/` with `[skip ci]`. Never merge `mali-workspace` into `main` or PR branches.
 
 ## 2. Rolling Upstream Baseline
 
-The active development target tracks the latest *verified, published* `mamcjr/BOTWRecompAndroid` GitHub Release (betas included). Campaigns pin one exact SHA and finish on it; migrations require owner approval.
+The active development target tracks the latest *verified, published* `mamcjr/BOTWRecompAndroid` GitHub Release (betas included). Campaigns pin one exact SHA and rebase/migrate cleanly onto newer verified releases when appropriate.
 
 | Checked (UTC) | Newest Published Release | Tag SHA | Fork `main` Baseline | Relevance / Notes |
 |---|---|---|---|---|

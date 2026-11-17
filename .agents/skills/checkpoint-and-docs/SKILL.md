@@ -20,7 +20,7 @@ When `MALI_PROGRESS.md` grows large, move closed older epochs cleanly into `.mal
 ## 3. Local Exclusion and `mali-workspace` Checkpoints
 
 1. Verify `.git/info/exclude` blocks `/.agents/`, `/.mali/`, `/AGENTS.md`, `/GEMINI.md`, `/MALI_PLAN.md`, `/MALI_PROGRESS.md`, `/MALI_STATUS.md`, and `/android/deps/{src,work,out}/`.
-2. Never merge `mali-workspace` into `main` or any PR branch, and never push to `origin/mali-workspace` without explicit owner approval.
+2. Never merge `mali-workspace` into `main` or any PR branch; keep `mali-workspace` commits strictly isolated to documentation and `.agents/` checkpoints on `origin/mali-workspace`.
 3. Run [workspace_check.py](../../scripts/workspace_check.py) (`python -B -S .agents/scripts/workspace_check.py docs`) before committing a checkpoint on `mali-workspace` to verify UTF-8, size caps, `MALI_PROGRESS.md` ToC parity, zero Cyrillic, zero local-path/serial leaks, and zero `__pycache__`. Use `[skip ci]` in checkpoint commit messages.
 4. **Recovery into a fresh `main` checkout:**
    ```powershell
