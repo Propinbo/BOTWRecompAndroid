@@ -1,9 +1,11 @@
 # MALI Contribution Execution Progress
 
-Active indexed English engineering ledger (2026-11-05 to 2026-11-17). Query selectively by heading or line range rather than loading the entire file. Historical entries (2026-10-30 to 2026-11-05) are summarized in the bottom digest and archived in `.mali/archive/MALI_PROGRESS_2026_10_30_to_11_05.md`.
+Active indexed English engineering ledger (2026-11-15 to 2026-11-17). Query selectively by heading or line range rather than loading the entire file. Historical entries (2026-10-30 to 2026-11-14) are summarized in the bottom digest and archived under `.mali/archive/`.
 
 ## Table of Contents
 
+- [2026-11-17] pr-review-gate-and-stutter-rebase — Mandatory Pre-PR Subagent Review Gate, Progress Archive & `feat/mali-shader-stutter` Rebase (COMPLETE)
+- [2026-11-17] adreno-turnip-045-rollout — CPH2653 Turnip 3-Pass A/B & `v0.4.5-beta` Upgrade (COMPLETE)
 - [2026-11-17] pr-review-responses-and-480 — Upstream PR #315 Merged, PR #480 Opened, PRs #461/#436/#475 Updated & Verified (COMPLETE)
 - [2026-11-17] release-mali-045-rollout — Integrated `v0.4.5-beta` Mali Release Build & `SM-X730` Upgrade (COMPLETE)
 - [2026-11-17] mali-shader-stutter — Custom 3-Pillar Mali Shader & Pipeline Stutter Fix (COMPLETE)
@@ -19,30 +21,32 @@ Active indexed English engineering ledger (2026-11-05 to 2026-11-17). Query sele
 - [2026-11-15] devices-043-update — `SM-X730` & `CPH2653` Update to `v0.4.3-beta` and `waterdiag` Removal (COMPLETE)
 - [2026-11-15] pr-436-soft-linear — Upstream PR #436 (`soft_linear` on `v0.4.3-beta`) (OPEN)
 - [2026-11-15] water-cube-twin-peaks — Water Volume at Dueling Peaks Root Cause & Fix (COMPLETE)
-- [2026-11-14] git-cleanup — Local Git Audit & Cleanup (COMPLETE)
-- [2026-11-14] pipeline-13b1-hateno — Vulkan Pipeline Prewarming `#294` Steps `13a`, `13b` & `13b.1` (NO-GO)
-- [2026-11-14] devices-040-update — `SM-X730` & `CPH2653` Update to `v0.4.0-beta` (COMPLETE)
-- [2026-11-13] pr-315-rebase — PR #315 Local Rebase and Review (COMPLETE)
-- [2026-11-12] sm-x926b-setup — Tab S10 Ultra (`SM-X926B`, Immortalis-G720) Initial Setup (COMPLETE)
-- [2026-11-09] benchmark-scenes-v2 — 11-Scene MainField Dataset Delivered Locally (COMPLETE)
-- [2026-11-09] devices-034-update — `SM-X730` & `CPH2653` Update to `v0.3.4-beta` (COMPLETE)
-- [2026-11-08] memory-12b — Controlled Reproduction & Target Selection (IN PROGRESS)
-- [2026-11-08] memory-12a — Memory Instrumentation and Noninterference (COMPLETE)
-- [2026-11-08] memory-plan-branch — Memory Plan and Separate Source Branch (COMPLETE)
-- [2026-11-08] oneplus-memory-audit — OnePlus Memory & Background Kills Investigation (COMPLETE)
-- [2026-11-08] benchmark-scenes — 13-Scene Extended Benchmark Set Delivered Locally (COMPLETE)
-- [2026-11-08] loading-screen-aspect — Unlocked Aspect Loading Text & Skip Prompt Fix (COMPLETE)
-- [2026-11-08] phone-032-and-grass-cleanup — Upstream `0.3.2` on OnePlus & `grass-masks-ab` Retirement (COMPLETE)
-- [2026-11-08] benchmark-v2 — Benchmark v2, Flag-Off Audit, P2 Fixes & `main` Fast-Forward (COMPLETE)
-- [2026-11-07..08] fullscreen-16x10 — Fullscreen `16:10` Phase 1 & Phase 2 World-HUD Anchors (PHASE 1 COMPLETE / PHASE 2 IN PROGRESS)
-- [2026-11-06..07] ultrawide-ui-fixes — OnePlus Ultrawide UI Fixes & Worktree Consolidation (COMPLETE)
-- [2026-11-06] grass-masks-ab — Local Distant-Grass Mask Delivery A/B (COMPLETE)
-- [2026-11-05] upstream-port-candidates — `SavageWindRecomp` & `MacNativeGames` Feasibility Reviews (COMPLETE)
-- [2026-11-05] oneplus-setup-and-save-sync — OnePlus `CPH2653` Setup, `Turnip V38 Patched` & Tablet Save Transfer (COMPLETE)
-- [2026-11-05] issue-triage-and-diag2 — Open Issue Triage, World Checks & Cache x Thermal `Diag2` Experiment (COMPLETE)
-- Historical Archive Digest (2026-10-30 to 2026-11-05)
+- Historical Archive Digest (2026-10-30 to 2026-11-14)
 
 ---
+
+## [2026-11-17] pr-review-gate-and-stutter-rebase — Mandatory Pre-PR Subagent Review Gate, Progress Archive & `feat/mali-shader-stutter` Rebase (COMPLETE)
+
+- **Permanent Antigravity pre-PR multi-agent code review gate (`AGENTS.md`, `.agents/agents/independent-verifier.md`, `.agents/skills/upstream-release-and-pr/SKILL.md`):**
+  - Institutionalized mandatory `2–3` parallel `independent-verifier` read-only reviews (or `run_workflow` fan-outs on multi-module PRs) before opening or substantively updating any upstream PR, archiving resolutions in `.mali/<topic>/upstream-pr/CODE_REVIEW.md`.
+- **`feat/mali-shader-stutter` rebase onto `upstream/main` (`eefafaf`) & 3-subagent review (`bf9adc1`, `7` files, `+1595/-133`):**
+  - Resolved `#315` `benchmark_perf.h` conflicts cleanly (`BENCH_BUILD()` in `compile_program` + hit path of `prog_fast_or_translate`, `BP_BUILD_WAIT_NS` in `account_build_wait`, `BP_REBUILDS`), added `jobs_drain()` at top of `vk_exec_reset()`, and unaligned-safe `mw_stage_key()`.
+  - Dispatched 3 parallel `independent-verifier` reviewers (`55e5f3ba` Concurrency, `20b0c92b` Vulkan/Cache, `1eb8a08f` Style/Benchmark/Tests) and resolved all findings: added 7 missing `translate.c` `LARECOMP_*` env flags + `gmem_linear_lookup` + `snprintf` truncation guards in `.smeta`; guarded `VK_DYNAMIC_STATE_VERTEX_INPUT_EXT`/`vkCmdSetVertexInputEXT` under `#ifdef __ANDROID__` + `maxVertexInputBindings > 16`; replaced `started` bools in `run_translate_ex`/`run_job_ex` with `pthread_once` + `pthread_detach`; cached `gmem_miss_log_on()` outside `draw_()`; switched `post_pass`/`vk_present_draw`/`renderer_save_texture_tex` to `ss_forget()`; made `mw_job_push()` return `bool`; normalized `stat_meta_hits`; and upgraded `tools/test_mali_shader_stutter.c` for Linux/Windows/Bionic portability + full negative controls.
+  - **Verification (`bf9adc1`):** `test_vulkan_compat.py` (`16`), `test_vulkan_startup.py` (`33`), `test_shader_cache.py` (`17`), `test_mali_shader_stutter.c` (`-Wall -Wextra -Werror`) **PASS** on WSL2 Linux host + `SM-X730` + `CPH2653` Bionic, `tools/test_android_runtime.ps1` **6/6 PASS**, `:app:assembleDebug` (`JDK 17`) `BUILD SUCCESSFUL` (`0` new warnings), and isolated `CPH2653` Turnip (`driver-id 18`) `repeats=2` `hateno-night` smoke **PASS** (`30.17 fps`, `[vk] reboot: 467 programs, 854 pipelines and 19 compute programs freed (0 kept)`, repeat 2 `452/452` (100%) `.smeta` hits, `gpu.p50=23.291 ms`, crisp `hateno-turnip-postreview.png`, `0` errors). Restored `v0.4.5-beta-mali` (`2229426f...`), `83/84` manifest (`0` save/INI diffs), `1865` SPIR-V & `vk_pipelines.bin` intact. Pushed `feat/mali-shader-stutter` (`--force-with-lease`), `workspace_check.py pr` **PASS**, packaged `.mali/mali-shader-stutter/upstream-pr/{feat-mali-shader-stutter.patch, CODE_REVIEW.md, PR_DRAFT.md}` (awaiting owner 1-vs-3 PR choice).
+- **`MALI_PROGRESS.md` epoch archiving & `mali-workspace` checkpoint:**
+  - Saved intact pre-archive snapshot `.mali/archive/MALI_PROGRESS_pre_archive_2026_11_17.md` and archived 21 closed `2026-11-05..2026-11-14` entries into `.mali/archive/MALI_PROGRESS_2026_11_05_to_11_14.md`.
+
+## [2026-11-17] adreno-turnip-045-rollout — CPH2653 Turnip 3-Pass A/B & `v0.4.5-beta` Upgrade (COMPLETE)
+
+- **Backup & Oryon Bionic Unit Verification (`CPH2653`, `2026-11-17`):**
+  - Captured verified dated user backup `.mali/user-backup/2026-11-17/adreno/` (`stock-v190.tar` `25,321,984` B, SHA-256 `d2210990...00de`, `84/84` files matching device and `2026-11-16`).
+  - Compiled & passed all `3/3` Bionic C unit suites from `.mali/worktrees/mali-release-045` on `CPH2653` Oryon ARM64 (`test_mali_shader_stutter` `-Wall -Wextra -Werror`, `test_bc_shadow` `10/10`, `test_rt_load_upload` `0` hazards / `0` failures).
+- **Turnip-Only 3-Pass A/B (`run_verify_adreno.py`, `hateno-night`, `cap30`, `sgsr1` `1080p`, `LARECOMP_NATIVE=1`, pre-seeded `1865` `.spv` + `v0.4.3-beta` Turnip `vk_pipelines.bin`):**
+  - Strictly loaded `/data/user/0/com.botwrecomp.android/files/drivers/Turnip_Gen8_V38_Patched/libvulkan_freedreno.so` (`driver-id 18 turnip Mesa 27.0.0-devel git-f28352d117`, `commit=a1ef82096347`, `0` Vulkan errors):
+    - **`pass1_turnip_baseline` (`0/0/0`, `0` `.smeta`):** `load_s=17.8 s`, `30.11 fps`, `gpu.p50=24.602 ms`, `frame.p50=33.157 ms`, `p99=33.822 ms`, `over_50ms=0`, `[vk-cap] dynamic vertex input: off`, `wait 738.17 ms (max 94.21 ms, 717 waits, 0 stolen)`, `live 454 / 1247 gpipes`.
+    - **`pass2_turnip_ours_cold` (`1/1/1`, restored `v0.4.3` `vk_pipelines.bin`, cold `.smeta`, `633` `.smeta`):** `load_s=17.7 s`, `30.13 fps`, `gpu.p50=24.551 ms`, `frame.p99=33.764 ms`, `over_50ms=0`, `dynamic vertex input: on`, `wait 447.30 ms (max 34.55 ms, 599 waits, 157 stolen)`, `live 454 / 844 gpipes` (`-32.3%`), crisp `verify_adreno/hateno-turnip-dynvi1.png`.
+    - **`pass3_turnip_ours_warm` (`1/1/1`, warm `.smeta` + warm `vk_pipelines.bin`, `637` `.smeta`):** `load_s=17.7 s`, **`30.17 fps`**, **`gpu.p50=21.918 ms`** (`0%` regression vs baseline), `frame.p50=33.127 ms`, `p99=33.717 ms`, `over_50ms=0`, `wait 126.40 ms` (**`-82.9%`**, `max 5.62 ms`, `553 waits`, `156 stolen`), **`906/908` `.smeta` hits (`99.8%`)**, **`live 455 / 799 gpipes` (`-35.9%`)**.
+- **Device State (`CPH2653`):** Scratch removed, Release `v0.4.5-beta` (`versionCode=44`, SHA-256 `2229426f259212869b64fba2a819318b3aa657153523d13060b61de5d627b23a`) left installed unlaunched (`pid=''`), `83/84` manifest exact match (`0` save/INI diffs; Android updated `shared_prefs/crash_diagnostics.xml` `boot_count` `287 -> 288`), `1865` `.spv` & `vk_pipelines.bin` (`f62368ef16c3...`) intact (`.mali/apk/v0.4.5-beta-mali/install-verification.txt`).
 
 ## [2026-11-17] pr-review-responses-and-480 — Upstream PR #315 Merged, PR #480 Opened, PRs #461/#436/#475 Updated & Verified (COMPLETE)
 
@@ -202,121 +206,14 @@ Active indexed English engineering ledger (2026-11-05 to 2026-11-17). Query sele
 - **Stage 3–4 (2026-11-15, `.mali/water-artifact/stage3/`, `stage4/`):** Identified NSO 1.9.0 `BoxWater(Main)`, `EntityWater`/`EntityPlayer` layers, `StaticCompound`, and Havok heightfield sampling path. Paired CPU query in `EntityWater` diverged (`Mali Y=114.953056 m` vs `Adreno Y=114.978546 m`), while root terrain heightfield matched. Found 3 callers of `0xd59450` and branch `0xd5bd60 -> 0xd5f420` (`0xd5bc20` flag reads `+0xf4`/`+0x148`).
 - **Stage 5–6 (2026-11-15, `.mali/water-artifact/stage5/`, `stage6/`):** With identical `float32` control rays (`XYZ`), inside queries gave `116.040855` (Mali) vs `112.913231` (Adreno) and edge queries diverged `hit`/`miss`. Stage 6 pinpointed first diverging texel fetch `0x1448e94` at tile slot `7`: Mali read `24e2,24e2,2530,2530` vs Adreno `248f,2421,2456,239f`, leading directly to the GPU writeback/linear-filter root cause above.
 
-## [2026-11-14] git-cleanup — Local Git Audit & Cleanup (COMPLETE)
+## Historical Archive Digest (2026-10-30 to 2026-11-14)
 
-- Audited 24 local branches, 11 worktrees, and 7 reflog-only tips (`90f2b46`, `5fd7699`, `8ddd5f3`, `aef9ec3`, `8898244`, `c88566c`, `862ee37`). Verified SHA-256 parity of `codex/memory-background` 12a files, restored root `main` cleanly (`7bb5bc9`), removed merged/retired branches (`codex/memory-background`, `benchmark-mvp`, `fix-test-nvn-lifetime`, `pace-vsync-phase`, `pr-maintenance5`) and retired detached trees (`brave-wolf`, `mighty-garden`), and updated local `upstream/main` to `7ad5e4e`.
-- Archived 12 branches under `archive/`, pinned the 7 reflog tips under `refs/archive/reflog`, moved `kind-rocket`, verified `.mali/git-archive/2026-11-14/history.bundle` (`22` refs, `fsck` OK), and verified 6 file snapshots via patch recovery + `27,670` SHA-256 checks.
+Complete execution details for `2026-10-30..2026-11-05` live in `.mali/archive/MALI_PROGRESS_2026_10_30_to_11_05.md`, `2026-11-05..2026-11-14` live in `.mali/archive/MALI_PROGRESS_2026_11_05_to_11_14.md`, and verbatim pre-archive snapshots live in `.mali/archive/`.
 
-## [2026-11-14] pipeline-13b1-hateno — Vulkan Pipeline Prewarming `#294` Steps `13a`, `13b` & `13b.1` (NO-GO)
-
-- **13a (`v0.4.0-beta` `d0bda06`, `SM-X730`, `.mali/pipeline-13a/REPORT.md`):** 3 cold / 3 warm runs showed cold `Pipe` `db5e48c38443a7bc` waiting `1420–1485 ms` and `931d82882b8b24ee` waiting `327–339 ms` (warm `<1 ms`); `931d` had live `Prog` `871–937 ms` before world with repeatable baked state. `6/6` Android native regressions PASS.
-- **13b (`.mali/pipeline-13b/REPORT.md`):** Implemented `LARECOMP_PIPE_PREWARM=1` (SHA-256 full stage SPIR-V + `ShaderKey`, 492 B profile, 1 concurrent FIFO job when idle, 256 pipeline headroom, 20s window, zero second shader cache). Technically `ad60fe8a626573cb` was ready before first draw (eliminating a `198.39 ms` wait), while `>50 ms` post-world intervals read `33 OFF / 36 ON` (`20.3 / 20.5s` load, `+31.5 MiB` peak observed PSS). Reset smokes passed teardown.
-- **13b.1 & NO-GO closeout (`.mali/pipeline-13b.1/{REPORT.md,CLOSEOUT.md}`):** Tested 3 cold ON/OFF pairs on `d0bda06`. Both `ad60` and `689b` were ready before first draw in `3/3` ON runs (`0` rebuilds/evictions), yet `>50 ms` rotation stutter sum improved in only `1/3` pairs (`Continue -> world` delta `-181 / -385 / +82 ms`, observed peak PSS `-64 / +48 / -63 MiB`). Owner accepted **NO-GO for 13c**; direction parked. Restored stock APK, verified `67/67` save/INI + cache guard.
-
-## [2026-11-14] devices-040-update — `SM-X730` & `CPH2653` Update to `v0.4.0-beta` (COMPLETE)
-
-- Checked `v0.4.0-beta` (`d0bda062b382334d70f709fc65c2d80a669f643c`, `09:41/09:44 UTC`), re-signed official APK with `60fa2a5f...527a` (`SHA-256 1913871fa29142108a9cb6bc0f9221677cd64de3f8e40183deec7fc83115efc1`, `versionCode 39`), and installed via `adb install -r` on `SM-X730` and `CPH2653` without launching. Verified pre-install backups (`.mali/user-backup/2026-11-14/`: `83` save/settings + `4` prefs on `SM-X730`; `62/62` external save/settings hashes on `CPH2653`).
-
-## [2026-11-13] pr-315-rebase — PR #315 Local Rebase and Review (COMPLETE)
-
-- Locally rebased `benchmark-v2` onto `c68f6bd4e0f1ea0d01c2c75e7d79ac5a13d43e88` in `codex/pr315-review` (`78703a4c9c6d5eed2af40973176d8bab1e14f484`), later finalized at `674c8b0` (`= origin/benchmark-v2`, `.mali/worktrees/pr315-benchmark-v2`, local branch `pr315-benchmark-v2`).
-- Kept `wait_built` scoping, added eviction time/count/requeue counters (`pipeline_evict`), preserved upstream display timing, and verified MIT blob `a4139dece2586620f607ee152b37f343d0bb6532` against `SavageWindRecomp` `257b1f3` with attribution. Built debug A/B and B release APKs; `6/6` Android regressions PASS on `SM-X730`; ARM64 disassembly confirmed flag-only checks at handoff/GPU wait. Evidence: `.mali/benchmark/pr315-review/`. Release check `20:11 UTC`: `v0.4.0-beta` (`d0bda06`).
-
-## [2026-11-12] sm-x926b-setup — Tab S10 Ultra (`SM-X926B`, Immortalis-G720) Initial Setup (COMPLETE)
-
-- Configured newly connected `SM-X926B` (MediaTek MT6989 Dimensity 9300+, Immortalis-G720 MC12 `r44p1`, `2960x1848` `120 Hz`); per owner choice, installed without Turnip (Adreno-only).
-- Fresh install of official `v0.3.4-beta` APK (`sha 7b94efcc...3dcb`, `versionCode 38`), pushed `.mali/game-preparation/deployment/files` (`v190` + DLC, `43/43` SHA-256 match), set `game_version.txt=190` and `ini` (`Recompiled`, `45 fps` cap / `40` at `120 Hz`, `FSR1 1x`, output auto, FXAA, unlocked aspect, touch on, FPS overlay on). Built `botwgame.so` on-device in `850s`; smoke test rendered new-game intro at `30 fps` with `0` `FATAL`/`Abort`; force-stopped afterwards.
-
-## [2026-11-09] benchmark-scenes-v2 — 11-Scene MainField Dataset Delivered Locally (COMPLETE)
-
-- Branch `benchmark-scenes-v2` (worktree `.mali/worktrees/benchmark-scenes-v2`): `44360ae` (height check in harness) + `7b69caa` (`tools/benchmark-scenes-extended.txt` + `.md`, 11 scenes, workloads, caveats, final numbers; `docs/BENCHMARK.md` pointer). Unpushed; awaiting PR `#315` merge/rebase before opening a scene-set PR.
-- Final run `final2`: warm pass + measured `11x2`, `thermal_max=0`, `22/22 ok`; GPU `p50` recomputed from `frames.csv` matched report. Spreads `<0.5%` except `kakariko` `2.95%` (flagged `Noisy: NPC`). Flags: `C` on most scenes (`cold` SPIR-V misses remain past warm pass), `T` on `kakariko`/`hateno`/`riverside`/`karakara`; `Y` within `0.6`, moved `0`, hearts unchanged. New `lake-hylia-shore` point (`76, 90.8, 2664`, `yaw -80`) validated `2/2 ok` (`0.16%`); weak scenes (`faron-canopy`, `faron-woods-pond`, `lurelin-rain`) marked pending manual placement.
-- Evidence: `.mali/benchmark/scenes-v2/runs/set-final2/`, `contact-sheet-final2.png`, `set-final2.log`. Backup `.mali/user-backup/2026-11-09-b/` (`41` files, `tar 36b6333f...`); stock APK `9e11940d...54fe` restored, `41/41` save/settings + cache matched, scratch removed. Release check `17:34 UTC`: `v0.3.4-beta` (`3d9beeb`).
-
-## [2026-11-09] devices-034-update — `SM-X730` & `CPH2653` Update to `v0.3.4-beta` (COMPLETE)
-
-- Official release APK rejected due to signer mismatch (`debug` signer `60fa2a5f...` installed; uninstalling would wipe saves). Built debug APK from tag `v0.3.4-beta` (`3d9beeb`, `versionCode 38`, `sha 1f2e75da...63c5`) and updated both `SM-X730` (`41/41` hashes matched backup `2026-11-09-b`) and `CPH2653` (`61/61` hashes matched backup `.mali/user-backup/2026-11-09/phone-before-0.3.4/`, `tar 284193ff...`) in place via `adb install -r`.
-
-## [2026-11-08] memory-12b — Controlled Reproduction & Target Selection (IN PROGRESS)
-
-- **Scope & baseline:** `codex/memory-background` on `v0.3.2-beta` (`7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5`, checked `2026-11-08 19:24:12 UTC`), reusing unchanged 12a APK (`c39897af...c669`) on OnePlus 13 (`CPH2653`); `61/61` backup guard (`284193ff...70c15d`). Evidence: `.mali/memory/12b/{PROTOCOL.md,campaign.py,events.jsonl,runs/}`.
-- **In-process reset accumulation (`5/5 ok` after `runs/reboot/INVALID.json` watchdog fix):** 4 reboots (`16.56 / 21.57 / 17.21 / 19.14s`), no hang. Matched stable PSS grew `2692931 -> 3018205 KiB` (`+317.65 MiB`), VMA allocations `639303680 -> 634253312 B`, blocks `800 MiB` / raw `3120 MiB` unchanged. Live `Prog 352 -> 1765`, `PipeMeta 1044 -> 5170`, `CsProg 17 -> 85`, `pipelines 1064 -> 5258`, `shaders 709 -> 3535`, `layouts 371 -> 1852`, `samplers 58 -> 286` (fixed upstream later in `v0.4.5-beta`).
-- **Weather, Blood Moon & Live Routes (`PID 12536`):** Rain (`2`) and night (`330`) windows passed; misconfigured Snow run (`4`) flagged in `MISCONFIGURATION.json`; corrected `ThunderRain` (`7`) triggered real lightning -> Link death (`26` frames, `harness_error` warmup/event-not-ended). Genuine Blood Moon observed via scratch position/time (`355`, movie start/end -> `00:00` return, post-event VMA `624001024 B`, `20s` OS sample pre-load limitation noted). Hateno shrine interior entry + map fast-travel return completed in-process (`0` RT reset); 3 Hateno<->Kakariko loops started; background `16`-trial HOME/Settings matrix and `12c–12f` remain unstarted/parked.
-
-## [2026-11-08] memory-12a — Memory Instrumentation and Noninterference (COMPLETE)
-
-- **Baseline & branch:** `codex/memory-background` on `v0.3.2-beta` (`7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5`, checked `18:29:59 UTC`). Evidence & 16-file manifest: `.mali/memory/12a/REPORT.md` (`source-review.diff`).
-- **Implementation:** Opt-in `LARECOMP_MEMORY_TRACE=1` typed VMA/raw wrappers (`131,072`-record bounded registry / `256`-event tail, diagnostic mutex outside Vulkan/VMA calls, owner-thread `1 Hz` aggregates, Java lifecycle markers, gated `EXT_memory_budget`, VMA estimate label on overlay).
-- **Verification:** Host ASan/UBSan + `4` negative controls PASS; mock forwarding/failed-alloc/raw-import checks PASS; `33` startup + `16` compat PASS; OnePlus native units (`bc_shadow`, `buffer_copy`, `nvn_lifetime`, `kernel_affinity`) `4/4` PASS (pre-existing `upload-cache` harness compile failure documented). Baseline/candidate APKs (`e595f4ed...cdbe` / `c39897af...c669`) built & linked.
-- **OnePlus Turnip `1.9.0` Native checks:** `178` (`93+85`) complete aggregate groups with exact tracked/VMA byte parity (`0` unknown/dropped), raw guest `3120 MiB` = placed `smaps` size; `resume/pause/stop/trim:20/resume` same-PID lifecycle verified. Flag-off (`12x30s` windows, `4A+5B` clean after `3` quality exclusions): GPU `p50/p95 +1.258/+1.113%` within AA `2.169/2.420%`, CPU `p50/p95 +2.919/+1.408%` within AA `7.123/5.391%`, frame `p50/p95 -0.009/-0.075%` (`10/10` quantile gates PASS). Safety: `61/61` hashes matched `284193ff...70c15d`, cache intact, exact `ffb65e34...7a50` restored.
-
-## [2026-11-08] memory-plan-branch — Memory Plan and Separate Source Branch (COMPLETE)
-
-- Prepared dedicated branch `codex/memory-background` from `v0.3.2-beta` (`7bb5bc98fae6093da3c2dd8f5af3c756b59ee7d5`, checked `18:26:31 UTC`), isolated from `benchmark-v2` / `benchmark-scenes`, defining the `12a–12f` memory roadmap (`MALI_PLAN.md` pre-reorg archive).
-
-## [2026-11-08] oneplus-memory-audit — OnePlus Memory & Background Kills Investigation (COMPLETE)
-
-- Read-only source & ADB audit on `v0.3.2-beta` (`7bb5bc9`, checked `18:20:34 UTC`), `.mali/memory-20261108/{REPORT.md,PROTOCOL.md,measurements.json,compute-cache-overflow.patch}`. Backup `.mali/user-backup/2026-11-08/phone-before-memory/` (`61/61` hashes unchanged, `284193ff...70c15d`).
-- Confirmed historical `LOW_MEMORY` (including `importance=100`) and ColorOS `reason 13` / `FastClear4012` kills in logcat; separated negative system GPU baseline (`-20,174,132 K`); confirmed `Turnip` `3120 MiB` heap (`placed` PSS `2680817 KiB` / Graphics `2330052` vs `copies` PSS `2814294` / Graphics `717916` — disabling `placed` increases total PSS). `HOME`/`Settings` `20–34s` hot checks stayed alive; Native in-process reboot hung `120s` on guest thread `87` (stopped manually).
-- Found `vk_exec_reset` leaking `Prog`/`Pipe`/`CsProg` pointers (fixed upstream in `v0.4.5-beta`) and `compute_program` overflowing past `256` addresses; authored local `compute-cache-overflow.patch` (`sha 9228e168...c42a14`, host negative control + `600`-key/`1000`-repeat + OOM checks PASS, unapplied).
-
-## [2026-11-08] benchmark-scenes — 13-Scene Extended Benchmark Set Delivered Locally (COMPLETE)
-
-- Branch `archive/benchmark-scenes` (`113ca2ec78f9c174108bb660985e8f9c66e6f36c` from `benchmark-v2` `8ec0867` with timeout watchdog): added `tools/benchmark-scenes-extended.txt` and `.md` (`13` MainField scenes, runtime/format-1 unchanged).
-- Validated on `SM-X730` (`Recompiled 1.9.0`, `cap30`, `1x1080`, `SGSR1`, `AA off`, `Original`, `120 Hz`, `USB`; APK `29bbcd7f...9814`): `21` candidates (`42/42 ok`), final `13x2 = 26/26 ok` (`45s` windows, `warmup 20 / calm 20 / max 180`, `thermal 0 / wait 300`). Spreads `<2%` on `12` scenes (`Kakariko 6.293%` flagged `S`); `4` zero-flag clean pairs (`Faron jungle`, `Zora plaza`, `Lurelin shore`, `Gerudo sand`), `9` flagged `C` (`3` also `T`). Coverage gaps documented in `tools/*.md` and `.mali/benchmark/scenes/REPORT.md` (no shrine interior, no sandstorm, snow/lava summit not covered). Safety: `41/41` hashes matched `a4eb18df...12fe`, `9e11940d...54fe` restored `3x`, `21` scratch roots removed.
-
-## [2026-11-08] loading-screen-aspect — Unlocked Aspect Loading Text & Skip Prompt Fix (COMPLETE)
-
-- Branch `loading-screen-aspect` (`761dcc0` from `main` `7bb5bc9`, `runtime/nvn/vulkan/exec.c` `+15/-13`, checked `11:08 UTC`): fixed signed `fabsf(f[5] / f[0] - 16.0f / 9.0f)` missing y-flipped UI text projections (`-1.7778`) by using `a = fabsf(f[5] / f[0])`.
-- Measured on `CPH2653` (Turnip, Aspect `Unlocked` vs `Original`, `.mali/loading-aspect-20261108/{REPORT.md,measurements.json}`): tip left `75 -> 93 (stock) -> 303 px (candidate = 75 + 228)`, skip prompt `158x29 -> 195x29 -> 158x29`, button disc `28x29 (0.966) -> 35x29 (1.207) -> 28x29 (0.966)`. Title/save frames pixel-identical; `4/4` native C device tests PASS (`exit 0`). Restored `ffb65e34...7a50`, `61/61` backup (`56c4d9ed...04c2`) matched.
-
-## [2026-11-08] phone-032-and-grass-cleanup — Upstream `0.3.2` on OnePlus & `grass-masks-ab` Retirement (COMPLETE)
-
-- Archived `grass-masks-ab` WIP diff to `.mali/grass/grass-masks-ab-wip-20261108.patch` (`298` lines, `a47ff9aa...7d18`), reverted & deleted branch `grass-masks-ab`.
-- Installed clean `0.3.2-beta` (`versionCode 36`, `ffb65e34...7a50`) on `CPH2653` (`install -r`), migrated `17.4 GB` (`1,933` files `3a7757e0...7ce1`) from `com.botwrecomp.android.menulr` (`61/61` hashes verified), verified `COLD 2463 ms` Adreno 830 / Turnip launch + launcher UI (`0` `FATAL`/`Abort`, `.mali/upstream-032-phone-20261108/REPORT.md`).
-
-## [2026-11-08] benchmark-v2 — Benchmark v2, Flag-Off Audit, P2 Fixes & `main` Fast-Forward (COMPLETE)
-
-- **Main FF & implementation (`f50e05a` on `v0.3.2-beta` `7bb5bc9`, `.mali/benchmark/v2/REPORT.md`):** Fast-forwarded `main` (`c48606c -> 7bb5bc9`) after PR `#278` merged (`681be27d`). Implemented relaxed-atomic stall attribution (`BP_*`, `SavageWindRecomp` `257b1f3` MIT attribution), `VK_GOOGLE_display_timing` present ID correlation, headroom, and pre-scene thermal cooling gate. `FULL2-R` (`3x2`) + `COLD-R` on `f50e05a`: `6/6 ok`, `30 FPS`, `0` game frames `>50 ms`, headroom `p50 5.988–6.487 ms`; `COLD-R` proved `1529` builds / `5385.88 ms` blocking wait (`frame 482`: `1430.459 ms` arrive, `1379.183 ms` wait). Restored `9e11940d...54fe` (`install -r -d`), `41/41` hashes matched `a4eb18df...12fe`.
-- **Flag-off `ABBAAB` overhead audit (`60813bb`, `.mali/benchmark/off-abba/`):** Made `bench_add` a lazy macro (`bench_on()`) avoiding eager SDL clock reads; unit + negative control (`134`) + APK PASS. `6` matched runs (`100s`, last `900` frames): `B - A = -0.250 ms` (`-1.29%` CPU `p50`), well within run-to-run noise (`5.82%` / `2.92%`), proving previous `+2.76%` was noise. `41/41` hashes matched.
-- **Review P2 fixes (`346eaea`, `.mali/benchmark/review-fixes/`):** Scoped `S_COOL` polling to title screen only and updated sync renderer actual timestamps before game row (`SYNC 118` / `ASYNC 151` window frames, `0` missing; forced thermal override `1` reset cleanly, `41/41` hashes matched).
-
-## [2026-11-07..08] fullscreen-16x10 — Fullscreen `16:10` Phase 1 & Phase 2 World-HUD Anchors (PHASE 1 COMPLETE / PHASE 2 IN PROGRESS)
-
-- **Phase 1 (2026-11-07..08, `archive/fullscreen-16x10` on `v0.3.1-beta` `c48606c`, `.mali/fullscreen-16x10-20261107/REPORT.md`):** Eliminated horizontal stretching below `16:9` (`1.6000` aspect world projection, fit-to-width centered UI, narrow UBO path without negative ultrawide margins). Verified on `SM-X730` Native & Recompiled (`48x48` round Inventory indicator vs `48x54` stock; `f57aba06...3629` APK); `tools/test_fullscreen_narrow.py` + `2` negative controls + `git apply --check` PASS. Restored `9e11940d...54fe` (`41/41` matched). Parked worktree patch/README preserved in `.mali/git-archive/2026-11-14/fullscreen-16x10/` and `.mali/fullscreen-16x10-20261107/WORKTREE_README.md`.
-- **Phase 2 (2026-11-08, `.mali/fullscreen-hud-20261108/`):** Researched vertical HUD anchor formula `E = 360*(1/g - 1)` (`+/-40` layout units / `+/-80 px` at `2560x1600`, hearts/rune/equipped/minimap pane bounds) and verified the earlier unconfirmed Phase 1 minimap touch-shortcut on `(2310, 310)` using two stationary `100 ms` hold swipes (`292 ms` total -> `buttons 0x800` -> Map opened). Parked pending owner prioritization.
-
-## [2026-11-06..07] ultrawide-ui-fixes — OnePlus Ultrawide UI Fixes & Worktree Consolidation (COMPLETE)
-
-- **L/R transitions & bottom Skip (2026-11-06..07, `.mali/menu-lr-20261106/REPORT.md`):** Fixed split Link silhouette during Inventory L/R transitions (`c94630386244616e` v2 width+offset UV scaling), preserved bottom-right Skip (`y < -316.5`), and fixed y-flipped `-16:9` text/X aspect ratio (`19x18 px` vs `23x18` stock; `fullscreen-text-aspect.patch`).
-- **Chest popup, reflow, background & save-list regression (2026-11-07, `.mali/chest-ultrawide-20261107/REPORT.md`, `.mali/save-menu-20261107/REPORT.md`):** Expanded chest item popup (`9b989759db6e6606`), left-aligned icon + word-reflowed description without `1.15x` scaling (`chest-columns.apk` `c20b05bf...`), fixed opening animation/background across `y` states (`91` sequential frames `1460–1550`), and fixed save-list card/text regression by gating geometry matcher outside title/pause/map and removing `cb3[11]` zero check (`c1133024...`).
-- **Armoranth flower popup & device cleanup (2026-11-07, `.mali/flower-popup-20261107/REPORT.md`):** Added `cy+23`/`cy+30`/`Inventory/+` offsets (`da83724e...`), verified `61` sequential frames + `1200/1300`; verified `41/41` backup (`763f4495...`), then retained `com.botwrecomp.android.menulr` temporarily per owner request (`21/21` hashes verified) until `2026-11-08` `0.3.2` migration.
-- **Worktree consolidation (2026-11-07, `.mali/ultrawide-worktree-20261107/`):** Consolidated all `12` historical ultrawide `.patch` files (`ultrawide.patch` `2` files `+165/-10`, `test-package.patch`, `local-ab-diagnostics.patch`) onto `c48606c` (`archive/ultrawide-fixes` + `git-archive/2026-11-14/ultrawide/`).
-
-## [2026-11-06] grass-masks-ab — Local Distant-Grass Mask Delivery A/B (COMPLETE)
-
-- Tested env-gated immediate delivery of linear `RGBA8 512x512` and block `RG8 256x256` masks (`>= 1800` deliveries, `150` grass-card shader calls per control frame, `30.00 / 30.00 FPS`) on `v0.3.1-beta` (`c48606c`) across slot #2 & `30/60/100/150m` pairs (`.mali/grass/AB.md`). Confirmed mask delivery alone did not restore distant grass cards; branch later retired on `2026-11-08` (`grass-masks-ab-wip-20261108.patch`). `21/21` hashes matched `.mali/user-backup/2026-11-06/`.
-
-## [2026-11-05] upstream-port-candidates — `SavageWindRecomp` & `MacNativeGames` Feasibility Reviews (COMPLETE)
-
-- **SavageWindRecomp (`v0.4.1-alpha.4` `06a0ab5` + `test` branch):** Reviewed RomFS/ExeFS shader pre-translation (`~14k` shaders, `shader_archive.c`), `PERF-ROUTES`/`CONTROL` (`docs/PERF-ROUTES.md`, `CONTROL.md`), FOV `70–150%`/draw-distance hooks (`docs/SAVAGE-WIND.md`), and Wii U / Cemu save converter (`save-converter.md`).
-- **MacNativeGames (`v0.3.1-beta` comparison):** Reviewed distant grass CPU density writebacks (`f1043e5`, `#829`), `1.9.0` FOV `#1575` (`main+0x10edad8`), `BOTW` shader prewarming list, and stick-tilt motion `#1354` (`runtime/hle/motion.c`).
-
-## [2026-11-05] oneplus-setup-and-save-sync — OnePlus `CPH2653` Setup, `Turnip V38 Patched` & Tablet Save Transfer (COMPLETE)
-
-- Initial setup on OnePlus 13 (`CPH2653`, Android 16, Snapdragon 8 Elite `SM8750`, Adreno 830, 12 GB RAM, `v0.3.1-beta` `66fcb9a4...6a0f`, `37` payload files, `.mali/phone-setup-20261105/`): verified `Native` `1x` `1080p SGSR1` at `45.00 FPS` (`988` frames, `p50 22.22 ms`, `max 23.05 ms`, `thermal 0`).
-- Installed `Turnip_Gen8_V38_Patched.zip` (`2bbb279a3da7680503a54a51a3051c7a4302c8fb2a089f8b183b4b5d6ba9ac17`, Mesa `27.0.0-devel` `f28352d117`, Vulkan `1.4.363`, `45 FPS` verified, `21/21` hashes unchanged).
-- Synced player `v190/save` (`20/20` SHA-256 matched) from `CPH2653` to `SM-X730` preserving `save.before-oneplus-20261105-2258` and `.mali/user-backup/2026-11-05/tablet-before-oneplus-2258/` (`e4d0e080...a06d`, `21/21` matched).
-
-## [2026-11-05] issue-triage-and-diag2 — Open Issue Triage, World Checks & Cache x Thermal `Diag2` Experiment (COMPLETE)
-
-- **Issue triage & world checks (`.mali/issue-triage/{CANDIDATES,WORLD}.md`):** Triaged `206` open upstream issues (`#202`, `#261`, `#259`, `#254` shortlisted; `#214`, `#244` ours; `#174` closed in `0.2.13`). Verified `0.3.1` (`9e11940d...54fe`) on Great Plateau (`40 min` Native `720p 50% cap 20`: `1,192` windows at `20.0 FPS`, `0` black grass; `#109` non-repro; `#135`/`#146` captured).
-- **Cache x Thermal `Diag2` (`.mali/diag2/`, `.mali/benchmark/DIPS.md`):** Analyzed `mvp-11b` dips and ran `2x2` `cache x thermal 0/2` matrix (`4aadf28a...16bb` on `08fb8f5`, `12/12` smooth windows, `1% low 29.33–29.70 FPS`, GPU wait `p50 0.190–0.218 ms`; `21/21` backup matched, `9e11940d...54fe` restored).
-
-## Historical Archive Digest (2026-10-30 to 2026-11-05)
-
-Complete execution details for Milestones `1`–`11b` and early upstream PRs (`#183`, `#210`, `#245`, `#255`, `#278`) live in `.mali/archive/MALI_PROGRESS_2026_10_30_to_11_05.md` (English archive) and `.mali/archive/pre-agy-reorg-2026-11-16/` (verbatim snapshot).
-
+| Date | Slug / Milestone | Pinned SHA | Outcome & Upstream Artifacts |
+|---|---|---|---|
+| `2026-11-09..14` | Prewarm `#294` NO-GO, PR `#315` Rebase, `SM-X926B`, `scenes-v2` & Git Audit | `d0bda06`, `c68f6bd`, `3d9beeb` | Archived in `MALI_PROGRESS_2026_11_05_to_11_14.md` (`history.bundle`, `SM-X926B` setup, `11`-scene set) |
+| `2026-11-05..08` | `CPH2653` Turnip Setup, Ultrawide UI, `16:10`, Memory `12a–12b` & Benchmark `v2` | `c48606c`, `7bb5bc9` | Archived in `MALI_PROGRESS_2026_11_05_to_11_14.md` (`benchmark-v2`, `12a–12b`, ultrawide patches) |
 | Date | Slug / Milestone | Pinned SHA | Outcome & Upstream Artifacts |
 |---|---|---|---|
 | `2026-11-05` | Step `11b` PR & Save Incident | `08fb8f5` (`c48606c`) | **MERGED PR #278**; closed Nov 5 player-save check (`0` harness bug; enacted mandatory backup rule) |
