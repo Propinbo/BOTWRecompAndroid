@@ -6,7 +6,7 @@ Authoritative engineering roadmap for Mali-G925 / Immortalis-G720 optimization, 
 
 Governance, language policy, authority boundaries, safety invariants, and verification rules are defined in root [`AGENTS.md`](AGENTS.md) and `.agents/skills/*/SKILL.md`:
 - **Owner:** Defines goals, priorities, requirements, and success criteria; explicitly approves external actions (`git push`, PRs/Issues, `main` fast-forwards), protected-file edits (`tools/patches.py`, `GAMELIB_ID`, `.gitignore`), major scope changes, and physical device access/upgrades.
-- **Agent:** Operates as an autonomous senior engineer and researcher owning technical investigation, architecture, implementation, local worktree commits, testing, debugging, and continuous independent subagent verification.
+- **Agent:** Operates as an autonomous senior engineer and researcher owning technical investigation, architecture, implementation, local worktree commits, testing, debugging, and proportional situational verification.
 - **Documentation checkpoint branch:** `mali-workspace` on `Propinbo/BOTWRecompAndroid` tracks only `AGENTS.md`, `MALI_PLAN.md`, `MALI_PROGRESS.md`, `MALI_STATUS.md`, and `.agents/` with `[skip ci]`. Never merge `mali-workspace` into `main` or PR branches.
 
 ## 2. Rolling Upstream Baseline
@@ -15,7 +15,7 @@ The active development target tracks the latest *verified, published* `mamcjr/BO
 
 | Checked (UTC) | Newest Published Release | Tag SHA | Fork `main` Baseline | Relevance / Notes |
 |---|---|---|---|---|
-| `2026-11-16 18:54` | `v0.4.5-beta` | `6113c61a1d0e6f78532eb7fdde9cc9348613ad4b` | `v0.4.5-beta` (`6113c61`) | Fast-forwarded fork/local `main` (`7bb5bc9 -> 6113c61`). Restart shader free, `#450` Mali shader eviction >1000, MediaTek 13 MHz Native clock fix, full-span copy texture hash, vertex cache retention. PRs `#461` & `#436` still `MERGEABLE`; `#315` `CONFLICTING`. |
+| `2026-11-16 18:54` | `v0.4.5-beta` | `6113c61a1d0e6f78532eb7fdde9cc9348613ad4b` | `v0.4.5-beta` (`6113c61`) | Fast-forwarded fork/local `main` (`7bb5bc9 -> 6113c61`). Restart shader free, `#450` Mali shader eviction >1000, MediaTek 13 MHz Native clock fix, full-span copy texture hash, vertex cache retention. PRs `#461` (`6f83821`), `#436` (`f92454e`), & `#315` (`d928ccc`) updated locally onto `6113c61`. |
 | `2026-11-16 05:11` | `v0.4.4-beta` | `280048bc43b05d76af0659a51c828ff393d4434e` | `v0.3.2-beta` (`7bb5bc9`) | PR `#461` (`0230d2f`) branched here; `0780cb6` (`#450`) merged cleanly (`git merge-tree`). |
 | `2026-11-15 10:39` | `v0.4.3-beta` | `5946454c9fbdc414e0ab025f751f9c2011d23c3b` | `v0.3.2-beta` (`7bb5bc9`) | Installed stock APK on `SM-X730` & `CPH2653` (`3d3ad8e7...`); PR `#436` (`ab828a1`) branched here. |
 | `2026-11-14 08:34` | `v0.4.0-beta` | `d0bda062b382334d70f709fc65c2d80a669f643c` | `v0.3.2-beta` (`7bb5bc9`) | Used for `#294` pipeline prewarming `13a–13b.1` and initial Water Cube root-cause proof. |
@@ -28,14 +28,14 @@ Full 83-row historical release-check polling log (2026-10-31 to 2026-11-16): `.m
 ## 3. Active & Parked Engineering Initiatives
 
 ### A. Upstream PR Follow-Through & Benchmark Scene Set
-- **PR #461 (`fix/rt-load-upload-296`, `0230d2f`):** `OPEN` / `MERGEABLE` against `v0.4.5-beta` (`6113c61a`). Addresses `#296`/`#438` writeback RT sync and 128B linear row pitch. Monitor maintainer review; address requested feedback in `.mali/worktrees/fix-rt-load-upload-296` without altering scope silently.
-- **PR #436 (`fix/soft-linear-filter`, `ab828a1`):** `OPEN` / `MERGEABLE` against `v0.4.5-beta`. Fixes missing HW linear filtering (`VK_FORMAT_R16G16B16A16_UNORM`) on Mali. Monitor maintainer review in `.mali/worktrees/soft-linear-upstream`.
-- **PR #315 (`pr315-benchmark-v2`, `674c8b0`):** `OPEN` / `CONFLICTING` against `upstream/main`. Needs rebase onto current `v0.4.5-beta+` (checking overlap with recent upstream timing/eviction changes) when prioritized by owner.
-- **Benchmark Scenes v2 (`benchmark-scenes-v2`, `7b69caa`):** Locally validated 11-scene MainField set (`22/22 ok`) awaiting PR `#315` merge/rebase before rebasing onto `upstream/main` and pushing/opening a scene-set PR.
+- **PR #461 (`fix/rt-load-upload-296`, local `6f83821` on `6113c61`, `6` files):** Rebased and narrowed strictly to `#296`/`#438` write-back RT sync (`LOAD_OP_LOAD` + `undiscard()`). `13/13` Bionic checks PASS (`10/13` fail on unpatched `6113c61`), `SM-X730` Run A verified (`30.0 fps`, `93` write-backs, `0` errors). Patch + English reply (`.mali/pr-reviews-20261117/reply-pr461.md`) ready for owner push approval.
+- **PR #436 (`fix/soft-linear-filter`, local `f92454e` on `6113c61`, `6` files):** Updated with lazy `vk_any_format_no_linear()`, `CLAMP`/`REPEAT` wrap support (`soft_linear_rep_u`/`soft_linear_rep_v`, required because BOTW `64x64 f0x2a` water clipmaps bind `wrap 1`), `soft_linear_mip`, and `last_prog` pre-population. `test_soft_linear.py` + `SM-X730` `#461 + #436` Run B eliminate phantom water cleanly (`30.0 fps`, `0` errors). Patch + English reply (`.mali/pr-reviews-20261117/reply-pr436.md`) ready for owner push approval.
+- **PR #315 (`pr315-benchmark-v2`, local `d928ccc` on `6113c61`, `16` files):** Rebased cleanly with `seq_wait_done` + `BP_GPU_WAIT_NS`, restored top-of-file headers, and `test_nvn_lifetime.c` low-RAM stubs. `6/6` Bionic + `assembleDebug` PASS. Patch + English reply (`.mali/pr-reviews-20261117/reply-pr315.md`) ready for owner push approval.
+- **Benchmark Scenes v2 (`benchmark-scenes-v2`, `7b69caa`):** Audited in `.mali/benchmark/scenes-v2/CANDIDATE_ANALYSIS_2026_11_17.md`: found `4` defective views (`lake-hylia-shore`, `faron-woods-pond`, `faron-canopy`, `lurelin-rain`) plus biome redundancy and DVFS `cap30` compression (`26.56-28.06 ms`); proposed upgraded `12`-scene suite incorporating verified clean shrine-free candidates (`zora-plaza`, `faron-jungle`, `akkala-foliage`, `lake-hylia-shore v3`, `lurelin-shore`) plus candidates needing single-scene validation (`korok-plaza`, `dueling-peaks-river` / `gerudo-gate-day`) and pairing `fps_mode=2`/`0` runs.
 
-### B. `v0.4.5-beta` Physical Mali Validation Candidates (Awaiting Owner Go-Ahead)
-1. **MediaTek 13 MHz Native-Mode Clock Fix:** `v0.4.5-beta` converts `13 MHz` `CNTVCT_EL0` reads to `19.2 MHz` based on simulated testing and explicitly asks for real MediaTek/Dimensity confirmation. Verify Native-mode game clock rate (`0.250` world units/s at 30 FPS), cutscenes/physics speed, and `test_kernel_affinity`/unit checks on `SM-X730` (`Dimensity 9400+`) and optionally `SM-X926B` (`Dimensity 9300+`).
-2. **Long-Session Mali Shader Eviction (`#450`):** Re-run the 30-min Mali diagnostic protocol (`.mali/memory-long-mali-20261115/`) on `v0.4.5-beta` vs the `v0.4.3-beta` baseline (`+625.06 MiB` `VmRSS`, `1,214` pipelines evicted, `576 MB` driver `scudo` retention) to measure real-world `VmRSS`/program/pipeline impact and check for eviction-induced stutter.
+### B. `v0.4.5-beta` Physical Mali Validation Candidates
+1. **MediaTek 13 MHz Native-Mode Clock Fix (`Verified active on SM-X730`):** During `2026-11-17` `LARECOMP_NATIVE=1` hardware verification on `SM-X730` (`Dimensity 9400+`), `v0.4.5-beta` logged `counter 13000000 Hz: not the Switch's 19.2 MHz - its reads are scaled to it` and `sdk: 58 svc, 129 TLS, 43 counter reads rewritten (scaled to 19.2 MHz)`, running smoothly at `30.0 fps` (`max 35ms`, `0` errors). Paired formal stock `v0.4.5-beta` rollout (`SM-X730` + `CPH2653`) awaits owner go-ahead.
+2. **Long-Session Mali Shader Eviction (`#450`, Awaiting Owner Go-Ahead):** Re-run the 30-min Mali diagnostic protocol (`.mali/memory-long-mali-20261115/`) on `v0.4.5-beta` vs the `v0.4.3-beta` baseline (`+625.06 MiB` `VmRSS`, `1,214` pipelines evicted, `576 MB` driver `scudo` retention) to measure real-world `VmRSS`/program/pipeline impact and check for eviction-induced stutter.
 
 ### C. Parked Initiatives (Resumable on Owner Priority)
 - **Fullscreen 16:10 (`archive/fullscreen-16x10` on `v0.3.1-beta`):**
