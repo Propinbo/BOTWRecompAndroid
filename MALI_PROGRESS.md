@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-05 to 2026-11-17). Query sele
 
 ## Table of Contents
 
+- [2026-11-17] pr-push-and-benchmark-v3 — PR Pushes/Replies, 12-Scene Upgrade (`63f8747`), `60 fps` DVFS & `#450` Check (COMPLETE)
 - [2026-11-17] pr-reviews-and-scenes-audit — PR #315/#461/#436 Review Updates, MediaTek Clock Check & 11-Scene Audit (COMPLETE)
 - [2026-11-16] workspace-agy-reorg — Workspace Cleanup, Antigravity Migration & `v0.4.5-beta` Check (COMPLETE)
 - [2026-11-16] main-vs-rt-upload-review — `main` Diff Review vs `fix/rt-load-upload-296` (COMPLETE)
@@ -38,6 +39,17 @@ Active indexed English engineering ledger (2026-11-05 to 2026-11-17). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-05)
 
 ---
+
+## [2026-11-17] pr-push-and-benchmark-v3 — PR Pushes/Replies, 12-Scene Upgrade (`63f8747`), `60 fps` DVFS & `#450` Check (COMPLETE)
+
+- **Pushed updated PR branches, descriptions & review replies:** Pushed `pr315-benchmark-v2 -> benchmark-v2` (`d928ccc`), `fix/rt-load-upload-296` (`6f83821`), `fix/soft-linear-filter` (`f92454e`), and `mali-workspace` (`4d5b653`) to `origin`; updated PR `#461` title/body (`body-pr461.md`) and PR `#436` body (`body-pr436.md`) on `mamcjr/BOTWRecompAndroid`; posted reply comments to `#315`, `#461`, and `#436`. Verified all three PRs report `MERGEABLE` / `CLEAN` with updated head OIDs.
+- **Upgraded `benchmark-scenes-v2` to 12 shrine-free MainField scenes (`63f8747` on `d928ccc`):**
+  - Rebased onto `d928ccc` cleanly and stripped `Co-Authored-By` trailers (`664689b`, `63f8747`).
+  - Probed `8` candidate views on `SM-X730` (`8/8 ok`): selected `korok-plaza` (Deku Tree archway sunbeams, zero shrine), `hateno-dye-interior` (beating `outskirt-counter` visually and in render/game load), `lake-hylia-shore` (`76 91.2 2664`, unobstructed pier/pillars), and `lurelin-shore`; rejected `gerudo-gate-day` after visual inspection revealed the Hawa Koth Sheikah Shrine next to Link.
+  - Executed whole-set validation (`set12-cap30`, `v0.4.5-beta` + `#315`) in one isolated internal scratch root on `SM-X730`: `warm` `12/12 ok` (`3047 -> 3246` SPIR-V, `35.48 MB` `vk_pipelines.bin`) followed by `measured` **`24/24 ok`**, `moved=0.0`, `|y_window_end - y_settle| <= 0.52`, `46` `[vk] reboot:` frees (up to `386` programs, `1,055` pipelines, `15` compute programs freed cleanly), `0` errors; verified `contact-sheet-v3.png` (`3x4`). `gpu_p50` ranged `26.50–28.38 ms` (`kakariko-day` `28.38 ms`, `render_med=20.36 ms`, `lurelin-shore` `0` compiles); `workspace_check.py pr` -> `PASS (commits=2, files=5, mergeable=YES)`; pushed `benchmark-scenes-v2` (`63f8747`) to `origin`.
+- **`60 fps` DVFS separation & 5-minute `#450` program eviction (`SM-X730`):**
+  - Using temporary scratch build `benchmark-60fps-scratch.apk` (`LARECOMP_FPS=60`, `4/4 ok` in `subset-60fps/measured`), `zora-plaza` (`19.85 ms`, `39.40 fps`), `korok-plaza` (`16.99 ms`, `40.46 fps`), `lake-hylia-shore` (`16.25 ms`, `55.93 fps`), and `field-grass` (`14.17 ms`, `50.28 fps`) separated by `40%` vs `1.31 ms` under `cap30`, proving DVFS compression on `cap30`. Discarded `_tmp-bench60` cleanly (`libshaderc_shared.so` intact).
+  - Using `combined-461-436-debug.apk` (`LARECOMP_NATIVE=1, LARECOMP_PROG_KEEP=150, LARECOMP_PROG_AGE=20`), `evict5m` logged `7` eviction passes freeing `311` unused programs and `779` pipeline keys (`120` kept), `30.0 fps`, `VmRSS` plateaued at `3,504.8 MiB` (`10,894` VMAs), `0` errors. Removed the `~99 MB` temporary APKs after hashing; restored signed stock `v0.4.3-beta` (`3d3ad8e7...10846`), `pid=''`, `67/67` save-settings + `4/4` prefs (`diffs=0`), `3047` SPIR-V (`audit-evict5m.txt`). Report: `.mali/benchmark/scenes-v3-20261117/REPORT.md`.
 
 ## [2026-11-17] pr-reviews-and-scenes-audit — PR #315/#461/#436 Review Updates, MediaTek Clock Check & 11-Scene Audit (COMPLETE)
 
