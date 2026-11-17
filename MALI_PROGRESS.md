@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-17). Query sele
 
 ## Table of Contents
 
+- [2026-11-18] pr-maintainer-reviews-and-mali-validation — PR #481–#483/#485 Maintainer Review Fixes, Isolated Mali A/B & Stress Validation, & Updated Release APK (COMPLETE)
 - [2026-11-18] mali-perf-046-and-release-rollout — Upstream `v0.4.6-beta` Sync, PR #485 Async Tex Slots, Mali-G925 60 FPS `ABBA` & Release Rollout (COMPLETE)
 - [2026-11-17] pr480-starter-heights-and-cleanup — Retired PR #461 Worktree, Verified PR #480 Starter-Scene Heights (`3/3 ok`) & Maintainer Sync (COMPLETE)
 - [2026-11-17] pr-481-482-483-stutter-split — Round-2 Review, PR #461 Merge & 3-Way Stutter PR Split (#481, #482, #483) (OPEN)
@@ -27,6 +28,22 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-17). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-14)
 
 ---
+
+## [2026-11-18] pr-maintainer-reviews-and-mali-validation — PR #481–#483/#485 Maintainer Review Fixes, Isolated Mali A/B & Stress Validation, & Updated Release APK (COMPLETE)
+
+- **PR #481 (`feat/urgent-shader-builds` @ `e8fac0f` on `upstream/main` `011e1da`, `7` files, `OPEN`/`MERGEABLE`):**
+  - Added freeze-watchdog stage `WD_R_BUILD_WAIT` (`runtime/nvn/vulkan/watchdog.{h,c}`, `exec.c`) around `wait_built_job()`, `build_pipeline_urgent()`, `LARECOMP_SYNC_SHADERS` inline dispatches (`schedule_pipeline_build`, `render_dispatch_program`, `compute_program`), and `jobs_drain()`. Added thread-spawn failure inline fallbacks and expanded `tools/test_shader_job_queue.c`.
+  - Audited (`be6d6a70`, `ebf663f0`, follow-up `0 CRIT / 0 MAJ`); verified host WASM (`16`/`33`/`23+3+203`), `SM-X730` Bionic `test_shader_job_queue` & `test_rt_load_upload` (`PASS`), and isolated Plateau A/B on `SM-X730` (`pr481-debug-signed.apk`, `.mali/mali-shader-stutter/REPORT_R4.md`): cold wait `6190.11 -> 4025.32 ms` (`-35.0%`, max `388.46 -> 77.93 ms` **`5.0x`**), warm-`.spv`/cold-pipe `4495.31 -> 2969.47 ms` (`max 432.85 -> 98.47 ms`), steady `751.10 -> 326.72 ms` (`max 77.90 -> 10.70 ms`), `0` `[watchdog]` dumps.
+- **PR #482 (`feat/shader-meta-cache` @ `b4e80e7` stacked on `#481` `e8fac0f`, `6` files, `OPEN`/`MERGEABLE`):**
+  - Mixed `BENCHMARK_COMMIT ":" MW_TRANSLATOR_ID` (`SHA-256` of `translate.c`, `shader.h`, `shader_meta_cache.h`, `shader_cache.h`, `shaders.c`, `MW_META_VERSION=3`) into `mw_stage_key()`, hashed full 88B `ShaderKey` (`pad_` zeroed, `_Static_assert`), added `mw_meta_exists()` cold-miss direct `run_translate_ex()` dispatch, and switched env reads to `pthread_once` while keeping live `shader_int32` synchronized under `translate_lock`.
+  - Audited (`5c019c54`, `d00633b0`, follow-ups `0 CRIT / 0 MAJ` + ASan/UBSan `PASS`); verified WASM (`17`/`16`/`33`/`23+3+203`), `SM-X730` Bionic (`test_shader_meta_cache`, `test_shader_job_queue`, `test_rt_load_upload` `PASS`), and Plateau A/B (`pr482-debug-signed.apk`): cold wait `4105.80 vs 4118.01 ms` (`+0.3%`, no worker queue blocking; `611` `.smeta` saved) and warm `.smeta` **`442 hits / 0 misses` (`100%`)**, wait `2615.42 -> 2402.89 ms` (`-8.1%`).
+- **PR #483 (`feat/vk-dyn-vertex-input` @ `8146cfa` on `011e1da`, `7` files, `OPEN`/`MERGEABLE`):**
+  - Resolved `Pipe.used_s` rebase conflict (updating `tools/test_pipeline_prewarm.c` + adding `dyn_vi` round-trip test); restricted default activation strictly to `VK_DRIVER_ID_MESA_TURNIP` (`18`) and `VK_DRIVER_ID_ARM_PROPRIETARY` (`9`) `r49+` with `LARECOMP_DYN_VI=1/0` overrides, distinct `[vk-cap]` reasons, and post-`volkLoadDevice()` `vkCmdSetVertexInputEXT` null guard (`dyn_vi.h`, `device.c`, `exec.c`, `pipeline_prewarm.inc`).
+  - Audited (`a1e76734`, `ff2c312f`, follow-up `0 CRIT / 0 MAJ`); verified WASM (`16`/`33`/`23+3+203`), `SM-X730` Bionic `test_dyn_vertex_input` & `test_pipeline_prewarm` (`PASS`), and Plateau smoke (`pr483-debug-signed.apk`): default `on (driver default)` `1,196` compiles / `4,520 ms` / `low1 29.63` vs `LARECOMP_DYN_VI=0` `off (LARECOMP_DYN_VI=0)` `1,559` compiles / `5,016 ms` / `low1 29.51` (`-23.3%` compiles).
+- **PR #485 (`feat/mali-async-tex-slots` @ `8bb3c02` on `011e1da`, `4` files, `OPEN`/`MERGEABLE`):**
+  - Rebased cleanly on `upstream/main`; tightened `tools/test_nvn_lifetime.c` (`drains == 1 && g_tex_drains == 1` on populated overwrite, audit `77da2dcb` `0 CRIT / 0 MAJ`, Bionic `PASS` on `SM-X730`).
+  - Ran all three requested Mali-G925 tests (`pr485-debug-signed.apk`, `LARECOMP_VK_PROF=1`, `.mali/mali-async-tex-slots/REPORT.md`): `65` inventory open/tab/close loops (`103/103` 2s windows, `slot drains 0`), `5` in-place reboots (`113/113` windows over `241.6s`, `slot drains 0`, `1156–1227` textures cleanly released), and `32.5`-minute continuous session (`970/970` windows, `1951.9s`, `slot drains 0`, flat `VmRSS 3948.9–3953.2 MiB` through minute `32.5`) = **`1,186 / 1,186` windows with `0` drains and `0` errors**.
+- **Updated Consolidated `release/mali-0.4.6-beta` (`d8fe781`, `feat/mali-perf-046` `4ddf99b`) & Device Restore:** Re-stacked all updated PRs + `perf-046`, verified `8/8` `test_android_runtime.ps1` + `4/4` standalone Bionic tests PASS on `SM-X730`, built & installed `.mali/apk/v0.4.6-beta-mali/BOTWRecompAndroid-0.4.6-beta-mali-release.apk` (`3dc08f7bf7bbd2e0301a01c8cfd886776b7efc9b188ed18bd7790d93f27a0aab`, `pid=''`), verified `0` diffs against `2026-11-18` backup (`67/67` saves/INI, `0` non-sys pref diffs, `3,047` `.spv`, `vk_pipelines.bin` `5e44112139f6...`), and pushed all branches + posted replies on `#481–#483` & `#485`.
 
 ## [2026-11-18] mali-perf-046-and-release-rollout — Upstream `v0.4.6-beta` Sync, PR #485 Async Tex Slots, Mali-G925 60 FPS `ABBA` & Release Rollout (COMPLETE)
 
