@@ -99,13 +99,17 @@ void vk_frame_suspend(void) {}
 void vk_frame_resume(void) {}
 VkRenderPass vk_rp_compat(uint32_t n, const VkFormat *c, VkFormat d, VkFormat s, VkSampleCountFlagBits sm) { (void)n, (void)c, (void)d, (void)s, (void)sm; return VK_NULL_HANDLE; }
 void vk_shaders_init(void) {}
+void vk_shader_cache_ensure_dirs(void) {}
 uint32_t *vk_glsl_to_spirv(const char *s, int stg, const char *n, size_t *nw) { (void)s, (void)stg, (void)n, (void)nw; return NULL; }
+uint32_t *vk_glsl_to_spirv_ex(const char *s, int stg, const char *n, size_t *nw, uint64_t *oh) { (void)s, (void)stg, (void)n, (void)nw, (void)oh; return NULL; }
+uint32_t *vk_spirv_load_cached(uint64_t h, size_t *nw) { (void)h, (void)nw; return NULL; }
 VkShaderModule vk_module(const uint32_t *spv, size_t n) { (void)spv, (void)n; return VK_NULL_HANDLE; }
 int vk_reflect(const uint32_t *spv, size_t n, VkBindingInfo *o, int m) { (void)spv, (void)n, (void)o, (void)m; return 0; }
 VkDescriptorSetLayout vk_set_layout(const VkBindingInfo *b, int n, uint32_t s, VkShaderStageFlags stg) { (void)b, (void)n, (void)s, (void)stg; return VK_NULL_HANDLE; }
 void maxwell_free(ShaderInfo *s) { (void)s; }
 ShaderInfo *maxwell_translate(const uint8_t *c, size_t m, int s, const ShaderKey *k) { (void)c, (void)m, (void)s, (void)k; return NULL; }
 ShaderInfo *maxwell_translate_bounded(const uint8_t *c, size_t m, size_t cz, int s, const ShaderKey *k) { (void)c, (void)m, (void)cz, (void)s, (void)k; return NULL; }
+const uint8_t *maxwell_dbg_code = NULL, *maxwell_dbg_vs = NULL;
 uint64_t maxwell_gmem_size = 0;
 unsigned maxwell_gmem_miss_stages = ~0u;
 bool maxwell_no_int64 = false, maxwell_gmem_map_all = false, maxwell_gmem_miss_log = false, maxwell_brx_window = true;
@@ -435,8 +439,10 @@ PFN_vkCmdSetDepthTestEnable vkCmdSetDepthTestEnable = n_b32; PFN_vkCmdSetDepthWr
 PFN_vkCmdSetDepthCompareOp vkCmdSetDepthCompareOp = n_dco; PFN_vkCmdSetStencilTestEnable vkCmdSetStencilTestEnable = n_b32;
 PFN_vkCmdSetStencilOp vkCmdSetStencilOp = n_sop; PFN_vkCmdSetDepthBiasEnable vkCmdSetDepthBiasEnable = n_b32;
 PFN_vkCmdSetPrimitiveRestartEnable vkCmdSetPrimitiveRestartEnable = n_b32;
+static VKAPI_ATTR void VKAPI_CALL n_vi(VkCommandBuffer c, uint32_t nb, const VkVertexInputBindingDescription2EXT *b, uint32_t na, const VkVertexInputAttributeDescription2EXT *a) { (void)c, (void)nb, (void)b, (void)na, (void)a; }
 PFN_vkGetPipelineExecutablePropertiesKHR vkGetPipelineExecutablePropertiesKHR = n_pep;
 PFN_vkGetPipelineExecutableStatisticsKHR vkGetPipelineExecutableStatisticsKHR = n_pes;
+PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT = n_vi;
 
 // ---- guest texture & test helpers
 static uint8_t *guest_mem; static size_t guest_off; static NvnPool g_pool;
