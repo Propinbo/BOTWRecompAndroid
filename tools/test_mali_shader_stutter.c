@@ -206,6 +206,11 @@ static void test_stage_key_and_smeta(void) {
     assert(h1a != h1b && h2a != h2b);
     assert(mw_stage_key(blob_a, cmax, const_sz, STAGE_VERTEX, &vkey, tf | MW_TF_VK_OPT, 0x100000000ull, 0x80000000ull, &h1b, &h2b));
     assert(h1a != h1b && h2a != h2b);
+    ShaderKey vkey3 = vkey;
+    vkey3.soft_linear = 1;
+    assert(mw_stage_key(blob_a, cmax, const_sz, STAGE_FRAGMENT, &vkey, tf, 0x100000000ull, 0x80000000ull, &h1a, &h2a));
+    assert(mw_stage_key(blob_a, cmax, const_sz, STAGE_FRAGMENT, &vkey3, tf, 0x100000000ull, 0x80000000ull, &h1b, &h2b));
+    assert(h1a != h1b && h2a != h2b);
 
     // BRX table sensitivity
     build_fake_maxwell_shader(blob_a, sizeof blob_a, &cmax, &const_sz, true);

@@ -157,6 +157,10 @@ static inline bool mw_stage_key(const uint8_t *blob, uint64_t cmax, size_t const
     mw_mix_u32(&h1, &h2, trans_flags);
     mw_mix_u64(&h1, &h2, gmem_base);
     mw_mix_u64(&h1, &h2, gmem_size);
+    mw_mix_u64(&h1, &h2, key->soft_linear);
+    mw_mix_u64(&h1, &h2, key->soft_linear_mip);
+    mw_mix_u64(&h1, &h2, key->soft_linear_rep_u);
+    mw_mix_u64(&h1, &h2, key->soft_linear_rep_v);
 
     uint8_t glsl = key->glsl ? 1 : 0;
     uint8_t flip_y = key->flip_y ? 1 : 0;
