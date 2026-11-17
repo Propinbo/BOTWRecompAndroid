@@ -4,8 +4,8 @@ Last updated: `2026-11-17` (`Europe/Moscow`)
 
 ## Upstream & Repository Baseline
 
-- **Newest upstream release:** `mamcjr/BOTWRecompAndroid` **`v0.4.5-beta`** (`6113c61a1d0e6f78532eb7fdde9cc9348613ad4b`); **`upstream/main`:** `689372b39cce3e1f524a82c059f52c40c4ebe165` (`#315` `ac38c7a`, `#461` `689372b`).
-- **Fork `main`:** `6113c61a1d0e6f78532eb7fdde9cc9348613ad4b` (`main == origin/main == v0.4.5-beta`).
+- **Newest upstream release:** `mamcjr/BOTWRecompAndroid` **`v0.4.5-beta`** (`6113c61a1d0e6f78532eb7fdde9cc9348613ad4b`); **`upstream/main`:** `87df09e3dd2901c6ba6a53616c3ebbef9478e552` (`#315` `ac38c7a`, `#461` `689372b`).
+- **Fork `main`:** `6113c61a1d0e6f78532eb7fdde9cc9348613ad4b` (`main == origin/main == v0.4.5-beta`, synced to releases).
 
 ## Active Worktrees
 
@@ -17,10 +17,9 @@ Last updated: `2026-11-17` (`Europe/Moscow`)
 | `.mali/worktrees/urgent-shader-builds` | `feat/urgent-shader-builds` | `c1b10cc` | **OPEN PR #481** (urgent queue + steal + `jobs_drain` on `eefafaf`) |
 | `.mali/worktrees/shader-meta-cache` | `feat/shader-meta-cache` | `7759c06` | **OPEN PR #482** (`MWSMET01` `.smeta` cache on `eefafaf`) |
 | `.mali/worktrees/dyn-vertex-input` | `feat/vk-dyn-vertex-input` | `122ec0c` | **OPEN PR #483** (`VK_EXT_vertex_input_dynamic_state` on `eefafaf`) |
-| `.mali/worktrees/fix-rt-load-upload-296` | `fix/rt-load-upload-296` | `7077d56` | **MERGED PR #461** (ready to retire) |
-| `.mali/worktrees/soft-linear-upstream` | `fix/soft-linear-filter` | `a106b0c` | **OPEN PR #436** (`soft_linear` on `26da3fa`) |
-| `.mali/worktrees/pipeline-prewarm-294` | `feat/pipeline-prewarm-294` | `6454ccc` | **OPEN PR #475** (opt-in `#294` + 11 i18n on `26da3fa`) |
-| `.mali/worktrees/benchmark-scenes-v2` | `benchmark-scenes-v2` | `c48d1b1` | **OPEN PR #480** (height check + 12 scenes on `26da3fa`) |
+| `.mali/worktrees/soft-linear-upstream` | `fix/soft-linear-filter` | `a106b0c` | **OPEN PR #436** (maintainer queued final A/B) |
+| `.mali/worktrees/pipeline-prewarm-294` | `feat/pipeline-prewarm-294` | `6454ccc` | **OPEN PR #475** (maintainer queued final A/B) |
+| `.mali/worktrees/benchmark-scenes-v2` | `benchmark-scenes-v2` | `c48d1b1` | **OPEN PR #480** (`3/3` starter heights verified on `SM-X730`) |
 
 ## Physical Devices & Backup Guards
 
@@ -34,13 +33,13 @@ Rollback APKs: signed `v0.4.5-beta` (`65ecd82f...c29b`) & `v0.4.3-beta` (`3d3ad8
 
 ## Open PRs & Active Priorities
 
-- **PRs & Gate:** `#315` (`ac38c7a`) & **`#461` (`689372b`) `MERGED`**! Open (`MERGEABLE`/`CLEAN`): **`#481`** (`c1b10cc`), **`#482`** (`7759c06`), **`#483`** (`122ec0c`), `#480` (`c48d1b1`), `#475` (`6454ccc`), `#436` (`a106b0c`).
+- **PRs & Gate:** `#315` (`ac38c7a`) & **`#461` (`689372b`) `MERGED`**; `fix-rt-load-upload-296` worktree retired. Open (`MERGEABLE`/`CLEAN`): **`#481`** (`c1b10cc`), **`#482`** (`7759c06`), **`#483`** (`122ec0c`), `#480` (`c48d1b1`, `3/3` starter heights confirmed), `#475` (`6454ccc`, maintainer final A/B), `#436` (`a106b0c`, maintainer final A/B).
 - **`release/mali-0.4.5-beta` (`a1ef820` on `SM-X730` & `CPH2653`):** Live verified Mali/Turnip build.
-- **Next:** Retire merged `fix-rt-load-upload-296` worktree; track maintainer review on `#481`–`#483`, `#480`, `#475`, `#436` (rebase `#481` or `#482` once first merges); optional `copy_texture` `gpu_owned` follow-up. Parked: `Fullscreen 16:10`, `Memory 12b–12d/12f`, `Benchmark 11c–11d`.
+- **Next:** Monitor upstream merges across `#436`/`#475`/`#480`/`#481`–`#483` (adjust `H-6` / starter scenes on `#480` if `mamcjr` hits POCO deltas; rebase `#481`/`#482` once first merges; FF `main` on `v0.4.6-beta`). Parked: `Fullscreen 16:10`, `Memory 12b–12d/12f`, `Benchmark 11c–11d`.
 
 ## Recent Milestones
 
-- `[2026-11-17]` **Round-2 Review, PR #461 Merge & 3-Way Stutter PRs (#481, #482, #483):** Resolved Round-2 `_WIN32`/test findings (`8d95e8c`); `#461` merged (`689372b`); opened clean single-concern `#481` (`c1b10cc`), `#482` (`7759c06`), `#483` (`122ec0c`) (`0` CRITICAL/MAJOR, host+`SM-X730` Bionic+Gradle PASS, `MERGEABLE`).
+- `[2026-11-17]` **Cleanup, Starter-Scene Check (#480) & Reviews (#436/#475):** Retired merged `#461` worktree cleanly; verified `3/3` starter scenes (`plateau` `250.21`, `hateno-lab` `356.02`, `hateno-village` `242.61`) on `SM-X730` (`0` diffs), replied on `#480`.
+- `[2026-11-17]` **Round-2 Review, PR #461 Merge & 3-Way Stutter PRs (#481, #482, #483):** Resolved `_WIN32`/test findings (`8d95e8c`); `#461` merged (`689372b`); opened `#481` (`c1b10cc`), `#482` (`7759c06`), `#483` (`122ec0c`).
 - `[2026-11-17]` **Pre-PR Subagent Review Gate, Progress Archive & `bf9adc1`:** Institutionalized `2–3` verifier gate in `AGENTS.md`; Turnip reboot smoke `452/452` `.smeta` (`0 kept`).
-- `[2026-11-17]` **CPH2653 Turnip A/B & `v0.4.5-beta` Upgrade (`a1ef820`):** `30.17 fps`, `gpu.p50 21.918 ms`, wait `-82.9%`, gpipes `-35.9%`, `99.8%` `.smeta`.
-- `[2026-11-17]` **PR #315 Merged, PR #480 Opened & Review Updates (`26da3fa`):** Opened `#480`; rebased `#461`; updated `#436` & `#475`. See `MALI_PROGRESS.md`.
+- `[2026-11-17]` **CPH2653 Turnip A/B & `v0.4.5-beta` Upgrade (`a1ef820`):** `30.17 fps`, `gpu.p50 21.918 ms`, wait `-82.9%`, gpipes `-35.9%`, `99.8%` `.smeta`. See `MALI_PROGRESS.md`.

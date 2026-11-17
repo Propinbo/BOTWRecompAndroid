@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-17). Query sele
 
 ## Table of Contents
 
+- [2026-11-17] pr480-starter-heights-and-cleanup — Retired PR #461 Worktree, Verified PR #480 Starter-Scene Heights (`3/3 ok`) & Maintainer Sync (COMPLETE)
 - [2026-11-17] pr-481-482-483-stutter-split — Round-2 Review, PR #461 Merge & 3-Way Stutter PR Split (#481, #482, #483) (OPEN)
 - [2026-11-17] pr-review-gate-and-stutter-rebase — Mandatory Pre-PR Subagent Review Gate, Progress Archive & `feat/mali-shader-stutter` Rebase (COMPLETE)
 - [2026-11-17] adreno-turnip-045-rollout — CPH2653 Turnip 3-Pass A/B & `v0.4.5-beta` Upgrade (COMPLETE)
@@ -25,6 +26,14 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-17). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-14)
 
 ---
+
+## [2026-11-17] pr480-starter-heights-and-cleanup — Retired PR #461 Worktree, Verified PR #480 Starter-Scene Heights (`3/3 ok`) & Maintainer Sync (COMPLETE)
+
+- **Workspace cleanup (`.mali/worktrees/fix-rt-load-upload-296`):** Verified `fix/rt-load-upload-296` (`7077d56`) is an ancestor of `upstream/main` (`87df09e`), unlinked its NTFS junction (`android/deps/out`) cleanly via `cmd /c rmdir`, verified root `libshaderc_shared.so` intact, deleted the directory + pruned git worktree/branch (`9` active worktrees). Confirmed latest upstream release remains `v0.4.5-beta` (`6113c61`), so fork `main` remains pinned to `v0.4.5-beta`; all 6 open PRs (`#436`, `#475`, `#480`, `#481`, `#482`, `#483`) verified `MERGEABLE` / `CLEAN` against `upstream/main` `87df09e`.
+- **Maintainer review sync & PR #480 starter-scene height check (`SM-X730`):**
+  - `mamcjr` (`16:27 UTC`) signed off on `#436` & `#475` pending his final device A/B before merge, and asked whether the 3 starter scenes in `tools/benchmark-scenes.txt` pass PR `#480`'s `Y_TOLERANCE = 2.0` height check.
+  - Built debug APK from `benchmark-scenes-v2` (`c48d1b1`), ran isolated scratch `run_starter_check.py --tag pass1` (`repeats=1`, BOTW `1.9.0`, `cap30`) under `.mali/benchmark/scenes-v3-20261117/starter-check/`: **`3/3` passed (`status="ok"`, `moved=0.00`)**: `plateau` (`pos.y 251.0 -> y_settle 251.00 -> window 250.21`, `|Δy|=0.79`), `hateno-lab` (`356.0 -> 356.00 -> 356.02`, `|Δy|=0.02`), `hateno-village` (`243.0 -> 243.00 -> 242.61`, `|Δy|=0.39`).
+  - Removed temporary debug APK, restored `v0.4.5-beta-mali` (`2229426f...`) unlaunched (`pid=''`), verified `67/67` saves (`diffs=0`), `4/4` prefs (`diffs=0`), `3047` `.spv` & `vk_pipelines.bin` (`5e441121...`), and posted the measured table on `https://github.com/mamcjr/BOTWRecompAndroid/pull/480#issuecomment-6955227322`.
 
 ## [2026-11-17] pr-481-482-483-stutter-split — Round-2 Review, PR #461 Merge & 3-Way Stutter PR Split (#481, #482, #483) (OPEN)
 
