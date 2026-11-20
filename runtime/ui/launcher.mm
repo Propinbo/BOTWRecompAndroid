@@ -628,6 +628,7 @@ extern "C" const char *vk_gpu_name(void);
 extern "C" const char *vk_driver_rejected(void);  // (runtime/nvn/vulkan/android_driver.c)
 extern "C" const char *vk_driver_desc(void);      // (its own name and version: runtime/nvn/vulkan/device.c)
 extern "C" bool vk_driver_is_turnip(void);
+extern "C" bool vk_driver_is_mali(void);
 extern "C" const char *vk_gpu_desc(void);  // ("Adreno (TM) 830 - Turnip")
 static std::string g_log_folder;  // its name ("Download/BOTWRecomp"), "" with none
 static bool g_log_folder_read;
@@ -1809,7 +1810,7 @@ static void prelaunch_tab(float sc) {
                                   "patches). Automatic suits most phones: the fastest paths on Adreno 8xx GPUs, the safer "
                                   "ones on the others."));
         ImGui::Text(tr("This GPU: %s"), vk_gpu_desc());
-        if (!vk_driver_is_turnip())
+        if (!vk_driver_is_turnip() && !vk_driver_is_mali())
             ImGui::TextDisabled("%s", tr("These options are for Turnip: the driver in use takes the safer paths anyway."));
         ImGui::Spacing();
         ImGui::Text("%s", tr("Game memory on the GPU (Turnip)"));
@@ -1828,7 +1829,7 @@ static void prelaunch_tab(float sc) {
         if (!vk_heap_file_possible())
             ImGui::TextDisabled("%s", tr("This driver can't export its memory: the option does nothing here."));
         ImGui::Spacing();
-        ImGui::Text("%s", tr("Draw-target reads in place (Turnip)"));
+        ImGui::Text("%s", tr("Draw-target reads in place"));
         changed |= tri("inplace", &g_settings.inplace_reads, a8);
         ImGui::TextDisabled("%s", tr("On: decals and effects read the image they draw on as it is, the fastest way. Off: a copy "
                                   "of it each time, slower (fewer fps) but by the Vulkan rules. Automatic: on for Adreno 8xx "
