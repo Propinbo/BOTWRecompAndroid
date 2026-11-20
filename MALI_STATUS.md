@@ -31,8 +31,8 @@ Rollback APKs under `.mali/apk/`: `v0.4.7-beta-mali` (`5eb931e0...3ffe`), `v0.4.
 
 - **Merged (`v0.4.8-beta` / `v0.4.7-beta`):** **`#508`** (`3d28f80`), `#481`–`#483`, `#485` (earlier: `#315`, `#436`, `#461`, `#475`).
 - **Open (`MERGEABLE`):** **`#504`** (`186ea04`, `mAngle` preserved), **`#506`** (`adbafd6`, `#508` rebase + isolated `cbwin_retire_*` + Mali `[cbuf]`/water), **`#507`** (`fe2f659`, strict `"On"` setting + Title/Plateau/Zora A/B), **`#480`** (`c48d1b1`).
-- **Immediate Queue:** Wait for `mamcjr` review/merge of `#504`/`#506`/`#507`, then continue Master Plan **Item 3** (LMKD survival `12b–12d/12f`) & **Phase 2** (`VK_KHR_dynamic_rendering_local_read`).
-- **Deferred (`2026-11-20`):** Mali grass striping (`477912f75d2e8819`, needs `CPH2653` Turnip 1:1) & 8BitDo Pro 2 gyro (`#338`).
+- **Immediate Queue:** Wait for `mamcjr` review/merge of `#504`/`#506`/`#507`, then continue **Phase 2** (`VK_KHR_dynamic_rendering_local_read`) or **Graphics Accuracy** fixes.
+- **Deferred (`2026-11-20`):** **Android LMKD survival (`12b–12d / 12f`)**, Mali grass striping (`477912f75d2e8819`, needs `CPH2653` Turnip 1:1), & 8BitDo Pro 2 gyro (`#338`).
 
 ## Recent Milestones
 
