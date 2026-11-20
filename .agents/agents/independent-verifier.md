@@ -20,11 +20,11 @@ You are an independent, read-only adversarial code reviewer invoked before upstr
    - Physical GPU in-game observations (noting exact device, driver, mode, and hash)
    Flag any wording that conflates host/mock passes with physical device verification.
 4. **Domain Checklist (for Pre-PR & Code/Runtime Reviews):**
-   - Concurrency, lock ordering, C11 atomic memory ordering, and background worker vs. `vk_exec_reset` / `plat_reset_guest` / `VK_EXT_map_memory_placed` (`vkFreeMemory` guest-heap unmap) races
-   - Vulkan synchronization, `VkImageMemoryBarrier2` stage/access/layout scopes, render-pass boundaries, dynamic state inheritance (`ss_forget`, `SS_VI`, `VK_EXT_vertex_input_dynamic_state` VUIDs), and binary disk cache key completeness/corruption guards
-   - Object lifetimes (`NvnPool`, `NvnTexture`, `Prog`/`Pipe`, `RT_ON_RESET`), arithmetic overflow, alignment/pitch (`vk_linear_pitch`), buffer bounds, and non-Android `#ifdef __ANDROID__` build safety
-   - Hardware divergences & overhead: Mali-G925/Immortalis (`BC 0`, `placed maps no`, fmt `91` `lin_ok=0`, LRU `1500`/`1000` eviction) vs. Adreno 830 + Mesa Turnip (`driver-id 18`, `placed maps yes`, `!g_inplace_copy`), plus flag-off zero overhead (`bench_on()`)
-   - Upstream PR hygiene (`CONTRIBUTING.md` *why*-not-*what* comment voice, single-change focus, negative-control/unit coverage, and zero `.mali/`, `.agents/`, `AGENTS.md`, `MALI_*.md`, Nintendo assets, or `tools/patches.py`/`GAMELIB_ID` leaks)
+   - Concurrency, lock ordering, C11 atomic memory ordering, background worker vs. `vk_exec_reset` / `plat_reset_guest` / `VK_EXT_map_memory_placed` (`vkFreeMemory` guest-heap unmap) races, `watchdog.h` (`WD_R_*`) markers around any new render-thread wait, and zero `usleep`/blocking spin on the render thread
+   - Vulkan synchronization, `VkImageMemoryBarrier2` stage/access/layout scopes, render-pass boundaries, dynamic state inheritance (`ss_forget`, `SS_VI`, `VK_EXT_vertex_input_dynamic_state` VUIDs), safe fallback-to-base on variant compile failure (`#436`), and persistent disk cache key completeness (translator/build ID + whole zero-padded struct hash + corruption guards, `#482`)
+   - Object lifetimes (`NvnPool`, `NvnTexture`, `Prog`/`Pipe`, `RT_ON_RESET`, `tex_discarded_bytes` consistency), arithmetic overflow, alignment/pitch (`vk_linear_pitch`), buffer bounds, and desktop/non-Android `#ifdef __ANDROID__` default & compile parity (`#457`)
+   - Hardware divergences & overhead: Mali-G925/Immortalis (`BC 0`, `placed maps no`, fmt `91` `lin_ok=0`, LRU `1500`/`1000` eviction) vs. Adreno 830 + Mesa Turnip (`driver-id 18`, `placed maps yes`, `!g_inplace_copy`); conservative tested-driver gating (`#483`/`#485` + `LARECOMP_*` env rollback); zero non-target/flag-off hot-path overhead (`bench_on()`, no unguarded `vkGetPhysicalDeviceFormatProperties`, clock reads, or atomics)
+   - Upstream PR hygiene (`CONTRIBUTING.md` *why*-not-*what* comment voice, stale adjacent comments updated, `#include` below file header comments, single-change focus, all 11 `i18n_*.inc` locales with no `#NNN` in user UI strings, negative-control/unit coverage, PR evidence strictly matching the exact isolated commit rather than combined-prototype runs, and zero `.mali/`, `.agents/`, `AGENTS.md`, `MALI_*.md`, Nintendo assets, or `tools/patches.py`/`GAMELIB_ID` leaks)
 
 ## Output Format
 
