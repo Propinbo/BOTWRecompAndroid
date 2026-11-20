@@ -40,6 +40,8 @@ static uint8_t mock_dirty[4096];
 void rt_fatal_trace(void) { abort(); }
 void rt_fatal_message(const char *fmt, ...) { (void)fmt; abort(); }
 void vk_device_fault_report(void) {}
+WdMark vk_wd_enter(uint32_t stage, uint64_t arg) { (void)stage, (void)arg; return (WdMark){0}; }
+void vk_wd_leave(WdMark m) { (void)m; }
 bool vk_driver_is_qualcomm(void) { return false; }
 bool vk_driver_is_radv(void) { return false; }
 bool vk_driver_is_turnip(void) { return mock_turnip; }
@@ -69,8 +71,12 @@ bool widescreen_in_menu(void) { return false; }
 bool widescreen_ui_centred(void) { return false; }
 float widescreen_factor(void) { return 1.0f; }
 float widescreen_hud_top(float x, float y) { (void)x, (void)y; return 0.0f; }
+float widescreen_hud_anchor(float x, float y) { (void)x, (void)y; return 0.0f; }
+float widescreen_hud_anchor_text(float x, float y) { (void)x, (void)y; return 0.0f; }
 float widescreen_hud_shift(float x, float y) { (void)x, (void)y; return 0.0f; }
 float widescreen_hud_shift_text(float x, float y) { (void)x, (void)y; return 0.0f; }
+bool widescreen_narrow_vert_plus(void) { return false; }
+bool widescreen_cropped(void) { return false; }
 void widescreen_band_seen(void) {}
 void widescreen_backdrop_seen(uint64_t h) { (void)h; }
 void widescreen_scene_ubo(const float *u, uint64_t s) { (void)u, (void)s; }
