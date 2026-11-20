@@ -176,7 +176,7 @@ typedef struct {
 typedef struct { VkCommandBuffer handle; MockOp ops[512]; int nops; } MockCb;
 
 static MockImg m_imgs[128]; static MockBuf m_bufs[128]; static MockView m_views[256]; static MockCb m_cbs[64];
-static int n_imgs, n_bufs, n_views, n_cbs, stat_b2i, stat_in_up, stat_in_main, stat_bar, stat_up_bar, stat_sc_bar, mock_hazards;
+static int n_imgs, n_bufs, n_views, n_cbs, stat_b2i, stat_in_up, stat_in_main, stat_bar, stat_up_bar, stat_sc_bar, stat_dispatch, stat_cbuf, cbuf_bars[8], mock_hazards;
 static MockCb *act_cb; static MockImg *act_att0; static VkAttachmentLoadOp last_lop[8];
 static MockImg *find_img(VkImage im) { for (int i = 0; i < n_imgs; i++) if (m_imgs[i].handle == im) return &m_imgs[i]; return NULL; }
 static MockBuf *find_buf(VkBuffer b) { for (int i = 0; i < n_bufs; i++) if (m_bufs[i].handle == b) return &m_bufs[i]; return NULL; }
@@ -364,14 +364,14 @@ static VKAPI_ATTR VkResult VKAPI_CALL m_submit2(VkQueue q, uint32_t nsub, const 
 }
 static VKAPI_ATTR void VKAPI_CALL n_vp(VkCommandBuffer c, uint32_t f, uint32_t n, const VkViewport *v) { (void)c, (void)f, (void)n, (void)v; }
 static VKAPI_ATTR void VKAPI_CALL n_sc(VkCommandBuffer c, uint32_t f, uint32_t n, const VkRect2D *r) { (void)c, (void)f, (void)n, (void)r; }
-static VKAPI_ATTR void VKAPI_CALL n_cbuf(VkCommandBuffer c, VkBuffer s, VkBuffer d, uint32_t n, const VkBufferCopy *r) { (void)c, (void)s, (void)d, (void)n, (void)r; }
+static VKAPI_ATTR void VKAPI_CALL n_cbuf(VkCommandBuffer c, VkBuffer s, VkBuffer d, uint32_t n, const VkBufferCopy *r) { (void)c, (void)s, (void)d, (void)n, (void)r; cbuf_bars[stat_cbuf++ & 7] = stat_bar; }
 static VKAPI_ATTR void VKAPI_CALL n_blit(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d, VkImageLayout dl, uint32_t n, const VkImageBlit *r, VkFilter f) { (void)c, (void)s, (void)sl, (void)d, (void)dl, (void)n, (void)r, (void)f; }
 static VKAPI_ATTR void VKAPI_CALL n_res(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d, VkImageLayout dl, uint32_t n, const VkImageResolve *r) { (void)c, (void)s, (void)sl, (void)d, (void)dl, (void)n, (void)r; }
 static VKAPI_ATTR void VKAPI_CALL n_pipe(VkCommandBuffer c, VkPipelineBindPoint p, VkPipeline pi) { (void)c, (void)p, (void)pi; }
 static VKAPI_ATTR void VKAPI_CALL n_sets(VkCommandBuffer c, VkPipelineBindPoint p, VkPipelineLayout l, uint32_t f, uint32_t nc, const VkDescriptorSet *s, uint32_t nd, const uint32_t *d) { (void)c, (void)p, (void)l, (void)f, (void)nc, (void)s, (void)nd, (void)d; }
 static VKAPI_ATTR void VKAPI_CALL n_push(VkCommandBuffer c, VkPipelineLayout l, VkShaderStageFlags s, uint32_t o, uint32_t z, const void *v) { (void)c, (void)l, (void)s, (void)o, (void)z, (void)v; }
 static VKAPI_ATTR void VKAPI_CALL n_draw(VkCommandBuffer c, uint32_t v, uint32_t i, uint32_t fv, uint32_t fi) { (void)c, (void)v, (void)i, (void)fv, (void)fi; }
-static VKAPI_ATTR void VKAPI_CALL n_dispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) { (void)c, (void)x, (void)y, (void)z; }
+static VKAPI_ATTR void VKAPI_CALL n_dispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) { (void)c, (void)x, (void)y, (void)z; stat_dispatch++; }
 static VKAPI_ATTR void VKAPI_CALL n_cat(VkCommandBuffer c, uint32_t na, const VkClearAttachment *ca, uint32_t nr, const VkClearRect *cr) { (void)c, (void)na, (void)ca, (void)nr, (void)cr; }
 static VKAPI_ATTR void VKAPI_CALL n_rqp(VkCommandBuffer c, VkQueryPool q, uint32_t f, uint32_t n) { (void)c, (void)q, (void)f, (void)n; }
 static VKAPI_ATTR void VKAPI_CALL n_ts2(VkCommandBuffer c, VkPipelineStageFlags2 s, VkQueryPool q, uint32_t n) { (void)c, (void)s, (void)q, (void)n; }
@@ -723,7 +723,8 @@ int main(void) {
     check("undiscard lowers tex_discarded_bytes on re-upload and destroy_image (0 drift)",
           d_after_up == 131072 && d_after_reup == 0 && d_before_del == 131072 && disc == 0);
 
-    // 8. Integration: cbwin_bind, g_cbwin_cache, cbpatch dedupe, #453 snapshot=0 paths, and flushes.
+    {
+        // 8. Integration: cbwin_bind, g_cbwin_cache, cbpatch dedupe, #453 snapshot=0 paths, and flushes.
     g_vk.props.vendorID = 0x13B5;
     g_vk.props.limits.maxUniformBufferRange = 65536;
     g_vk.props.limits.minUniformBufferOffsetAlignment = 256;
@@ -941,6 +942,145 @@ int main(void) {
                ok_nosnap_gcopy, ok_nosnap_placed, ok_ab_placed, ok_ab_gcopy, ok_non_mali_off,
                ok_placed_shortcircuit, ok_retire_drop, ok_seqlock_mt, ok_cbwin_off, ok_reset);
     check("cbwin integration: base reuse, in/out updates, b2b/seqlock, retire, mt stress, #453, short-circuit, non-Mali off, and reset", ok_cb_all);
+    }
+    {
+        // 9. Integration: compute dispatch chaining in gcopy_mode, cs_writes_image barrier deferral, and vk_submit_extra flush.
+    gcopy_mode = false; dchain = false; dchain_after = false; dchain_env = -1;
+    unsetenv("LARECOMP_VK_DISPATCH_CHAIN");
+    renderer_flush();
+
+    ShaderInfo si_plain = {.stage = STAGE_COMPUTE};
+    ShaderInfo si_img = {.stage = STAGE_COMPUTE, .ntex = 1, .tex = {[0] = {.type = TEXTYPE_2D, .is_image = true}}};
+    ShaderInfo si_gstore = {.stage = STAGE_COMPUTE, .uses_gmem_map = true, .uses_gmem_store = true};
+    CsProg *cp_plain = calloc(1, sizeof *cp_plain);
+    CsProg *cp_img = calloc(1, sizeof *cp_img);
+    CsProg *cp_gstore = calloc(1, sizeof *cp_gstore);
+    assert(cp_plain && cp_img && cp_gstore);
+    cp_plain->si = cp_plain->p.vi = &si_plain;
+    atomic_store(&cp_plain->p.state, 1);
+    cp_img->si = cp_img->p.vi = &si_img;
+    atomic_store(&cp_img->p.state, 1);
+    cp_gstore->si = cp_gstore->p.vi = &si_gstore;
+    atomic_store(&cp_gstore->p.state, 1);
+
+    NvnProgram prog_plain = {.stages = {[5] = {.code_addr = 0x90000100ull}}};
+    NvnProgram prog_img = {.stages = {[5] = {.code_addr = 0x90000200ull}}};
+    NvnProgram prog_gstore = {.stages = {[5] = {.code_addr = 0x90000300ull}}};
+    VkObjectEntry *e_plain = vk_object_slot(&compute_cache, prog_plain.stages[5].code_addr);
+    VkObjectEntry *e_img = vk_object_slot(&compute_cache, prog_img.stages[5].code_addr);
+    VkObjectEntry *e_gstore = vk_object_slot(&compute_cache, prog_gstore.stages[5].code_addr);
+    e_plain->object = cp_plain;
+    e_img->object = cp_img;
+    e_gstore->object = cp_gstore;
+
+    int bar0 = stat_bar, disp0 = stat_dispatch; uint64_t dc0 = stat_dchained;
+    _Alignas(CmdRec) CmdRec dcmds[8];
+    memset(dcmds, 0, sizeof dcmds);
+    dcmds[0] = (CmdRec){.op = CMD_BIND_PROGRAM, .size = sizeof(CmdRec), .x = {(uint64_t)(uintptr_t)&prog_img}};
+    dcmds[1] = (CmdRec){.op = CMD_DISPATCH, .size = sizeof(CmdRec), .x = {1, 1, 1}};
+    dcmds[2] = (CmdRec){.op = CMD_UPDATE_UNIFORM_BUFFER, .size = sizeof(CmdRec)};  // dchain_keeps, sz=0
+    dcmds[3] = (CmdRec){.op = CMD_BIND_PROGRAM, .size = sizeof(CmdRec), .x = {(uint64_t)(uintptr_t)&prog_plain}};
+    dcmds[4] = (CmdRec){.op = CMD_DISPATCH, .size = sizeof(CmdRec), .x = {1, 1, 1}};
+    dcmds[5] = (CmdRec){.op = CMD_BARRIER, .size = sizeof(CmdRec)};  // non-dchain_keeps: flushes dchain_after
+    dcmds[6] = (CmdRec){.op = CMD_END, .size = sizeof(CmdRec)};
+    exec_list((uint64_t)(uintptr_t)dcmds, 0);
+    bool ok_dchain_seq = (stat_dispatch - disp0 == 2) && (stat_dchained - dc0 == 1) &&
+                         (stat_bar - bar0 == 2) && !dchain && !dchain_after;
+
+    // gcopy_mode storing dispatch chains with subsequent dispatch and arms dchain_after.
+    gcopy_mode = true;
+    int barg0 = stat_bar, dispg0 = stat_dispatch; uint64_t dcg0 = stat_dchained;
+    dcmds[0].x[0] = (uint64_t)(uintptr_t)&prog_gstore;
+    exec_list((uint64_t)(uintptr_t)dcmds, 0);
+    bool ok_gcopy_chain = (stat_dispatch - dispg0 == 2) && (stat_dchained - dcg0 == 1) &&
+                          (stat_bar - barg0 == 2) && !dchain && !dchain_after;
+    gcopy_mode = false;
+
+    // Non-dchain_keeps op when dchain == false && dchain_after == true (e.g. gfast_n > 0) must still flush barrier.
+    _Alignas(CmdRec) CmdRec bar_end[2] = {
+        {.op = CMD_BARRIER, .size = sizeof(CmdRec)},
+        {.op = CMD_END, .size = sizeof(CmdRec)},
+    };
+    int bar1 = stat_bar;
+    dchain = false; dchain_after = true;
+    exec_list((uint64_t)(uintptr_t)bar_end, 0);
+    bool ok_dchain_after_only = (stat_bar - bar1 == 1) && !dchain && !dchain_after;
+
+    // vk_submit_extra flushes owed dchain_after before vkEndCommandBuffer.
+    _Alignas(CmdRec) CmdRec tail_cmds[3] = {
+        {.op = CMD_BIND_PROGRAM, .size = sizeof(CmdRec), .x = {(uint64_t)(uintptr_t)&prog_img}},
+        {.op = CMD_DISPATCH, .size = sizeof(CmdRec), .x = {1, 1, 1}},
+        {.op = CMD_END, .size = sizeof(CmdRec)},
+    };
+    int bar2 = stat_bar;
+    exec_list((uint64_t)(uintptr_t)tail_cmds, 0);
+    bool armed_before_sub = dchain && dchain_after && (stat_bar - bar2 == 1);
+    vk_submit_extra(VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE);
+    bool ok_submit_flush = armed_before_sub && (stat_bar - bar2 == 2) && !dchain && !dchain_after;
+
+    // LARECOMP_VK_DISPATCH_CHAIN=0 negative control: barriers before every dispatch and immediately after storing dispatch.
+    setenv("LARECOMP_VK_DISPATCH_CHAIN", "0", 1); dchain_env = -1;
+    int bar_off0 = stat_bar, disp_off0 = stat_dispatch; uint64_t dc_off0 = stat_dchained;
+    dcmds[0].x[0] = (uint64_t)(uintptr_t)&prog_img;
+    exec_list((uint64_t)(uintptr_t)dcmds, 0);
+    bool ok_chain_off = (stat_dispatch - disp_off0 == 2) && (stat_dchained == dc_off0) &&
+                        (stat_bar - bar_off0 == 3) && !dchain && !dchain_after;
+    unsetenv("LARECOMP_VK_DISPATCH_CHAIN"); dchain_env = -1;
+
+    // Plain read-only dispatches chained together + CMD_BARRIER -> 1 pre-dispatch barrier total, 0 barriers at CMD_BARRIER.
+    _Alignas(CmdRec) CmdRec plain_cmds[6] = {
+        {.op = CMD_BIND_PROGRAM, .size = sizeof(CmdRec), .x = {(uint64_t)(uintptr_t)&prog_plain}},
+        {.op = CMD_DISPATCH, .size = sizeof(CmdRec), .x = {1, 1, 1}},
+        {.op = CMD_DISPATCH, .size = sizeof(CmdRec), .x = {1, 1, 1}},
+        {.op = CMD_BARRIER, .size = sizeof(CmdRec)},
+        {.op = CMD_END, .size = sizeof(CmdRec)},
+    };
+    int bar_pl0 = stat_bar, disp_pl0 = stat_dispatch; uint64_t dc_pl0 = stat_dchained;
+    exec_list((uint64_t)(uintptr_t)plain_cmds, 0);
+    bool ok_plain_zero_bar = (stat_dispatch - disp_pl0 == 2) && (stat_dchained - dc_pl0 == 1) &&
+                             (stat_bar - bar_pl0 == 1) && !dchain && !dchain_after;
+
+    // !gcopy_mode fallback (m==0 -> gfast_handled==false) MUST arm dchain_after, and chained gfast_n>0 MUST flush
+    // dchain_after BEFORE copy_buffer(gmem_buf -> gfast_buf), then copy back + barrier.
+    gcopy_mode = false;
+    g_vk.host_import = true;
+    uint8_t *gf_guest = alloc_guest(4096);
+    gmem_buf = (VkBuffer)(uintptr_t)0xCAFE0002ull;
+    uint64_t need_gmem = (uint64_t)((uintptr_t)guest_mem - HEAP_BASE) + (8u << 20);
+    gmem_size = need_gmem > kernel_heap_size() ? need_gmem : kernel_heap_size();
+    memset(st.sbuf, 0, sizeof st.sbuf);
+    _Alignas(CmdRec) CmdRec gstore_one[3] = {
+        {.op = CMD_BIND_PROGRAM, .size = sizeof(CmdRec), .x = {(uint64_t)(uintptr_t)&prog_gstore}},
+        {.op = CMD_DISPATCH, .size = sizeof(CmdRec), .x = {1, 1, 1}},
+        {.op = CMD_END, .size = sizeof(CmdRec)},
+    };
+    int bar_gf0 = stat_bar; stat_cbuf = 0; uint64_t dc_gf0 = stat_dchained;
+    exec_list((uint64_t)(uintptr_t)gstore_one, 0);
+    bool ok_gstore_fallback = dchain && dchain_after && (stat_bar - bar_gf0 == 1);
+    st.sbuf[5][0].addr = (uint64_t)(uintptr_t)gf_guest;
+    st.sbuf[5][0].size = 4096;
+    exec_list((uint64_t)(uintptr_t)gstore_one, 0);
+    bool ok_gfast_pre_flush = (stat_dchained - dc_gf0 == 1) && stat_cbuf == 2 &&
+                              cbuf_bars[0] == bar_gf0 + 2 && cbuf_bars[1] == bar_gf0 + 4 &&
+                              stat_bar == bar_gf0 + 5 && !dchain_after;
+    memset(st.sbuf, 0, sizeof st.sbuf);
+
+    e_plain->object = NULL; e_img->object = NULL; e_gstore->object = NULL;
+    free(cp_plain); free(cp_img); free(cp_gstore);
+    st.program = NULL;
+
+    // vk_exec_reset() clears dchain*, gwin_mode, and gfast_win across reboots.
+    dchain = true; dchain_after = true; dchain_cb = vk_cmd(); dchain_env = 1;
+    gwin_mode = true; gfast_win = (VkDescriptorBufferInfo){gmem_buf, 0, 4096};
+    gmem_buf = VK_NULL_HANDLE; gmem_size = 0; g_vk.host_import = false;
+    vk_exec_reset();
+    bool ok_reset = !dchain && !dchain_after && dchain_cb == VK_NULL_HANDLE && dchain_env == -1 &&
+                    !gwin_mode && gfast_win.buffer == VK_NULL_HANDLE;
+
+    check("dchain integration: dispatch chaining, gcopy_mode, chain=0, plain 0-bar, gfast pre-flush, and reset",
+          ok_dchain_seq && ok_gcopy_chain && ok_dchain_after_only && ok_submit_flush &&
+          ok_chain_off && ok_plain_zero_bar && ok_gstore_fallback && ok_gfast_pre_flush && ok_reset);
+    }
 
     check("Vulkan mock synchronization validator recorded 0 hazards", !mock_hazards);
     printf("test_rt_load_upload: %s (%d failure(s))\n", failures ? "FAILED" : "all passed", failures);
