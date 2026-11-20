@@ -2353,6 +2353,22 @@ bool vk_driver_is_mali(void) {
     return cur >= 0 ? cur > 0 : g_vk.props.vendorID == 0x13B5;
 }
 
+// ARM proprietary Mali r49+ (verified driver line for defaults that rely on driver-specific behavior).
+bool vk_driver_is_mali_r49(void) {
+    static _Atomic int m = -1;
+    int cur = atomic_load_explicit(&m, memory_order_relaxed);
+    if (cur < 0 && g_vk.phys) {
+        VkPhysicalDeviceDriverProperties d = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+        if (g_driver_props) {
+            VkPhysicalDeviceProperties2 p = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &d};
+            vkGetPhysicalDeviceProperties2(g_vk.phys, &p);
+        }
+        cur = (g_driver_props && d.driverID == VK_DRIVER_ID_ARM_PROPRIETARY && vk_arm_driver_major(d.driverInfo) >= 49) ? 1 : 0;
+        atomic_store_explicit(&m, cur, memory_order_relaxed);
+    }
+    return cur > 0;
+}
+
 bool vk_slot_async_default(void) {
     extern bool vk_low_ram(void);
     return vk_low_ram() || vk_driver_is_mali();

@@ -4645,16 +4645,36 @@ static void resolve_feedback(Prog *pr, uint32_t draw_written) {
                 // bookkeeping) share that pass. Those passes of a few draws run in system memory on Turnip (~0.02 ms).
                 // Only the writes before the game's last barrier (NVN's rule) left the ground dark: its draws don't
                 // fence every write they then read. Sampling a target the pass writes is a feedback loop Vulkan leaves
-                // undefined (without VK_EXT_attachment_feedback_loop_layout): on Turnip only, where it was checked
-                // frame by frame on the Adreno 830 - Automatic keeps it to the Adreno 8xx (settings.h inplace_reads,
-                // the start screen's Driver compatibility; LARECOMP_FEEDBACK_INPLACE=1 on any driver).
+                // undefined (without VK_EXT_attachment_feedback_loop_layout): Automatic enables it on Adreno 8xx
+                // Turnip and ARM proprietary Mali r49+ (vk_driver_is_mali_r49; older Mali stays off in Automatic and
+                // can opt in via settings/env; LARECOMP_NO_MALI_INPLACE=1 keeps copies on Mali; settings.h inplace_reads
+                // overrides; LARECOMP_FEEDBACK_INPLACE=1/0 forces on any driver).
                 if (g_inplace_copy < 0) {
+                    const char *fi_raw = getenv("LARECOMP_FEEDBACK_INPLACE");
+                    const char *fi = (fi_raw && *fi_raw) ? fi_raw : NULL;
+                    bool fb_copy = getenv("LARECOMP_FEEDBACK_COPY") != NULL;
+                    const char *why = fb_copy ? "LARECOMP_FEEDBACK_COPY" : fi ? "LARECOMP_FEEDBACK_INPLACE" : "automatic";
+                    bool inplace = fi ? atoi(fi) != 0 : false;
+#ifdef __ANDROID__
                     extern bool vk_driver_is_turnip(void);
+                    extern bool vk_driver_is_mali(void);
+                    extern bool vk_driver_is_mali_r49(void);
                     extern bool vk_turnip_path_on(int setting);
-                    bool inplace = getenv("LARECOMP_FEEDBACK_INPLACE") || (vk_driver_is_turnip() && vk_turnip_path_on(g_settings.inplace_reads));
-                    g_inplace_copy = getenv("LARECOMP_FEEDBACK_COPY") != NULL || !inplace;
-                    LOG("[vk] targets a draw writes, sampled by it: %s (%s)\n", g_inplace_copy ? "copies" : "in place",
-                        g_settings.inplace_reads < 0 ? "automatic" : "settings");
+                    int ir_set = g_settings.inplace_reads;
+                    bool mali = vk_driver_is_mali();
+                    bool mali_r49 = vk_driver_is_mali_r49();
+                    const char *nmi_raw = getenv("LARECOMP_NO_MALI_INPLACE");
+                    bool no_mali_env = mali_r49 && nmi_raw && *nmi_raw && atoi(nmi_raw) != 0;
+                    bool mali_on = ir_set < 0 ? (mali_r49 && !no_mali_env) : (mali && ir_set != 0);
+                    if (!fi) {
+                        inplace = (vk_driver_is_turnip() && vk_turnip_path_on(ir_set)) || mali_on;
+                        if (!fb_copy)
+                            why = ir_set < 0 ? (mali_on ? "automatic: Mali r49+" : (no_mali_env ? "LARECOMP_NO_MALI_INPLACE" : "automatic"))
+                                             : "settings";
+                    }
+#endif
+                    g_inplace_copy = fb_copy || !inplace;
+                    LOG("[vk] targets a draw writes, sampled by it: %s (%s)\n", g_inplace_copy ? "copies" : "in place", why);
                 }
                 extern int vk_ab(const char *what);
                 if (!g_inplace_copy && bit && bit < 1u << 8 && AB("copy") != 1) {
