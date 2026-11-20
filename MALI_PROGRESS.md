@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-20). Query sele
 
 ## Table of Contents
 
+- [2026-11-20] pr504-508-isolated-evidence-and-508-merged — Isolated SM-X730 PR Evidence, #506/#507 Hardening, #508 Merged & v0.4.8-beta Review Triage (COMPLETE)
 - [2026-11-20] mali-perf-047-phase1-and-decal-probe — Upstream PRs #506–#508, Consolidated `v0.4.7-beta-mali` Rollout & `zora-plaza` Decal Probe (COMPLETE)
 - [2026-11-20] fullscreen-narrow-474 — Narrow-Landscape Unlocked Aspect Ratio (#474) & Upstream PR #504 (OPEN)
 - [2026-11-20] v047-sync-grass-triage-and-master-plan — Upstream `v0.4.7-beta` Sync (#481–#485 Merged), Mali Grass-Stripes Triage (Parked) & Master Plan (COMPLETE)
@@ -24,6 +25,25 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-20). Query sele
 - [2026-11-17] pr-461-rt-load-upload — Upstream PR #461 for `#296`/`#438` Cases 1 & 2 (MERGED)
 - [2026-11-16] underwater-walk-296 — Underwater Walk `#296`/`#438` Root Cause & Controlled A/B Fix (COMPLETE)
 - Historical Archive Digest (2026-10-30 to 2026-11-15)
+
+---
+
+## [2026-11-20] pr504-508-isolated-evidence-and-508-merged — Isolated SM-X730 PR Evidence, #506/#507 Hardening, #508 Merged & v0.4.8-beta Review Triage (COMPLETE)
+
+- **Hardening of PR `#506` (`26c4a5a`) and PR `#507` (`0769b0e`):**
+  - `#506` (`feat/cbwin-mali-snap`, `26c4a5a`): Ordered `cbwin_wanted()` as `!gmem_placed && gcopy_mode && vk_driver_is_mali()` for zero Turnip/placed call cost; removed redundant `atomic_thread_fence(memory_order_seq_cst)` in `gcopy_read_begin()`; added Turnip short-circuit negative control (`mock_mali_calls == 0`), `gcopy_retire()` drop test, and 2-thread `pthread` seqlock contention stress (`4,000` iterations, `0` torn reads) to `tools/test_rt_load_upload.c`. Verified WSL `test_cbwin_snap.c` PASS, `8/8` `SM-X730` Bionic, `test_vulkan_compat`/`startup`/`shader_cache`/`soft_linear` PASS, `0` CRIT/MAJ (`independent-verifier`), and `workspace_check.py pr` PASS.
+  - `#507` (`feat/mali-inplace-feedback`, `0769b0e`): Added `vk_driver_is_mali_r49()` (`driverID == VK_DRIVER_ID_ARM_PROPRIETARY && vk_arm_driver_major >= 49`) restricting `Automatic` in-place defaults strictly to Mali `r49+` while preserving `< r49` manual Settings/`LARECOMP_FEEDBACK_INPLACE` opt-in, guarded empty `""` env overrides, synced `launcher.mm` + all 11 `i18n_*.inc` locales to `Mali (r49+)` (`100%` parity), and expanded Section `6b` tests. Verified `7/7` Bionic, Android Clang, `0` CRIT/MAJ (`independent-verifier`), and `workspace_check.py pr` PASS.
+- **Isolated Single-Commit `SM-X730` (`Mali-G925 MC12`, `v1.r49p1-03bet0`, Android 16, BOTW `1.9.0`, USB-powered `plugged: 2`) A/B Campaign (`.mali/mali-perf-047/pr-evidence/summary.json`):**
+  - `#504` (`25ebfb6`, `Original` vs `Unlocked` `16:10` Vert+): `30.00` fps across `plateau` (`1% low 29.56 -> 29.50`, GPU p50 `27.12 -> 27.03 ms`) & `zora-plaza` (`1% low 29.40 -> 29.48`, GPU p50 `27.61 -> 27.26 ms`); verbatim `[widescreen] frame 0: window 2560 x 1600` & `aspect 1.6000 fovy 40.0 -> 44.0 deg`; 4 clean screenshots.
+  - `#506` (`26c4a5a`): Official 30 FPS `report.json` parity (`30.00` fps, `plateau` GPU p50 `27.18 -> 27.16 ms`, `zora` `27.39 -> 27.58 ms`); Pass B `[cbuf]` 2s host copy `911.2–926.9 -> 84.2–84.9 MB` (`-90.8%` `plateau`) and `962.2–983.0 -> 132.4–135.4 MB` (`-86.2%` `zora`); Pass C steady 60 FPS `[vk]` (`compile 0, skipped 0`) median `44.50 -> 47.40` fps (`+6.5%`, upload `-87.8%` `plateau`) and `41.50 -> 43.10` fps (`+3.9%`, upload `-81.0%` `zora`).
+  - `#507` (`0769b0e`): Log proof `copies (LARECOMP_NO_MALI_INPLACE)` vs `in place (automatic: Mali r49+)`; 30 FPS `report.json` (`zora` GPU p50 `27.51 -> 27.31 ms`, RT p50 `18.55 -> 17.94 ms`; `plateau` `1% low 28.64 -> 29.46`); steady 60 FPS `[vk]` `fbcopy` `2745.7 -> 0` (`zora` `+3.50 fps` / `+8.0%`) and `946.7 -> 0` (`plateau` `+0.50 fps`); 3 clean screenshots (`pr507_zora_copy/inplace.png`, `pr507_plateau_inplace.png`).
+  - `#508` (`7845d58`): 30 FPS `report.json` parity (`30.00` fps); steady 60 FPS `[vk]` `zora` `29.9%` chained (`43.80 -> 44.85` fps, `+2.4%`) and `kakariko-day` `45.0%` chained (worst `max_ms 41 -> 32 ms`, GPU-bound FPS `37.10 -> 36.90`); clean `pr508_zora_dchain.png`.
+- **Evidence Branch, Consolidated Release (`b6ed7e0`), & Post-Flight Audit:**
+  - Pushed ONLY the 9 verified PNGs to orphan branch `origin/evidence/pr504-pr508-20261120` (`4c74afc`, HTTP 200).
+  - Rebuilt `release/mali-0.4.7-beta` (`b6ed7e0`) from `2c72f20` + cherry-picked `25ebfb6`, `26c4a5a`, `0769b0e`, `7845d58`; passed `8/8` `SM-X730` Bionic + `10` host Python scripts (`test_fullscreen_narrow`, `test_vulkan_compat` 16, `test_vulkan_startup` 33, `test_shader_cache` 17, `test_soft_linear` 23+3+203, `test_gpu_timing_trace` 8, `test_shader_constants` 12, `test_command_snapshot`, `test_pipeline_cache_save`, `test_workspace160_guard`; pre-existing upstream failures in `test_android_upload_caches.py` & `test_descriptor_plan.py` confirmed on `2c72f20`).
+  - Built, pushed (`origin release/mali-047` -> `release/mali-0.4.7-beta`), and installed `BOTWRecompAndroid-0.4.7-beta-mali-release.apk` (`90,243,653` B, `5eb931e0db3a9782936e5f491d70666f41aa4a76b62e63c20c7f5bbee2713ffe`); removed `pr-apks/`; `run_release_checks.py --mode cleanup-audit` -> **CLEAN (`68/68` saves `diffs=0`, `3/4` prefs `non_sys_diffs=0`, `4834` `.spv`, `vk_pipelines.bin` unchanged)**.
+- **Upstream `#508` Merge, `v0.4.8-beta`, & Maintainer Review Triage (`2026-11-20T11:23Z–11:56Z`):**
+  - Updated live `#504`, `#506`, `#507` (title `Mali r49+`), `#508` PR descriptions. Observed upstream released **`v0.4.8-beta`** (`11:51:32Z`), **MERGED PR `#508`** (`3d28f80`, POCO copy mode `422/1164 chained`), making `#506`/`#507` `CONFLICTING`. Logged `11:44Z` `mamcjr` review asks (predating our `11:56Z` PR body updates): `#504` `fovy` creep verification + default `Unlocked` note; `#506` `#508`-rebase, `gcopy_gen` impact on all copy-mode GPUs / `guest_copy_flush` split; `#507` Plateau decals/Title check on Mali or splitting `On` setting from default change.
 
 ---
 
