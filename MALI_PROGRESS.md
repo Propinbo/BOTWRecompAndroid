@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-20). Query sele
 
 ## Table of Contents
 
+- [2026-11-20] fullscreen-narrow-474 — Narrow-Landscape Unlocked Aspect Ratio (#474) & Upstream PR #504 (OPEN)
 - [2026-11-20] v047-sync-grass-triage-and-master-plan — Upstream `v0.4.7-beta` Sync (#481–#485 Merged), Mali Grass-Stripes Triage (Parked) & Master Plan (COMPLETE)
 - [2026-11-18] pr-maintainer-reviews-and-mali-validation — PR #481–#483/#485 Maintainer Review Fixes, Isolated Mali A/B & Stress Validation, & Updated Release APK (COMPLETE)
 - [2026-11-18] mali-perf-046-and-release-rollout — Upstream `v0.4.6-beta` Sync, PR #485 Async Tex Slots, Mali-G925 60 FPS `ABBA` & Release Rollout (COMPLETE)
@@ -29,6 +30,13 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-20). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-14)
 
 ---
+
+## [2026-11-20] fullscreen-narrow-474 — Narrow-Landscape Unlocked Aspect Ratio (#474) & Upstream PR #504 (OPEN)
+
+- **Branch & PR:** `feat/fullscreen-narrow` (`25ebfb6` on `v0.4.7-beta` `2c72f20`, 6 files) opened as upstream PR **#504** (addresses `#474`; `tools/patches.py`, `runtime/gamelib.h`, `.gitignore` untouched; `workspace_check.py pr` `PASS`).
+- **Implementation & Fixes:** Enabled narrow landscape reshaping (`9/16 <= shape < 0.995`, `dw >= dh`) in `output_scale.c`/`device.c` with matching `[0.995, 1.005]` deadband; added Vert+ 3D (`LARECOMP_NARROW_HOR_MINUS=1` opt), C11 atomic + 256-slot LRU camera table with `mAspect` resize restore & `RT_ON_RESET`, HUD top/bot/strip anchoring (15+ heart strip, far-left column isolation), symmetric `16:9` Title/Scope crop (`widescreen_cropped()`), and `nn::ui2d` `cb3[33]` `(w,h,left,top)` covers/bands/map/condensed-text adaptation in `exec.c`. Added `widescreen_*`/`vk_wd_*` stubs to `tools/test_rt_load_upload.c`.
+- **2-Round 3-Verifier Review & Host/Bionic Verification (`25ebfb6`):** Resolved Round 1 `CRITICAL` 64B text UBO OOB in `tall_full_cover` (`pane` guard + `PROT_NONE` test), `mAspect` resize restore, C11 atomics/TSAN (`0` races), LRU/near-far, menu-close snap, and `-Werror` coverage; Round 2 closed with `0 CRITICAL / 0 MAJOR`. Final post-polish checks PASS: `test_fullscreen_narrow.py --wsl` (`-Werror`, 0 warn, `--wide-test`, 8/8 negative controls), `test_vulkan_compat.py` (`16/16`), `test_vulkan_startup.py` (`33/33`), `test_soft_linear.py` (`23 C + 3 SPIR-V + 203 math`), `test_android_runtime.ps1` (`7/7` Bionic + `test_pipeline_cache_save` on `SM-X730`), and `:app:assembleDebug` (`1492d7ed...f2bf`, 14s).
+- **Physical `SM-X730` Visual Validation (`.mali/fullscreen-16x10-047/`):** Pre-polish APK (`ae8f5328...1f1f`) verified across 8 isolated scratch scenarios (`0` `[watchdog]`/`FATAL`/`VK_ERROR`, `s1_vertplus`, `s2_horminus`, `s3_touch_top`, `s4_title_win`, `s5a_original`, `s5b_4x3`, `s5c_ultrawide`, `s5d_recompiled`): Loading cream at `y=0` (seam `y=425` `16:10`, `y=444` `4:3`), Title/Scope `panefix=0`, balanced hearts margins; stock `3dc08f7b...0aab` restored (`68/68` saves, `[post] CLEAN`). Physical `CPH2653` Turnip unplugged.
 
 ## [2026-11-20] v047-sync-grass-triage-and-master-plan — Upstream `v0.4.7-beta` Sync (#481–#485 Merged), Mali Grass-Stripes Triage (Parked) & Master Plan (COMPLETE)
 
