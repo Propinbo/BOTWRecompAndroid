@@ -13,30 +13,31 @@ Last updated: `2026-11-20` (`Europe/Moscow`)
 |---|---|---|---|
 | Root `.` | `main` | `2c72f20` | Clean `v0.4.7-beta` baseline & docs |
 | `.mali/worktrees/fullscreen-narrow` | `feat/fullscreen-narrow` | `25ebfb6` | **OPEN PR #504** (narrow landscape Unlocked aspect / `#474`) |
-| `.mali/worktrees/mali-perf-046` | `feat/mali-perf-046` | `4ddf99b` | Mali `cbwin_snap`, `inplace_reads` & `dchain` (reconcile vs `#453` on `2c72f20`) |
+| `.mali/worktrees/cbwin-mali-snap` | `feat/cbwin-mali-snap` | `5aec777` | **OPEN PR #506** (`cbwin` snapshot cache + Mali `gcopy_mode`) |
+| `.mali/worktrees/mali-inplace-feedback` | `feat/mali-inplace-feedback` | `a3f8763` | **OPEN PR #507** (automatic Mali `inplace_reads` + 11-locale i18n) |
+| `.mali/worktrees/gcopy-dchain` | `feat/gcopy-dchain` | `7845d58` | **OPEN PR #508** (`gcopy_mode` compute dispatch barrier chaining) |
+| `.mali/worktrees/mali-release-047` | `release/mali-0.4.7-beta` | `bce7d47` | Integrated `v0.4.7-beta-mali` build (`#504`, `#506`, `#507`, `#508`) |
 | `.mali/worktrees/benchmark-scenes-v2` | `benchmark-scenes-v2` | `c48d1b1` | **OPEN PR #480** (`3/3` starter heights verified, `MERGEABLE`) |
 
 ## Physical Devices & Backup Guards
 
 | Device | GPU / Driver | Installed App | Verified Backup & Caches |
 |---|---|---|---|
-| **Galaxy Tab S11 (SM-X730)** *(connected)* | Mali-G925 MC12 (`r49p1` stock Mali) | `v0.4.6-beta` Mali (`3dc08f7b...0aab`) | `2026-11-20`: `68/68` saves, `3/4` prefs (`[post] CLEAN`), `4834` `.spv`; idle |
+| **Galaxy Tab S11 (SM-X730)** *(connected)* | Mali-G925 MC12 (`r49p1` stock Mali) | **`v0.4.7-beta` Mali** (`056244d6...ea47`) | `2026-11-20`: `68/68` saves (`diffs=0`), `3/4` prefs (`[post] CLEAN`), `4834` `.spv`; idle |
 | **OnePlus 13 (CPH2653)** *(unplugged)* | Adreno 830 (**Turnip `Turnip_Gen8_V38_Patched`** only) | `v0.4.5-beta` Mali (`2229426f...7b23a`) | `2026-11-17`: `83/84` (`0` save/INI diffs); `1865` `.spv`; verified prior to disconnect |
 
-Rollback APKs: signed `v0.4.6-beta` (`aa9ca25b...3e27`), `v0.4.5-beta` (`65ecd82f...c29b`), & `v0.4.3-beta` (`3d3ad8e7...10846`) under `.mali/apk/`. Device scope strictly pinned to owner's 2 devices (`SM-X730` & `CPH2653` Turnip-only).
+Rollback APKs under `.mali/apk/`: `v0.4.6-beta-mali` (`3dc08f7b...0aab`), `v0.4.6-beta` (`aa9ca25b...3e27`), `v0.4.5-beta` (`65ecd82f...c29b`), `v0.4.3-beta` (`3d3ad8e7...10846`). Scope: `SM-X730` & `CPH2653` (Turnip-only).
 
 ## Open PRs & Active Priorities
 
-- **Merged upstream (`v0.4.7-beta`):** `#481`, `#482`, `#483`, `#485` (earlier: `#315`, `#436`, `#461`, `#475`).
-- **Open (`MERGEABLE`):** **`#504`** (`25ebfb6`, narrow landscape `#474`) & **`#480`** (`c48d1b1`).
-- **Ready locally (`feat/mali-perf-046` `4ddf99b`):** `+6.6%..+11.1%` 60 FPS on `SM-X730` (`upload -83.5%`, `fbcopy 650->0`); rebase onto `2c72f20`, reconcile `cbwin` vs `#453`, and split PRs (`cbwin_snap`, `inplace_reads`, `dchain`).
-- **Active queue (Master Plan Spheres 1–5, 7–8; Sphere 6 excluded):** (1) **PR #504 (`#474`) Turnip cross-check / `v0.4.7-beta-mali` integration** (`16:10` verified on `SM-X730`, pending `CPH2653` Turnip cross-check when attached); (2) **Rebase/split `feat/mali-perf-046` + `v0.4.7-beta-mali` APK (Sphere 2)**; (3) **Background/HOME LMKD survival `12b–12d/12f` (Sphere 3)**.
-- **Deferred per owner (`2026-11-20`):** Mali grass row striping (`477912f75d2e8819` isolated, `c2..c7` neutral, awaiting `CPH2653` Turnip 1:1 / screenshot) & 8BitDo Pro 2 gyro (`#338`).
+- **Merged (`v0.4.7-beta`):** `#481`, `#482`, `#483`, `#485` (earlier: `#315`, `#436`, `#461`, `#475`).
+- **Open (`MERGEABLE`):** **`#506`** (`5aec777`), **`#507`** (`a3f8763`), **`#508`** (`7845d58`), **`#504`** (`25ebfb6`), **`#480`** (`c48d1b1`).
+- **Queue (Spheres 1–5, 7–8; excl. 6):** (1) **PR #504 (`#474`)** in `v0.4.7-beta-mali` on `SM-X730` (needs `CPH2653` Turnip check); (2) **Mali Perf Phase 1 DONE (`#506`–`#508`) -> Phase 2 (`VK_KHR_dynamic_rendering_local_read` decals)** design (`decal-probe/` `9.230 ms`, `8` breaks, `558` GLSL); (3) **LMKD survival `12b–12d/12f` (Sphere 3)**.
+- **Deferred (`2026-11-20`):** Mali grass striping (`477912f75d2e8819`, needs `CPH2653` Turnip 1:1) & 8BitDo Pro 2 gyro (`#338`).
 
 ## Recent Milestones
 
-- `[2026-11-20]` **PR #504 Opened — Narrow-Landscape Unlocked Aspect (`#474`):** Shipped `25ebfb6` on `v0.4.7-beta`; 2-round 3-verifier review + TSAN (`0` races) + `SM-X730` 8-scenario & `7/7` Bionic PASS.
-- `[2026-11-20]` **`v0.4.7-beta` Sync (`#481–#485` Merged), Grass Triage (Parked) & Master Plan:** FF `main` to `2c72f20`; retired 5 merged/superseded worktrees (`worktrees=3`); pinned 2-device scope (`SM-X730` & `CPH2653`); saved Master Plan (Spheres 1–5, 7–8).
-- `[2026-11-18]` **PR #481–#485 Maintainer Review Fixes & Mali Stress Validation:** Resolved all reviews (`WD_R_BUILD_WAIT`, build ID + 88B `ShaderKey`, Turnip/ARM r49+ gate); verified `SM-X730` A/B & `1,186/1,186` `0`-drain windows (`#485`).
-- `[2026-11-18]` **`v0.4.6-beta` Sync, PR #485, 60 FPS Mali Perf `ABBA` & Release Rollout:** FF `0897fb8`; opened `#485`; verified `cbwin_snap`+`inplace`+`dchain`.
-- `[2026-11-17]` **PR #480 Starter-Scene Check & Cleanup:** Retired `#461`; verified `3/3` starter heights (`<= 0.79` u delta). See `MALI_PROGRESS.md`.
+- `[2026-11-20]` **PRs #506–#508, `v0.4.7-beta-mali` & Decal Probe (Phase 1 DONE):** Audited (`0 CRIT/0 MAJ`) `#506`–`#508`; deployed `bce7d47` (`056244d6...ea47`) to `SM-X730` (`8/8`+`4/4` Bionic, `zora-plaza`/`kakariko-day` 16:10, `68/68` saves CLEAN); captured `[gpuprof]` + `558` GLSL; retired `mali-perf-046`.
+- `[2026-11-20]` **PR #504 (`#474`) Opened:** Narrow-landscape Unlocked (`25ebfb6`), 2-round review, TSAN (`0` races), `SM-X730` 8-scene & `7/7` Bionic PASS.
+- `[2026-11-20]` **`v0.4.7-beta` Sync (`#481–#485` Merged):** FF `main` to `2c72f20`; retired 5 worktrees; pinned 2-device scope & Master Plan.
+- `[2026-11-18]` **`v0.4.6-beta`, PRs `#481–#485` Fixes & Mali Rollout:** FF `0897fb8`; resolved reviews; `1,186/1,186` `0`-drain (`#485`) & `ABBA` Mali perf (`cbwin_snap`+`inplace`+`dchain`). See `MALI_PROGRESS.md`.
