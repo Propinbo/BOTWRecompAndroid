@@ -1,7 +1,7 @@
 ---
 name: device-testing-and-safety
 description: >-
-  Guides physical Android device testing on SM-X730 (Mali-G925), SM-X926B (Immortalis-G720), and CPH2653 (Adreno 830 + Turnip), including save backups, scratch isolation, driver verification, APK signing, and stock restoration. Use whenever running ADB commands, Bionic unit binaries, or in-game experiments on devices.
+  Guides physical Android device testing on Galaxy Tab S11 (SM-X730, Mali-G925) and OnePlus 13 (CPH2653, Adreno 830 + Turnip), including save backups, scratch isolation, driver verification, APK signing, and stock restoration. Use whenever running ADB commands, Bionic unit binaries, or in-game experiments on devices.
 ---
 
 # Device Testing and Save-Safety Runbook
@@ -13,7 +13,7 @@ Follow these mandatory steps for every physical-device operation.
 1. Verify ADB connectivity (`adb devices -l`) and read-only root/KernelSU access (`su -c id`) if accessing app data.
 2. Check whether today's backup `.mali/user-backup/<YYYY-MM-DD>/` exists and matches current device saves/settings/preferences via `.mali/user-backup/backup.py` and `.mali/user-backup/<YYYY-MM-DD>/*.sha256` manifests.
 3. If no backup exists for today, or if the owner played since the last backup, capture a new dated SHA-256 backup **before** launching the game. Never overwrite earlier dated backups.
-4. Record the currently installed `com.botwrecomp.android` APK hash and confirm the exact signed stock rollback APK exists locally (e.g., `.mali/apk/v0.4.3-beta/BOTWRecompAndroid-0.4.3-beta-signed.apk`, SHA-256 `3d3ad8e7...`).
+4. Record the currently installed `com.botwrecomp.android` APK hash and confirm the exact signed stock/baseline rollback APK exists locally under `.mali/apk/` (e.g., `v0.4.6-beta/BOTWRecompAndroid-0.4.6-beta-signed.apk` or the currently installed build).
 
 ## 2. Adreno Turnip-Only Requirement
 

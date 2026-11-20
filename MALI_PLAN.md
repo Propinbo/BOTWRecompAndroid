@@ -1,6 +1,6 @@
 # BOTWRecompAndroid Mali Contribution Plan
 
-Authoritative engineering roadmap for Mali-G925 / Immortalis-G720 optimization, correctness, benchmarking, and upstream contributions to `https://github.com/mamcjr/BOTWRecompAndroid`.
+Authoritative engineering roadmap for owner's hardware—Galaxy Tab S11 (SM-X730, Mali-G925) and OnePlus 13 (CPH2653, Adreno 830 + Turnip)—spanning graphics, performance, memory, display/UI, input, CPU/thermals, automated testing, and upstream contributions to `https://github.com/mamcjr/BOTWRecompAndroid`.
 
 ## 1. Governance & Workflow Contract
 
@@ -15,6 +15,7 @@ The active development target tracks the latest *verified, published* `mamcjr/BO
 
 | Checked (UTC) | Newest Published Release | Tag SHA | Fork `main` Baseline | Relevance / Notes |
 |---|---|---|---|---|
+| `2026-11-20 05:31` | `v0.4.7-beta` | `2c72f20d542e44ef3350c2c05cb036d7fb1dfcb8` | `v0.4.7-beta` (`2c72f20`) | Fast-forwarded `main` (`0897fb8 -> 2c72f20`). Merged PRs `#481`, `#482`, `#483`, `#485`, plus `#452`, `#453` (`cbwin` copy), `#455`, `#456`, `#457` (Shadows), `#471/#478` (`MADV_PAGEOUT` map), & `#401` thread dump. Retired 5 merged/superseded worktrees. |
 | `2026-11-17 17:04` | `v0.4.6-beta` | `0897fb889719d0489a7bcbd8dba320b997d377ce` | `v0.4.6-beta` (`0897fb8`) | Fast-forwarded fork/local `main` (`6113c61 -> 0897fb8`). Merged upstream `#436`, `#475`, `#401` freeze watchdog. Rebased PRs `#481–#483`; opened PR `#485`; built/verified `feat/mali-perf-046` & `release/mali-0.4.6-beta` (`SM-X730`). |
 | `2026-11-16 18:54` | `v0.4.5-beta` | `6113c61a1d0e6f78532eb7fdde9cc9348613ad4b` | `v0.4.5-beta` (`6113c61`) | Restart shader free, `#450` Mali shader eviction >1000, MediaTek 13 MHz clock fix. |
 | `2026-11-16 05:11` | `v0.4.4-beta` | `280048bc43b05d76af0659a51c828ff393d4434e` | `v0.3.2-beta` (`7bb5bc9`) | PR `#461` (`0230d2f`) branched here; `0780cb6` (`#450`) merged cleanly (`git merge-tree`). |
@@ -28,33 +29,29 @@ Full 83-row historical release-check polling log (2026-10-31 to 2026-11-16): `.m
 
 ## 3. Active & Parked Engineering Initiatives
 
-### A. Upstream PR Follow-Through & Benchmark Scene Set
-- **PR #315 (`MERGED` `ac38c7a9c4`):** `benchmark-v2` merged into `upstream/main`; `pr315-benchmark-v2` worktree retired.
-- **PR #461 (`MERGED` `689372b`, head `7077d56` on `26da3fa`):** Upstream merged `#461` (`#296`/`#438` write-back RT upload before `LOAD_OP_LOAD`); retired `.mali/worktrees/fix-rt-load-upload-296` safely; optional `copy_texture` `gpu_owned` remains a clean future follow-up.
-- **PR #480 (`OPEN`, `benchmark-scenes-v2`, `c48d1b1` on `26da3fa`, `5` files):** Rebased & opened after `#315` merge; adds Link `Y_TOLERANCE = 2.0` height verification (`y_settle`, `y_window_start`, `y_window_end`) and 12 shrine-free MainField scenes (`24/24 ok` `cap30`, `4/4 ok` `cap60`, `6/6` Bionic PASS); proactively verified `3/3` `tools/benchmark-scenes.txt` starter scenes on `SM-X730` (`plateau` `250.21`, `hateno-lab` `356.02`, `hateno-village` `242.61`, `<= 0.79` u delta) in reply to `mamcjr`.
-- **PR #436 (`MERGED` into `0897fb8` / `v0.4.6-beta`):** Soft-linear format fallback merged upstream; worktree retired.
-- **PR #475 (`MERGED` into `0897fb8` / `v0.4.6-beta`):** Pipeline prewarming (`#294`) merged upstream; worktree retired.
-- **Shader-Stutter 3-Way PR Split (`OPEN`, rebased on `upstream/main` `011e1da`, verified on `SM-X730`):**
-  - **PR #481 (`feat/urgent-shader-builds`, `e8fac0f`, `7` files):** `job_queue.h`, `LARECOMP_URGENT_SHADERS`, `WD_R_BUILD_WAIT` freeze-watchdog instrumentation, work-stealing, `build_pipeline_urgent`, thread-create fallbacks, `jobs_drain()`, `test_shader_job_queue.c`.
-  - **PR #482 (`feat/shader-meta-cache`, `b4e80e7` stacked on `#481`, `6` files):** Binary `MWSMET01` v3 `.smeta` cache mixing `BENCHMARK_COMMIT ":" MW_TRANSLATOR_ID` (`SHA-256` of translator/cache sources), full 88B `ShaderKey` hash (`pad_` zeroed), `mw_meta_exists()` cold-miss direct dispatch, `pthread_once` env caching, `test_shader_meta_cache.c`.
-  - **PR #483 (`feat/vk-dyn-vertex-input`, `8146cfa`, `7` files):** `VK_EXT_vertex_input_dynamic_state` (`dyn_vi.h`) gated strictly to Turnip (`18`) & ARM `r49+` (`9`) defaults (`LARECOMP_DYN_VI=1/0` overrides), `vkCmdSetVertexInputEXT` null guard, `test_dyn_vertex_input.c` & `test_pipeline_prewarm.c` (`Pipe.used_s` + round-trip).
-- **PR #485 (`OPEN`, `feat/mali-async-tex-slots`, `8bb3c02` on `011e1da`, `4` files):** Async texture pool slot updates by default on proprietary Mali (`vk_driver_is_mali()`, `slot_retire_pending()`, `slot_old_reset()`), verified via `test_nvn_lifetime` (`SM-X730`) and `1,186/1,186` 2s windows (`slot drains 0`) across `65` inventory loops, `5` reboots, & `32.5m` session (`MERGEABLE`).
-- **Mali `v0.4.6-beta` Performance Optimization Pack (`feat/mali-perf-046` `4ddf99b`, stacked on `8bb3c02`):** Implements `cbwin_snap.h` (`CbwinBaseCache` + active-16B `CbpatchDedupe`), Mali `inplace_reads`, and Android copy-mode `dchain` dispatch chaining (`+6.6%..+11.1%` FPS, `12/12` Bionic tests PASS on `release/mali-0.4.6-beta` `d8fe781`). Prepare upstream PR splits after `#482`/`#485` land.
+### A. Upstream PR Follow-Through & Mali Perf Pack
+- **Merged Upstream (`v0.4.5-beta`–`v0.4.7-beta`):** `#315` (`benchmark-v2`, `ac38c7a9c4`), `#461` (`689372b`, RT upload before `LOAD_OP_LOAD`; optional `copy_texture` `gpu_owned` remains a clean future follow-up), `#436` (`soft_linear`), `#475` (`pipeline_prewarm`), `#481` (`d303dfd`, urgent shader builds + `WD_R_BUILD_WAIT`), `#482` (`6840da4`, `.smeta` v3 cache), `#483` (`5c55081`, Turnip/ARM r49+ `dyn_vi`), and `#485` (`43c199a`, Mali async texture pool slots). All merged worktrees retired cleanly.
+- **PR #480 (`OPEN`, `benchmark-scenes-v2`, `c48d1b1`, `MERGEABLE`):** Adds Link `Y_TOLERANCE = 2.0` height verification (`y_settle`, `y_window_start`, `y_window_end`) and 12 shrine-free MainField scenes (`24/24 ok` `cap30`, `4/4 ok` `cap60`, `6/6` Bionic `PASS`, `3/3` starter scenes `<= 0.79` u delta on `SM-X730`).
+- **Mali Optimization Pack (`feat/mali-perf-046` `4ddf99b`):** Implements `cbwin_snap.h` (`CbwinBaseCache` + `CbpatchDedupe`), Mali `inplace_reads`, and compute `dchain` (`+6.6%..+11.1%` FPS, `upload -83.5%`, `fbcopy 650->0`, `12/12` Bionic `PASS` on `SM-X730`). Next: rebase onto `v0.4.7-beta` (`2c72f20`), reconcile `cbwin` vs upstream `#453` (`998fb27`, keeping `gcopy_mode` Mali support + `CbpatchDedupe`), slice clean PRs, and ship `v0.4.7-beta-mali` APK.
 
-### B. `v0.4.5-beta` Physical Mali Validation
-1. **MediaTek 13 MHz Native-Mode Clock Fix (`Verified active on SM-X730`):** Under `LARECOMP_NATIVE=1` on `SM-X730` (`Dimensity 9400+`), `v0.4.5-beta` logged `counter 13000000 Hz: not the Switch's 19.2 MHz - its reads are scaled to it` (`sdk: 58 svc, 129 TLS, 43 counter reads rewritten`), running at `30.0 fps` (`0` errors).
-2. **Mali Program Eviction (`#450`) & Reboot Free (`Verified 5-min + 46-reboot pass on SM-X730`):** In `set12-cap30`, `46` `[vk] reboot:` events cleanly freed up to `386` programs / `1,055` pipelines (`0` still building kept). In `evict5m` (`LARECOMP_PROG_KEEP=150, LARECOMP_PROG_AGE=20`), `7` eviction passes freed `311` programs and `779` pipeline keys with flat `VmRSS ~3.50 GiB` and `0` errors. Full 30-min baseline comparison and paired stock `v0.4.5-beta` rollout await `CPH2653` attachment & owner go-ahead.
+### B. `v0.4.5-beta` Physical Mali Validation (Archived Reference)
+1. **MediaTek 13 MHz Native-Mode Clock Fix (`SM-X730` PASS):** `LARECOMP_NATIVE=1` on Dimensity 9400+ scales 13 MHz timer reads to 19.2 MHz cleanly (`30.0 fps`, `0` errors).
+2. **Mali Program Eviction (`#450`) & Reboot Free (`SM-X730` PASS):** `46` reboots freed up to `386` programs / `1,055` pipelines (`0` kept); `evict5m` freed `311` programs / `779` pipelines at flat `VmRSS ~3.50 GiB`.
 
-### C. Parked Initiatives (Resumable on Owner Priority)
-- **Fullscreen 16:10 (`archive/fullscreen-16x10` on `v0.3.1-beta`):**
-  - *Done:* Phase 1 (world aspect projection + fit-to-width UI on `SM-X730`).
-  - *Remaining Goals & Success Criteria:* Phase 2 vertical HUD anchors (`E = 360*(1/g - 1)` layout formula, consistent pane/text/scissor alignment, touch-shortcut verification, zero unintended shift in central windows/menus); Phase 3 map/menus/Inventory Link scaling and ultrawide cross-device regression on `CPH2653` (Turnip).
-- **Memory & Background Retention (`12b–12d / 12f`, formerly `codex/memory-background`):**
-  - *Updated by upstream `v0.4.5-beta`:* Parked **`12e` (in-process reset shader/pipeline free) is now addressed upstream in `v0.4.5-beta`**, eliminating duplicate local reset work.
-  - *Remaining Goals & Success Criteria (if resumed on updated upstream):* Complete `12b` background survival trials (`5/30/120/600s` HOME/Settings, LMKD vs ColorOS FastClear separation); evaluate `12c` safe owner-thread transient/staging trim on hide (zero `vkDeviceWaitIdle` per frame, verified 20-cycle hide/resume stability); evaluate `12d` dynamic compute-cache index above 256 keys (`.mali/memory-20261108/compute-cache-overflow.patch`); run `12f` paired `A/B` regression (`CPH2653` Turnip + `SM-X730`, `<= 5%` frame-time envelope).
-- **Benchmark Check Layer & Native Hooks (`11c–11d`):**
-  - *11c:* Automated `TEST_STRATEGY.md` check loop (`T1/T3/L1/P1` metamorphic invariants with red negative controls and `0/1/125` `git bisect run` exit codes).
-  - *11d:* Native-only absolute camera / fly-through hooks in `runtime/native.c` (`fixes[]`), leaving `tools/patches.py` and `GAMELIB_ID` untouched.
+### C. Owner Master To-Do Roadmap (Galaxy Tab S11 + OnePlus 13 Turnip-Only)
+Covers owner-selected Spheres **1, 2, 3, 4, 5, 7, 8** ranked by comfortable gameplay impact (Sphere 6 audio/Amiibo intentionally excluded per owner).
+
+#### Active Ranked Queue
+1. **Fullscreen 16:10 for Galaxy Tab S11 (Sphere 4, `#474`):** Since `0.4.0`, `aspect = unlocked` letterboxes screens narrower than 16:9 with black bars. Rebase/port Phase 1–2 (`.mali/fullscreen-16x10-20261107/`, `.mali/fullscreen-hud-20261108/`, `E = 360*(1/g - 1)` vertical HUD anchors, `tools/test_fullscreen_narrow.py`) onto `v0.4.7-beta`; finish Phase 3 (map, menus, Inventory Link 3D preview without stretch) and cross-verify ultrawide on `CPH2653` (Turnip).
+2. **Mali Perf Pack & Tile-Local Decals (Sphere 2):** Rebase/reconcile `feat/mali-perf-046` on `v0.4.7-beta` (`#453`), split PRs, build `v0.4.7-beta-mali`; prototype tile-local decals via `VK_KHR_dynamic_rendering_local_read` on Mali-G925.
+3. **Background/HOME Survival & Memory Trimming (`12b–12d / 12f`, Sphere 3):** Complete `12b` LMKD/FastClear survival trials (`5/30/120/600s` HOME), `12c` safe owner-thread transient/staging trim on hide (zero per-frame `vkDeviceWaitIdle`, 20-cycle hide/resume stability), `12d` `compute_cache > 256` overflow fix (`.mali/memory-20261108/compute-cache-overflow.patch`), `12f` `<= 5%` `A/B` regression (`SM-X730` + `CPH2653` Turnip); monitor Mali 30-min freeze reports (`#401`, `#496`).
+4. **Graphics Accuracy & Visual Fixes (Sphere 1):** Distant low grass 50–130 m async mask write-back (`512² RGBA8` / `256² RG8`, `.mali/grass/AB.md`), real `SAMPLES_PASSED` occlusion queries (Kakariko fog / shrine rays `#486`), narrow 8/16-bit integer RT masks on Mali, `#244` Vulkan UB cleanup.
+5. **CPU/Thermals & Input/UX (Spheres 7 & 5):** Heterogeneous thread affinity & ADPF thermal headroom tuning on Dimensity 9400+ / Snapdragon 8 Elite (`#376`); launcher UX / RU i18n polish (`#477` fingerprint fake-gamepad bug closed upstream).
+6. **Benchmarking & Automated QA (Sphere 8):** Complete PR `#480` review, `11c` metamorphic invariant checker (`0/1/125` `git bisect`), and `11d` native camera hooks (`fixes[]` in `runtime/native.c`, keeping `tools/patches.py` / `GAMELIB_ID` untouched) strictly for `SM-X730` & `CPH2653` (Turnip).
+
+#### Deferred / Parked per Owner (`2026-11-20`)
+- **Mali Grass Row Striping (Sphere 1):** `2026-11-19` `SM-X730` isolation (`.mali/grass-stripes/`) found `hateno-day/night` & `field-grass` clean and localized `canyon-shore` rows strictly to medium billboard shader `477912f75d2e8819` (`vs=3db5d8500`, `fs=3db5d9100`); `c2..c7` flag bundles (incl. `LARECOMP_NO_FILTER_FALLBACK=1`) were neutral; `frame 928` dump in `c8_debug_frame/`. Resume when `CPH2653` Turnip is attached for 1:1 compare or owner provides target location/screenshot.
+- **8BitDo Pro 2 Gyroscope (Sphere 5, `#338`):** Static audit of `runtime/hle/motion.c` identified silent tablet-gyro fallback in `D`/`X` modes, `S`-mode (`057e:2009`) axis permutation (`feed()` `w = {g[0], -g[2], g[1]}` + `m_accel` Mahony drift), exact-zero deadzone packets failing `alive`/`changing >= 20` 2s guard, and shared phone/pad calibration statics (`m_gyro_ts`, `bias[3]`, `still_since`). Resume when owner shares controller mode & live gyro test.
 
 ## 4. Completed Campaigns & Historical Index
 
@@ -74,7 +71,7 @@ Detailed historical milestone specifications are archived in `.mali/archive/MALI
 | `2026-11-05..08` | OnePlus setup (`Turnip V38`), Ultrawide UI & Loading aspect | `c48606c`, `761dcc0` | **COMPLETE.** Local fixes in `archive/ultrawide-fixes` & `loading-screen-aspect` |
 | `2026-11-08` | Benchmark v2 (`f50e05a`, `346eaea`, `60813bb`) & `scenes` | `7bb5bc9`, `113ca2e` | **COMPLETE.** Published as **PR #315** (open); 13-scene set local |
 | `2026-11-08` | Memory `12a` (`LARECOMP_MEMORY_TRACE=1`) + OnePlus audit | `7bb5bc9` | **COMPLETE locally.** `.mali/memory/12a/REPORT.md` |
-| `2026-11-09..13` | Devices `0.3.4`, `SM-X926B` setup, `benchmark-scenes-v2` | `3d9beeb`, `7b69caa` | **COMPLETE locally.** 11-scene set `7b69caa`; `SM-X926B` ready |
+| `2026-11-09..13` | Devices `0.3.4`, historical Mali-G720 test (retired), `benchmark-scenes-v2` | `3d9beeb`, `7b69caa` | **COMPLETE locally.** 11-scene set `7b69caa` |
 | `2026-11-14` | Pipeline prewarming `#294` (`13a`, `13b`, `13b.1`) & Git cleanup | `d0bda06` (`0.4.0-beta`) | **NO-GO / PARKED** (`13c` skipped: ready before draw, only 1/3 stutter gain); `history.bundle` |
 | `2026-11-15` | Dueling Peaks water cube root cause & `soft_linear` fix | `ab828a1` (`0.4.3-beta`) | **COMPLETE / OPEN PR #436** (`VK_FORMAT_R16G16B16A16_UNORM` fallback); devices updated to `v0.4.3-beta` |
 | `2026-11-15` | Mali vs. Adreno+Turnip Entry RAM & 30-min Mali VMA audit | `5946454` (`0.4.3-beta`) | **COMPLETE.** No local patch needed; Turnip-only Adreno rule enacted |

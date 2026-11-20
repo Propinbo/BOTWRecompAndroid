@@ -1,9 +1,10 @@
 # MALI Contribution Execution Progress
 
-Active indexed English engineering ledger (2026-11-15 to 2026-11-17). Query selectively by heading or line range rather than loading the entire file. Historical entries (2026-10-30 to 2026-11-14) are summarized in the bottom digest and archived under `.mali/archive/`.
+Active indexed English engineering ledger (2026-11-15 to 2026-11-20). Query selectively by heading or line range rather than loading the entire file. Historical entries (2026-10-30 to 2026-11-14) are summarized in the bottom digest and archived under `.mali/archive/`.
 
 ## Table of Contents
 
+- [2026-11-20] v047-sync-grass-triage-and-master-plan — Upstream `v0.4.7-beta` Sync (#481–#485 Merged), Mali Grass-Stripes Triage (Parked) & Master Plan (COMPLETE)
 - [2026-11-18] pr-maintainer-reviews-and-mali-validation — PR #481–#483/#485 Maintainer Review Fixes, Isolated Mali A/B & Stress Validation, & Updated Release APK (COMPLETE)
 - [2026-11-18] mali-perf-046-and-release-rollout — Upstream `v0.4.6-beta` Sync, PR #485 Async Tex Slots, Mali-G925 60 FPS `ABBA` & Release Rollout (COMPLETE)
 - [2026-11-17] pr480-starter-heights-and-cleanup — Retired PR #461 Worktree, Verified PR #480 Starter-Scene Heights (`3/3 ok`) & Maintainer Sync (COMPLETE)
@@ -28,6 +29,16 @@ Active indexed English engineering ledger (2026-11-15 to 2026-11-17). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-14)
 
 ---
+
+## [2026-11-20] v047-sync-grass-triage-and-master-plan — Upstream `v0.4.7-beta` Sync (#481–#485 Merged), Mali Grass-Stripes Triage (Parked) & Master Plan (COMPLETE)
+
+- **Upstream `v0.4.7-beta` (`2c72f20d542e44ef3350c2c05cb036d7fb1dfcb8`, `2026-11-18T19:03:12Z`) Sync & Worktree Retirement:**
+  - Verified upstream merged all 4 recent PRs: **#481** (`d303dfd`), **#482** (`6840da4`), **#483** (`5c55081`), and **#485** (`43c199a`), alongside `#452`, `#453` (`998fb27` `cbwin` snapshot), `#455`, `#456`, `#457` (Shadows), `#471/#478` (`MADV_PAGEOUT` map fix), and `#401` thread-wait dump. Only **#480** (`c48d1b1`) remains `OPEN`/`MERGEABLE`.
+  - Fast-forwarded local `main` and `origin/main` (`0897fb8 -> 2c72f20`), unlinked `android/deps/out` NTFS junctions and retired 5 merged/superseded worktrees (`urgent-shader-builds`, `shader-meta-cache`, `dyn-vertex-input`, `mali-async-tex-slots`, `mali-release-046`), leaving `worktrees=3` and `libshaderc_shared.so` intact (`workspace_check.py status` `PASS`).
+- **`2026-11-19` Mali Grass-Stripes Isolation (`SM-X730`, `.mali/grass-stripes/`, Parked):**
+  - Captured backup `.mali/user-backup/2026-11-19/mali/` (`apk=3dc08f7b...0aab`, `67` saves, `4` prefs, `3379` `.spv`, `vk_pipelines.bin=904e06e2...9d17`); `[postflight] CLEAN`.
+  - `hateno-day/night` & `field-grass` (`c0_user_settings`) showed uniform grass; `canyon-shore` (`pos = 1031.0 117.3 1871.4, yaw = 80.5`) parallel grass rows were isolated strictly to medium billboard shader `477912f75d2e8819` (`vs=3db5d8500`, `fs=3db5d9100` via `c1_skip_4779`, `c1_skip_blades`, `c9_no_discard`). Runs `c2..c7` (`LARECOMP_NO_FILTER_FALLBACK=1`, `VS_NEAREST=1`, `BC1_ASTC=0`, `VK_RT_FORMAT_LIST=0`, `VK_INT32=1`/`NO_VS_SNAP`/`NO_GATHER_SNAP`/`SAFE_MATH`/`NO_UNORM_ROUND`/`VK_OPT=0`, `FEEDBACK_COPY=1`/`NO_CBWIN=1`/`DYN_VI=0`) left rows identical; `frame 928` dumped to `.mali/grass-stripes/c8_debug_frame/`. Parked per owner (`2026-11-20`) with `runtime/hle/motion.c` 8BitDo Pro 2 gyro audit (`#338`).
+- **Hardware Scope & Ranked Master Plan:** Purged foreign `SM-X926B` across `MALI_STATUS.md`, `MALI_PLAN.md`, and `.agents/skills/device-testing-and-safety/SKILL.md`, formalized owner-ranked Master Plan (`SM-X730` + `CPH2653` Turnip-only; Spheres `1, 2, 3, 4, 5, 7, 8`; Sphere 6 excluded), and pushed `mali-workspace` checkpoint.
 
 ## [2026-11-18] pr-maintainer-reviews-and-mali-validation — PR #481–#483/#485 Maintainer Review Fixes, Isolated Mali A/B & Stress Validation, & Updated Release APK (COMPLETE)
 
