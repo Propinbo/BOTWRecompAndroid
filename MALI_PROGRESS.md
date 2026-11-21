@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-18 to 2026-11-21). Query sele
 
 ## Table of Contents
 
+- [2026-11-21] pr537-descriptor-plan-and-release-0410 — PR #537 Dynamic UBO Plan Fix & Consolidated `v0.4.10-beta-mali` Rollout (COMPLETE)
 - [2026-11-21] v0410-mali-40fps-and-prs-529-531-534 — Upstream `v0.4.10-beta` Sync, PRs #529/#531/#534, Held 2B-2 & 40 FPS `SM-X730` Validation (COMPLETE)
 - [2026-11-21] v049-sync-and-pr507-rebase — Upstream `v0.4.9-beta` Sync, Worktree Cleanup & PR #507 UI Note Rebase (OPEN)
 - [2026-11-21] tile-local-read-phase2 — Tile-Local Decals Phase 2 (`VK_KHR_dynamic_rendering_local_read`) & Upstream PR #518 (OPEN)
@@ -17,6 +18,17 @@ Active indexed English engineering ledger (2026-11-18 to 2026-11-21). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-17)
 
 ---
+
+## [2026-11-21] pr537-descriptor-plan-and-release-0410 — PR #537 Dynamic UBO Plan Fix & Consolidated `v0.4.10-beta-mali` Rollout (COMPLETE)
+
+- **Upstream PR #537 — `fix/vk-descriptor-plan-dynamic-ubo` (`c27c1b7de86fe5242cb138f0692e51f6ee8a555f` on `1c02adf9`, OPEN / MERGEABLE):**
+  - Root cause: `compile_program_from_spirv()` (`runtime/nvn/vulkan/exec.c`) promotes UBO bindings to `VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC` before `make_layout()` -> `descriptor_plan()`, while `descriptor_plan()` matched only `VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER` (dropping dynamic UBOs when `LARECOMP_VK_DESCRIPTOR_PLAN=1`) and `tools/test_descriptor_plan.py` lacked `#define CBPATCH_BUFFER_INDEX 23` and `VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC`.
+  - Applied surgical 2-file fix keeping `LARECOMP_VK_DESCRIPTOR_PLAN=0` default and `is_ubo()`/`test_soft_linear.py` slicing intact; cleared `31,040` wasm32 equivalence cases, `test_soft_linear.py` (`23+3+203`), `8/8` `SM-X730` Bionic, NDK 30 Clang, `workspace_check.py pr`, and 2/2 parallel `independent-verifier` reviews (`7d6c3c4a`, `b4daf592`: `APPROVE`, `0 CRIT/MAJ`, `.mali/fix-descriptor-plan-dyn-ubo/upstream-pr/CODE_REVIEW.md`).
+  - Before/after on `SM-X730` (`Mali-G925 r49p1`, Android 16, BOTW `1.9.0`, `LARECOMP_VK_DESCRIPTOR_PLAN=1`): stock `v0.4.10-beta` (`9ae5c77a...`) produced black screen + `2455` `GROUP_ERROR_FATAL` + `SIGSEGV` in `libGLES_mali.so`; `c27c1b7` (`b56a9b7eef97`) passed `plateau` (`30.00 fps`, `1% low 29.48`) -> reboot (`0 kept`) -> `zora-plaza` (`30.00 fps`, `1% low 29.53`), `0` errors, crisp PNGs (`origin/evidence/pr-descriptor-plan-dyn-ubo-20261121` @ `a1c84ac`). Default `PLAN=0` smoke unchanged (`30.00 fps`, `0` errors).
+- **Consolidated `release/mali-0.4.10-beta` (`7451bb865ecc`, `BOTWRecompAndroid-0.4.10-beta-mali-release.apk`):**
+  - Cherry-picked `#534` (`9d5e732`) + `#531` (`122e11e`) + `#529` (`edeb35e`) + `#507` (`2e36682`) + `#518` (`9e75f99`) + `#537` (`c27c1b7`) cleanly in `.mali/worktrees/mali-release-0410` (`#518` stays `off (no dynamicRendering)` under `#534`'s Mali `r49+` classic RP default, reactivable via `LARECOMP_NO_DYNAMIC_RENDERING=0`).
+  - Verified on `7451bb8`: `9/9` host Python scripts (`test_descriptor_plan.py` `31040` with 7 enum types, `test_soft_linear.py`, `test_vulkan_compat` 16, `test_vulkan_startup` 33, `test_shader_cache` 17, `test_gpu_timing_trace` 8, `test_pipeline_cache_save`, `test_workspace160_guard`, `test_command_snapshot`), 11-locale `i18n_*.inc` delta parity (`PASS`), **`12/12` `test_android_runtime.ps1` + `3/3` standalone (`test_shader_meta_cache`, `test_dyn_vertex_input`, `test_pipeline_prewarm`) = `15/15` Bionic PASS** on `SM-X730`, and `:app:assembleRelease` (`0` new warnings, SHA-256 `a6899a76898699f52b2c7c9d483dae6e09466feecc14ed82921cb89fce69e6b6`, cert `60fa2a5f...`, pushed `origin/release/mali-0.4.10-beta`).
+  - Installed on `SM-X730` via `adb install -r` and verified in isolated scratch (`.mali/apk/v0.4.10-beta-mali/install-verification.txt`, pure UI INI `output=screen`, `resolution=75%`, `upscaler=sgsr1`, `shadows=1`, `inplace_reads=1`): confirmed all 5 PR startup/runtime log paths, clean reboots (`0 kept`), warm-cache fastpath (`prog 212/170/164`, `pipe 374/269/315`), clean `zora-plaza`/`kakariko-day` PNGs, and **`40.00 fps` mean** across all 3 scenes (`plateau 39.32` 1% low / `render p50 14.793 ms`, `zora-plaza 38.97` 1% low / `render p50 15.006 ms`, `kakariko-day 33.42` 1% low / `render p50 15.481 ms` ending at `SKIN 43.0C TS=2`). App stopped (`pid=''`), scratch removed, `saves=68/68` (`0` diffs), `spirv=10401`, `vk_pipelines=c2a8d11fdc66` intact.
 
 ## [2026-11-21] v0410-mali-40fps-and-prs-529-531-534 — Upstream `v0.4.10-beta` Sync, PRs #529/#531/#534, Held 2B-2 & 40 FPS `SM-X730` Validation (COMPLETE)
 
