@@ -126,7 +126,8 @@ bool maxwell_no_local_struct = false, maxwell_native_half = true, maxwell_fast_m
 int g_game_version = 0x190;
 volatile int g_debug_frame_request = 0;
 VkShaderModule vk_builtin_shader(const char *name) { (void)name; return VK_NULL_HANDLE; }
-uint64_t plat_now_ns(void) { return 0; }
+static _Atomic uint64_t s_mock_now_ns = 1000000ull, s_mock_now_step = 0;
+uint64_t plat_now_ns(void) { return atomic_fetch_add_explicit(&s_mock_now_ns, atomic_load_explicit(&s_mock_now_step, memory_order_relaxed), memory_order_relaxed); }
 uint64_t SDL_GetTicksNS(void) { return 0; }
 void SDL_DelayPrecise(uint64_t ns) { (void)ns; }
 int SDL_GetNumLogicalCPUCores(void) { return 4; }
@@ -381,8 +382,25 @@ static VKAPI_ATTR VkResult VKAPI_CALL n_ads(VkDevice d, const VkDescriptorSetAll
 static VKAPI_ATTR void VKAPI_CALL n_uds(VkDevice d, uint32_t wc, const VkWriteDescriptorSet *w, uint32_t cc, const VkCopyDescriptorSet *c) { (void)d, (void)wc, (void)w, (void)cc, (void)c; }
 static VKAPI_ATTR VkResult VKAPI_CALL n_dsl(VkDevice d, const VkDescriptorSetLayoutCreateInfo *c, const VkAllocationCallbacks *a, VkDescriptorSetLayout *l) { (void)d, (void)c, (void)a; *l = VK_NULL_HANDLE; return VK_SUCCESS; }
 static VKAPI_ATTR VkResult VKAPI_CALL n_pl(VkDevice d, const VkPipelineLayoutCreateInfo *c, const VkAllocationCallbacks *a, VkPipelineLayout *l) { (void)d, (void)c, (void)a; *l = VK_NULL_HANDLE; return VK_SUCCESS; }
-static VKAPI_ATTR VkResult VKAPI_CALL n_gp(VkDevice d, VkPipelineCache pc, uint32_t n, const VkGraphicsPipelineCreateInfo *c, const VkAllocationCallbacks *a, VkPipeline *p) { (void)d, (void)pc, (void)n, (void)c, (void)a, (void)p; return VK_SUCCESS; }
-static VKAPI_ATTR void VKAPI_CALL n_dp(VkDevice d, VkPipeline p, const VkAllocationCallbacks *a) { (void)d, (void)p, (void)a; }
+static _Atomic int s_gp_calls, s_dp_calls;
+static _Atomic bool s_gp_fail_cache_only, s_gp_stray_on_fail;
+static _Atomic uint32_t s_gp_last_flags;
+static VKAPI_ATTR VkResult VKAPI_CALL n_gp(VkDevice d, VkPipelineCache pc, uint32_t n, const VkGraphicsPipelineCreateInfo *c, const VkAllocationCallbacks *a, VkPipeline *p) {
+    (void)d, (void)pc, (void)a;
+    atomic_fetch_add_explicit(&s_gp_calls, 1, memory_order_relaxed);
+    if (n && c) atomic_store_explicit(&s_gp_last_flags, (uint32_t)c[0].flags, memory_order_relaxed);
+    if (n && c && (c[0].flags & VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT) &&
+        atomic_load_explicit(&s_gp_fail_cache_only, memory_order_relaxed)) {
+        if (p) p[0] = atomic_load_explicit(&s_gp_stray_on_fail, memory_order_relaxed) ? (VkPipeline)(uintptr_t)0xBAD1 : VK_NULL_HANDLE;
+        return VK_PIPELINE_COMPILE_REQUIRED;
+    }
+    if (n && p) p[0] = (VkPipeline)(uintptr_t)0x600D;
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR void VKAPI_CALL n_dp(VkDevice d, VkPipeline p, const VkAllocationCallbacks *a) {
+    (void)d, (void)a;
+    if (p != VK_NULL_HANDLE) atomic_fetch_add_explicit(&s_dp_calls, 1, memory_order_relaxed);
+}
 static VKAPI_ATTR void VKAPI_CALL n_dsm(VkDevice d, VkShaderModule m, const VkAllocationCallbacks *a) { (void)d, (void)m, (void)a; }
 static VKAPI_ATTR void VKAPI_CALL n_dpl(VkDevice d, VkPipelineLayout l, const VkAllocationCallbacks *a) { (void)d, (void)l, (void)a; }
 static VKAPI_ATTR void VKAPI_CALL n_ddsl(VkDevice d, VkDescriptorSetLayout l, const VkAllocationCallbacks *a) { (void)d, (void)l, (void)a; }
@@ -1109,6 +1127,95 @@ int main(void) {
                ok_placed_shortcircuit, ok_retire_drop, ok_seqlock_mt, ok_cbwin_off, ok_reset, ok_non_cbwin_zero_churn);
     check("cbwin integration: base reuse, in/out updates, b2b/seqlock, retire, mt stress, #453, short-circuit, non-Mali off, zero non-cbwin churn, and reset", ok_cb_all);
     }
+
+#ifdef __ANDROID__
+    {
+        bool saved_pcc = g_vk.pipe_cache_ctrl, saved_bench = g_benchmark, saved_steal = g_inline_steal;
+        VkPipelineCache saved_pcache = g_vk.pcache;
+        g_vk.pipe_cache_ctrl = true;
+        g_vk.pcache = (VkPipelineCache)(uintptr_t)0xCAFE;
+        g_benchmark = true;
+        g_inline_steal = false;
+        atomic_store_explicit(&s_mock_now_step, 50000ull, memory_order_relaxed);
+
+        Prog mock_prog = {.vs = (VkShaderModule)(uintptr_t)0x11, .fs = (VkShaderModule)(uintptr_t)0x22,
+                          .layout = (VkPipelineLayout)(uintptr_t)0x33};
+        PipeKey base_key = {.prog = &mock_prog, .ncolor = 1, .color = {VK_FORMAT_R8G8B8A8_UNORM},
+                            .samples = VK_SAMPLE_COUNT_1_BIT, .poly_fill = 1};
+
+        // Case 1: direct cache_only probe miss with stray handle destroys handle and preserves state/counters/OOM fields.
+        Pipe p_miss = {.k = base_key};
+        atomic_init(&p_miss.state, 0);
+        int comp0 = atomic_load(&stat_compiles), live0 = atomic_load(&live_gpipes);
+        uint64_t bp_builds0 = atomic_load(&g_bench_perf[BP_BUILDS]);
+        atomic_store_explicit(&s_gp_calls, 0, memory_order_relaxed);
+        atomic_store_explicit(&s_dp_calls, 0, memory_order_relaxed);
+        atomic_store_explicit(&s_gp_fail_cache_only, true, memory_order_relaxed);
+        atomic_store_explicit(&s_gp_stray_on_fail, true, memory_order_relaxed);
+        bool ok_miss_ret = !build_pipeline_ex(&p_miss, true);
+        bool ok_miss_flags = (atomic_load(&s_gp_last_flags) & VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT) != 0;
+        bool ok_miss_clean = atomic_load(&s_gp_calls) == 1 && atomic_load(&s_dp_calls) == 1 &&
+                             atomic_load(&p_miss.state) == 0 && p_miss.pipe == VK_NULL_HANDLE &&
+                             atomic_load(&stat_compiles) == comp0 && atomic_load(&live_gpipes) == live0 &&
+                             atomic_load(&g_bench_perf[BP_BUILDS]) == bp_builds0 &&
+                             p_miss.retry_s == 0 && !atomic_load(&pipe_oom);
+
+        // Case 2: schedule_pipeline_build cache hit runs synchronously and charges BP_BUILDS, BP_BUILD_NS, BP_BUILD_WAIT_NS.
+        Pipe p_hit = {.k = base_key};
+        atomic_init(&p_hit.state, 0);
+        s_frame_counter = 200;
+        uint64_t whits0 = atomic_load(&stat_warm_pipe_hits), wmiss0 = atomic_load(&stat_warm_pipe_misses);
+        uint64_t bns0 = atomic_load(&g_bench_perf[BP_BUILD_NS]), wait0 = atomic_load(&g_bench_perf[BP_BUILD_WAIT_NS]);
+        atomic_store_explicit(&s_gp_fail_cache_only, false, memory_order_relaxed);
+        atomic_store_explicit(&s_gp_stray_on_fail, false, memory_order_relaxed);
+        schedule_pipeline_build(&p_hit, false);
+        bool ok_hit = atomic_load(&p_hit.state) == 1 && p_hit.pipe == (VkPipeline)(uintptr_t)0x600D &&
+                      atomic_load(&stat_warm_pipe_hits) == whits0 + 1 &&
+                      atomic_load(&stat_warm_pipe_misses) == wmiss0 &&
+                      atomic_load(&stat_compiles) == comp0 + 1 &&
+                      atomic_load(&live_gpipes) == live0 + 1 &&
+                      atomic_load(&g_bench_perf[BP_BUILDS]) == bp_builds0 + 1 &&
+                      atomic_load(&g_bench_perf[BP_BUILD_NS]) > bns0 &&
+                      atomic_load(&g_bench_perf[BP_BUILD_WAIT_NS]) > wait0;
+
+        // Case 3: schedule_pipeline_build cache-only miss records miss + BP_BUILD_WAIT_NS and falls back to worker cleanly.
+        Pipe p_fb = {.k = base_key};
+        atomic_init(&p_fb.state, 0);
+        s_frame_counter = 201;
+        uint64_t wait1 = atomic_load(&g_bench_perf[BP_BUILD_WAIT_NS]);
+        uint64_t bp1 = atomic_load(&g_bench_perf[BP_BUILDS]);
+        atomic_store_explicit(&s_gp_fail_cache_only, true, memory_order_relaxed);
+        schedule_pipeline_build(&p_fb, false);
+        for (int w = 0; w < 1000 && atomic_load(&p_fb.state) == 0; w++) usleep(100);
+        bool ok_fallback = atomic_load(&p_fb.state) == 1 && p_fb.pipe == (VkPipeline)(uintptr_t)0x600D &&
+                           atomic_load(&stat_warm_pipe_misses) == wmiss0 + 1 &&
+                           atomic_load(&g_bench_perf[BP_BUILD_WAIT_NS]) > wait1 &&
+                           atomic_load(&g_bench_perf[BP_BUILDS]) == bp1 + 1;
+
+        // Case 4: jobs_abort aborts inline schedule cleanly with state=2 and zero vkCreateGraphicsPipelines calls.
+        Pipe p_ab = {.k = base_key};
+        atomic_init(&p_ab.state, 0);
+        s_frame_counter = 202;
+        int gp_ab0 = atomic_load(&s_gp_calls);
+        atomic_store_explicit(&jobs_abort, true, memory_order_release);
+        schedule_pipeline_build(&p_ab, false);
+        atomic_store_explicit(&jobs_abort, false, memory_order_release);
+        bool ok_abort = atomic_load(&p_ab.state) == 2 && atomic_load(&s_gp_calls) == gp_ab0;
+
+        jobs_drain();
+        atomic_store_explicit(&s_gp_fail_cache_only, false, memory_order_relaxed);
+        atomic_store_explicit(&s_gp_stray_on_fail, false, memory_order_relaxed);
+        atomic_store_explicit(&s_mock_now_step, 0, memory_order_relaxed);
+        atomic_store(&live_gpipes, live0);
+        g_vk.pipe_cache_ctrl = saved_pcc;
+        g_vk.pcache = saved_pcache;
+        g_benchmark = saved_bench;
+        g_inline_steal = saved_steal;
+        vk_exec_reset();
+        check("warm-cache fastpath integration: cache_only probe/stray destroy, hit accounting, worker fallback, and jobs_abort",
+              ok_miss_ret && ok_miss_flags && ok_miss_clean && ok_hit && ok_fallback && ok_abort);
+    }
+#endif
 
     check("Vulkan mock synchronization validator recorded 0 hazards", !mock_hazards);
     printf("test_rt_load_upload: %s (%d failure(s))\n", failures ? "FAILED" : "all passed", failures);
