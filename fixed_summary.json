@@ -1,0 +1,417 @@
+{
+  "apk_sha256": "b56a9b7eef9791c4e852880bc1b62b103b33e25ac2f5a294a157d1da03e4f1d8",
+  "fixed_plan1": {
+    "report_status": "done",
+    "results": [
+      {
+        "scene": "plateau",
+        "repeat": 0,
+        "status": "ok",
+        "cooling_s": 0.0,
+        "thermal_before": -1,
+        "thermal_after": -1,
+        "load_s": 18.8,
+        "camera_s": 8.4,
+        "warmup_s": 8.0,
+        "frames": 151,
+        "fps": 30.0,
+        "low_1pct_fps": 29.48,
+        "low_01pct_fps": 29.44,
+        "over_50ms": 0,
+        "budget_ms": 33.333333,
+        "over_budget": 71,
+        "headroom_ms": {
+          "samples": 151,
+          "p50": 6.08264,
+          "p95": 9.576642,
+          "p99": 10.659334
+        },
+        "presentation": {
+          "source": "VK_GOOGLE_display_timing",
+          "period_ms": {
+            "samples": 150,
+            "p50": 33.332846,
+            "p95": 41.603385,
+            "p99": 41.666692
+          },
+          "frames": 151,
+          "missing_feedback": 0,
+          "fps": 30.000087,
+          "low_1pct_fps": 23.991791,
+          "low_01pct_fps": 23.98825,
+          "over_budget": 74,
+          "over_50ms": 0
+        },
+        "long_frame_causes": {
+          "pipeline_wait": 0,
+          "gpu_wait": 4,
+          "texture_decode": 0,
+          "texture_upload": 0,
+          "file_read": 0,
+          "pipeline_evict": 0,
+          "pipeline_activity": 2,
+          "unknown": 65
+        },
+        "window_counters": {
+          "builds": 3,
+          "build_ns": 1186461,
+          "build_wait_ns": 0,
+          "gpu_wait_ns": 42122553,
+          "texture_upload_ns": 0,
+          "texture_bytes": 0,
+          "bc_decode_ns": 0,
+          "astc_decode_ns": 0,
+          "file_reads": 0,
+          "file_bytes": 0,
+          "file_ns": 0,
+          "pipeline_rebuilds": 0,
+          "pipeline_evict_ns": 23769,
+          "pipelines_evicted": 0
+        },
+        "game_period_ms": {
+          "p50": 33.32,
+          "p95": 33.782,
+          "p99": 33.857
+        },
+        "frame_ms": {
+          "p50": 33.32,
+          "p95": 33.782,
+          "p99": 33.857
+        },
+        "gpu_ms": {
+          "p50": 27.251,
+          "p95": 33.248,
+          "p99": 35.471
+        },
+        "cpu_ms": {
+          "p50": 17.739,
+          "p95": 21.323,
+          "p99": 22.792
+        },
+        "game_thread_ms": {
+          "p50": 4.391,
+          "p95": 5.15,
+          "p99": 5.445
+        },
+        "render_thread_ms": {
+          "p50": 17.739,
+          "p95": 21.323,
+          "p99": 22.792
+        },
+        "skipped_draws": 2,
+        "skipped_building": 2,
+        "shader_compiles": 2,
+        "display_hz_start": 120.0,
+        "display_hz_end": 120.0,
+        "camera_err_deg": 0.36,
+        "moved": 0.0,
+        "power_start": {
+          "battery_c": 29.3,
+          "battery_pct": 80,
+          "watts": 0.94,
+          "soc_c": -1.0,
+          "thermal": 0,
+          "headroom": 0.7,
+          "plugged": 2
+        },
+        "power_end": {
+          "battery_c": 29.3,
+          "battery_pct": 80,
+          "watts": 0.0,
+          "soc_c": -1.0,
+          "thermal": 0,
+          "headroom": 0.71,
+          "plugged": 2
+        }
+      },
+      {
+        "scene": "zora-plaza",
+        "repeat": 0,
+        "status": "ok",
+        "cooling_s": 0.0,
+        "thermal_before": -1,
+        "thermal_after": -1,
+        "load_s": 17.6,
+        "camera_s": 6.4,
+        "warmup_s": 8.0,
+        "frames": 151,
+        "fps": 30.0,
+        "low_1pct_fps": 29.53,
+        "low_01pct_fps": 29.47,
+        "over_50ms": 0,
+        "budget_ms": 33.333333,
+        "over_budget": 76,
+        "headroom_ms": {
+          "samples": 151,
+          "p50": 5.837102,
+          "p95": 10.399103,
+          "p99": 11.824716
+        },
+        "presentation": {
+          "source": "VK_GOOGLE_display_timing",
+          "period_ms": {
+            "samples": 150,
+            "p50": 33.333846,
+            "p95": 33.421923,
+            "p99": 41.672539
+          },
+          "frames": 151,
+          "missing_feedback": 0,
+          "fps": 29.999897,
+          "low_1pct_fps": 23.986789,
+          "low_01pct_fps": 23.986435,
+          "over_budget": 78,
+          "over_50ms": 0
+        },
+        "long_frame_causes": {
+          "pipeline_wait": 0,
+          "gpu_wait": 4,
+          "texture_decode": 0,
+          "texture_upload": 0,
+          "file_read": 2,
+          "pipeline_evict": 0,
+          "pipeline_activity": 0,
+          "unknown": 70
+        },
+        "window_counters": {
+          "builds": 0,
+          "build_ns": 0,
+          "build_wait_ns": 0,
+          "gpu_wait_ns": 37432463,
+          "texture_upload_ns": 0,
+          "texture_bytes": 0,
+          "bc_decode_ns": 0,
+          "astc_decode_ns": 0,
+          "file_reads": 9,
+          "file_bytes": 1620113,
+          "file_ns": 7133540,
+          "pipeline_rebuilds": 0,
+          "pipeline_evict_ns": 0,
+          "pipelines_evicted": 0
+        },
+        "game_period_ms": {
+          "p50": 33.334,
+          "p95": 33.702,
+          "p99": 33.778
+        },
+        "frame_ms": {
+          "p50": 33.334,
+          "p95": 33.702,
+          "p99": 33.778
+        },
+        "gpu_ms": {
+          "p50": 27.496,
+          "p95": 32.707,
+          "p99": 34.773
+        },
+        "cpu_ms": {
+          "p50": 18.689,
+          "p95": 21.5,
+          "p99": 22.605
+        },
+        "game_thread_ms": {
+          "p50": 4.788,
+          "p95": 6.724,
+          "p99": 7.158
+        },
+        "render_thread_ms": {
+          "p50": 18.689,
+          "p95": 21.5,
+          "p99": 22.605
+        },
+        "skipped_draws": 0,
+        "skipped_building": 0,
+        "shader_compiles": 0,
+        "display_hz_start": 120.0,
+        "display_hz_end": 120.0,
+        "camera_err_deg": 0.37,
+        "moved": 0.0,
+        "power_start": {
+          "battery_c": 29.3,
+          "battery_pct": 80,
+          "watts": 0.33,
+          "soc_c": -1.0,
+          "thermal": 0,
+          "headroom": 0.7,
+          "plugged": 2
+        },
+        "power_end": {
+          "battery_c": 29.3,
+          "battery_pct": 80,
+          "watts": 0.13,
+          "soc_c": -1.0,
+          "thermal": 0,
+          "headroom": 0.73,
+          "plugged": 2
+        }
+      }
+    ],
+    "errors": [],
+    "passport": {
+      "gpu": "Mali-G925-Immortalis MC12 - Mali-G925-Immortalis MC12",
+      "driver": "Mali-G925-Immortalis MC12 - v1.r49p1-03bet0.f8a98b506b89b21c80a508d70abfcb3f",
+      "android": "16",
+      "android_api": "36",
+      "model": "SM-X730",
+      "soc": "MT6991",
+      "apk": "0.4.10-beta",
+      "commit": "c27c1b7de86f",
+      "game_version": "1.9.0",
+      "game_code": "native",
+      "settings": {
+        "fps_mode": 1,
+        "res_mode": 1,
+        "upscaler": 3,
+        "out_lines": 0,
+        "antialias": 0,
+        "aspect": 0,
+        "sync_lag": 1,
+        "event_fps_unlock": 0,
+        "touch_controls": 0,
+        "show_fps": 0
+      },
+      "shader_cache_at_start": "warm",
+      "cache": {
+        "spirv_files": 10401,
+        "pipeline_bytes": 52696647
+      },
+      "power": {
+        "battery_c": 29.3,
+        "battery_pct": 80,
+        "watts": 0.0,
+        "soc_c": -1.0,
+        "thermal": 0,
+        "headroom": 0.58,
+        "plugged": 2
+      },
+      "pass": "cap30"
+    }
+  },
+  "fixed_default": {
+    "report_status": "done",
+    "results": [
+      {
+        "scene": "plateau",
+        "repeat": 0,
+        "status": "ok",
+        "cooling_s": 0.0,
+        "thermal_before": -1,
+        "thermal_after": -1,
+        "load_s": 18.5,
+        "camera_s": 8.1,
+        "warmup_s": 8.0,
+        "frames": 151,
+        "fps": 30.0,
+        "low_1pct_fps": 29.45,
+        "low_01pct_fps": 29.34,
+        "over_50ms": 0,
+        "budget_ms": 33.333333,
+        "over_budget": 76,
+        "headroom_ms": {
+          "samples": 151,
+          "p50": 6.352793,
+          "p95": 9.740483,
+          "p99": 11.217869
+        },
+        "presentation": {
+          "source": "VK_GOOGLE_display_timing",
+          "period_ms": {
+            "samples": 150,
+            "p50": 33.333539,
+            "p95": 33.368308,
+            "p99": 41.664924
+          },
+          "frames": 151,
+          "missing_feedback": 0,
+          "fps": 30.000018,
+          "low_1pct_fps": 23.994692,
+          "low_01pct_fps": 23.992101,
+          "over_budget": 76,
+          "over_50ms": 0
+        },
+        "long_frame_causes": {
+          "pipeline_wait": 0,
+          "gpu_wait": 4,
+          "texture_decode": 0,
+          "texture_upload": 0,
+          "file_read": 0,
+          "pipeline_evict": 0,
+          "pipeline_activity": 0,
+          "unknown": 72
+        },
+        "window_counters": {
+          "builds": 3,
+          "build_ns": 1345308,
+          "build_wait_ns": 0,
+          "gpu_wait_ns": 38616733,
+          "texture_upload_ns": 0,
+          "texture_bytes": 0,
+          "bc_decode_ns": 0,
+          "astc_decode_ns": 0,
+          "file_reads": 0,
+          "file_bytes": 0,
+          "file_ns": 0,
+          "pipeline_rebuilds": 0,
+          "pipeline_evict_ns": 15462,
+          "pipelines_evicted": 0
+        },
+        "game_period_ms": {
+          "p50": 33.334,
+          "p95": 33.748,
+          "p99": 33.833
+        },
+        "frame_ms": {
+          "p50": 33.334,
+          "p95": 33.748,
+          "p99": 33.833
+        },
+        "gpu_ms": {
+          "p50": 26.981,
+          "p95": 33.057,
+          "p99": 36.29
+        },
+        "cpu_ms": {
+          "p50": 17.403,
+          "p95": 20.688,
+          "p99": 21.698
+        },
+        "game_thread_ms": {
+          "p50": 4.455,
+          "p95": 5.225,
+          "p99": 5.415
+        },
+        "render_thread_ms": {
+          "p50": 17.403,
+          "p95": 20.688,
+          "p99": 21.698
+        },
+        "skipped_draws": 2,
+        "skipped_building": 2,
+        "shader_compiles": 2,
+        "display_hz_start": 120.0,
+        "display_hz_end": 120.0,
+        "camera_err_deg": 0.35,
+        "moved": 0.0,
+        "power_start": {
+          "battery_c": 29.3,
+          "battery_pct": 80,
+          "watts": 0.0,
+          "soc_c": -1.0,
+          "thermal": 0,
+          "headroom": 0.73,
+          "plugged": 2
+        },
+        "power_end": {
+          "battery_c": 29.3,
+          "battery_pct": 80,
+          "watts": 29.26,
+          "soc_c": -1.0,
+          "thermal": 0,
+          "headroom": 0.75,
+          "plugged": 2
+        }
+      }
+    ],
+    "errors": []
+  }
+}
