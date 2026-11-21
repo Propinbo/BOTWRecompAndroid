@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-17 to 2026-11-21). Query sele
 
 ## Table of Contents
 
+- [2026-11-21] v049-sync-and-pr507-rebase — Upstream `v0.4.9-beta` Sync, Worktree Cleanup & PR #507 UI Note Rebase (OPEN)
 - [2026-11-21] tile-local-read-phase2 — Tile-Local Decals Phase 2 (`VK_KHR_dynamic_rendering_local_read`) & Upstream PR #518 (OPEN)
 - [2026-11-20] v048-sync-pr504-507-reverify-and-release-048 — Upstream `v0.4.8-beta` Sync, PR #504/#506/#507 Review Fixes, Isolated Evidence & `v0.4.8-beta-mali` Rollout (COMPLETE)
 - [2026-11-20] pr504-508-isolated-evidence-and-508-merged — Isolated SM-X730 PR Evidence, #506/#507 Hardening, #508 Merged & v0.4.8-beta Review Triage (COMPLETE)
@@ -26,6 +27,15 @@ Active indexed English engineering ledger (2026-11-17 to 2026-11-21). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-16)
 
 ---
+
+## [2026-11-21] v049-sync-and-pr507-rebase — Upstream `v0.4.9-beta` Sync, Worktree Cleanup & PR #507 UI Note Rebase (OPEN)
+
+- **Upstream `v0.4.9-beta` Baseline Sync & Worktree Retirement:** Fast-forwarded local `main` and `origin/main` cleanly (`2b71a10 -> 7f5afab71f122f1622401c0f11775e40f78df0e2`, `v0.4.9-beta`). Confirmed `#504` (`186ea04` -> `5df9dd9`) and `#506` (`adbafd6` -> `c02beea`) are ancestors of `7f5afab7`, unlinked their `android/deps/out` NTFS junctions (`cmd /c rmdir`, zero `ReparsePoint`s remaining, root `libshaderc_shared.so` intact), deleted `.mali/worktrees/fullscreen-narrow` and `.mali/worktrees/cbwin-mali-snap`, ran `git worktree prune`, and deleted merged local branches (`git branch -d`).
+- **PR `#507` Rebase & Driver Compatibility UI Note (`feat/mali-inplace-feedback` @ `2e36682a6fa1eb8d2e462f9f74fa5e853c312130`):**
+  - Rebased cleanly onto `7f5afab7` (`upstream/main`), resolving the sole `tools/test_rt_load_upload.c` conflict by keeping `#506`'s `mock_mali_calls++` mock intact alongside Section `6b` and Section `9` (`exec.c` unchanged functionally vs `fe2f659`).
+  - Addressed `mamcjr`'s `2026-11-20T16:33:04Z` review request in `runtime/ui/launcher.mm` (`prelaunch_tab()`): kept `"These options are for Turnip"` hidden on Turnip, preserved `"These options are for Turnip: the driver in use takes the safer paths anyway."` for non-Turnip/non-Mali GPUs, and displayed `"These options are for Turnip: on Mali only draw-target reads in place apply."` on Mali, translated idiomatically across all 11 `runtime/ui/i18n_*.inc` locales (`de, es, fr, it, ja, ko, nl, pt, ru, zh_hans, zh_hant`; `0` `#NNN` refs).
+  - **2-Parallel Independent Verifiers (`6b9ea729` Runtime/Rebase/Test, `e6caaa0a` UI/11-Locale i18n):** **`0 CRITICAL / 0 MAJOR / 0 MINOR`** (`CODE_REVIEW.md` Round 5).
+  - **Verification on `2e36682`:** 11/11 locale key check (`PASS`), NDK r30 Clang (`exec.c`, `launcher.mm`, `i18n.mm`, `settings.c`, `test_rt_load_upload.c`: `exit 0`), `:app:assembleDebug` (`BUILD SUCCESSFUL in 31s`, `0` new warnings), `test_vulkan_compat`/`startup`/`shader_cache`/`soft_linear` (`PASS`), `SM-X730` `test_android_runtime.ps1` (`8/8 PASS`, `0` hazards), and `workspace_check.py pr` (`PASS`, `15` files, `mergeable=YES`). Force-pushed `--force-with-lease`, posted reply (`#issuecomment-7059095629`), verified `OPEN` / `MERGEABLE`.
 
 ## [2026-11-21] tile-local-read-phase2 — Tile-Local Decals Phase 2 (`VK_KHR_dynamic_rendering_local_read`) & Upstream PR #518 (OPEN)
 
