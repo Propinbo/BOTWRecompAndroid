@@ -4,7 +4,10 @@
 
 #include "vk.h"
 
+#ifndef VK_BINDING_INFO_DEFINED
+#define VK_BINDING_INFO_DEFINED
 typedef struct { uint32_t set, binding; VkDescriptorType type; } VkBindingInfo;
+#endif
 
 void vk_shaders_init(void);
 void vk_shader_cache_ensure_dirs(void);

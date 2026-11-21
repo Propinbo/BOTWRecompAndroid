@@ -32,13 +32,16 @@ def extract(text: str, start_marker: str, end_marker: str) -> str:
 def run_wasm_c_checks():
     textures_src = (ROOT / 'runtime/nvn/vulkan/textures.c').read_text()
     exec_src = (ROOT / 'runtime/nvn/vulkan/exec.c').read_text()
+    hotpath_src = (ROOT / 'runtime/nvn/vulkan/render_hotpath.h').read_text()
 
     resolve_fn = extract(textures_src, 'static VkFormat resolve_tex_format(', '\nstatic void create_image(')
     view_fn = extract(textures_src, 'static VkFormat view_format(', '\nVkImageView vk_view(')
     is_int_fn = extract(textures_src, 'bool vk_format_is_int(', '\nstatic _Atomic int g_any_no_linear')
     any_fn = extract(textures_src, 'static _Atomic int g_any_no_linear;', '\n// A format the GPU')
+    filters_fn = extract(textures_src, 'bool vk_format_filters_linear(', '\nstatic VkSampler make_sampler_nearest(')
+    cand_fn = extract(hotpath_src, 'static inline uint64_t vk_soft_linear_cand_mask(', '\nenum {\n    RSCALE_CACHE_SLOTS')
     mask_fn = extract(exec_src, 'static void stage_fill_soft_linear(', '\nstatic void texture_info(')
-    tex_info_fn = extract(exec_src, 'static void texture_info(', '\nstatic bool is_ubo(')
+    tex_info_fn = extract(exec_src, 'static void texture_info(', '\nstatic VkDescriptorSet stage_set(')
     assert 'static _Atomic int g_any_no_linear;' in textures_src
     assert 'VK_FORMAT_R16G16B16A16_UNORM, VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT' in textures_src
     assert 'if (!vk_format_is_int(f)) atomic_fetch_or_explicit(&g_any_no_linear, 3, memory_order_relaxed);' in textures_src
@@ -93,13 +96,20 @@ typedef struct {
     VkImageAspectFlags aspect;
     bool fixed_fmt;
     VkFormat view_alt;
+    uint8_t soft_linear_state;
 } TexBackend;
 
 static struct { NvnDescPool *tpool, *spool; } st;
 static bool mock_filters_linear_91 = false;
 static bool mock_bc_supported = true;
 static bool mock_any_no_linear = true;
+static int mock_format_supports_calls = 0;
 static uint64_t mock_handles[64];
+
+typedef int pthread_mutex_t;
+#define PTHREAD_MUTEX_INITIALIZER 0
+static int pthread_mutex_lock(pthread_mutex_t *m) { (void)m; return 0; }
+static int pthread_mutex_unlock(pthread_mutex_t *m) { (void)m; return 0; }
 
 static const char *getenv(const char *k) { (void)k; return 0; }
 #define LOG(...) ((void)0)
@@ -121,14 +131,19 @@ static VkImageAspectFlags aspect_of(uint32_t f) { (void)f; return VK_IMAGE_ASPEC
 static int naliases = 0;
 static NvnTexture *alias_read(NvnTexture *t) { return t; }
 static bool format_supports(VkFormat f, VkFormatFeatureFlags want) {
+    mock_format_supports_calls++;
     if ((want & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) && f == VK_FORMAT_R16G16B16A16_UNORM)
         return mock_filters_linear_91;
     if (is_bc(f)) return mock_bc_supported;
     return true;
 }
+''' + '\n' + is_int_fn + '\n' + '''
 #define vk_any_format_no_linear vk_any_format_no_linear_prod
 ''' + '\n' + any_fn + r'''
 #undef vk_any_format_no_linear
+#define vk_format_filters_linear vk_format_filters_linear_prod
+''' + '\n' + filters_fn + r'''
+#undef vk_format_filters_linear
 bool vk_any_format_no_linear(void) { return mock_any_no_linear; }
 bool vk_format_filters_linear(VkFormat f) {
     if (f == VK_FORMAT_R16G16B16A16_UNORM) return mock_filters_linear_91;
@@ -141,7 +156,7 @@ static uint64_t shader_texture_handle(int stage, const ShaderTexture *t_) {
     uint32_t idx = (t_->handle_offset - 0x20u) / 8u;
     return idx < 64u ? mock_handles[idx] : 0;
 }
-''' + '\n' + resolve_fn + '\n' + view_fn + '\n' + is_int_fn + '\n' + mask_fn + r'''
+''' + '\n' + resolve_fn + '\n' + view_fn + '\n' + cand_fn + '\n' + mask_fn + r'''
 
 _Static_assert(sizeof(ShaderKey) == 104, "ShaderKey must be 104 bytes with explicit padding");
 _Static_assert(offsetof(ShaderKey, pad_) == 50, "ShaderKey pad_ offset");
@@ -287,21 +302,26 @@ int check(void) {
     mock_handles[33] = MKH(3, 0);
     si.ntex = 34;
 
+    uint64_t cand = vk_soft_linear_cand_mask(&si);
     ShaderKey sk = {.soft_linear = ~0ULL, .soft_linear_mip = ~0ULL, .soft_linear_rep_u = ~0ULL, .soft_linear_rep_v = ~0ULL};
     mock_any_no_linear = false;
-    stage_fill_soft_linear(1, &si, &sk);
+    stage_fill_soft_linear(1, &si, cand, &sk);
     CHECK(!sk.soft_linear && !sk.soft_linear_mip && !sk.soft_linear_rep_u && !sk.soft_linear_rep_v);
     mock_any_no_linear = true;
 
-    stage_fill_soft_linear(1, &si, &sk);
+    stage_fill_soft_linear(1, &si, cand, &sk);
     uint64_t want = (1ULL << 0) | (1ULL << 8) | (1ULL << 9) | (1ULL << 11) | (1ULL << 12) | (1ULL << 33);
     uint64_t want_mip = (1ULL << 0) | (1ULL << 9) | (1ULL << 11) | (1ULL << 12) | (1ULL << 33);
     CHECK(sk.soft_linear == want && sk.soft_linear_mip == want_mip &&
           sk.soft_linear_rep_u == ((1ULL << 11) | (1ULL << 12)) && sk.soft_linear_rep_v == (1ULL << 12));
+    CHECK(b_r8.soft_linear_state == 2 && b_int.soft_linear_state == 2 &&
+          b_f32.soft_linear_state == 1 && b_r8_mut.soft_linear_state == 0);
 
     // Adreno simulation: vk_format_filters_linear(R16G16B16A16_UNORM) == true -> slots 0, 9, 11, 12 drop out
+    // Physical-device format filter capability is immutable in production; reset per-backend lazy state when flipping mock.
+    b_r8.soft_linear_state = b_int.soft_linear_state = b_f32.soft_linear_state = b_r8_mut.soft_linear_state = 0;
     mock_filters_linear_91 = true;
-    stage_fill_soft_linear(1, &si, &sk);
+    stage_fill_soft_linear(1, &si, cand, &sk);
     CHECK(sk.soft_linear == ((1ULL << 8) | (1ULL << 33)) && sk.soft_linear_mip == (1ULL << 33) &&
           !sk.soft_linear_rep_u && !sk.soft_linear_rep_v);
 
@@ -314,6 +334,25 @@ int check(void) {
     atomic_store_explicit(&g_any_no_linear, 0, memory_order_relaxed);
     mock_filters_linear_91 = false;
     CHECK(vk_any_format_no_linear_prod() && atomic_load_explicit(&g_any_no_linear, memory_order_relaxed) == 3);
+
+    // 6. vk_format_filters_linear production lut[256] + cache[64] + g_any_no_linear sync
+    atomic_store_explicit(&g_any_no_linear, 0, memory_order_relaxed);
+    mock_format_supports_calls = 0;
+    mock_filters_linear_91 = false;
+    CHECK(!vk_format_filters_linear_prod(VK_FORMAT_R16G16B16A16_UNORM));
+    CHECK(mock_format_supports_calls == 1);
+    CHECK(atomic_load_explicit(&g_any_no_linear, memory_order_acquire) == 3);
+    // Repeated lookup hits lut[91] without calling format_supports, even if mock state flips.
+    mock_filters_linear_91 = true;
+    CHECK(!vk_format_filters_linear_prod(VK_FORMAT_R16G16B16A16_UNORM));
+    CHECK(mock_format_supports_calls == 1);
+    CHECK(vk_format_filters_linear_prod(VK_FORMAT_R8G8B8A8_UNORM));
+    CHECK(vk_format_filters_linear_prod(VK_FORMAT_R8G8B8A8_UNORM));
+    CHECK(mock_format_supports_calls == 2);
+    // Extended VkFormat >= 256 hits mutex-guarded cache[64].
+    CHECK(vk_format_filters_linear_prod((VkFormat)1000156000));
+    CHECK(vk_format_filters_linear_prod((VkFormat)1000156000));
+    CHECK(mock_format_supports_calls == 3);
 
     return cases;
 }

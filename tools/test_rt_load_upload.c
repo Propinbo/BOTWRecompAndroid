@@ -1326,6 +1326,9 @@ int main(void) {
         lr_pr.fkey = fk;
         lr_pr.nbinds = 2;
         memcpy(lr_pr.binds, lr_binds, sizeof lr_binds);
+#ifdef __ANDROID__
+        vk_build_descriptor_plan(lr_pr.binds, lr_pr.nbinds, 1, &lr_pr.descriptor_plans[1]);
+#endif
         uint32_t lr_ndyn = 99;
         n_last_wds = 0;
         VkImageView saved_v1 = pass_color_view[1];
@@ -1469,6 +1472,33 @@ int main(void) {
               ok_no_copy_break && ok_bar && ok_clr_war && ok_roaa_off_excl && ok_roaa_off_ro &&
               ok_cb_roaa_on && ok_cb_ro_zero && ok_cb_roaa_off && ok_fmt_twin && ok_begin_clear_clean &&
               ok_pw_key && ok_off_guard && ok_lr_reset);
+    }
+
+    {
+        // Runtime integration check for RscaleDedupe hit/miss across submissions (binding 18).
+        ShaderInfo rs_vs = {.ntex = 1};
+        ShaderInfo rs_fs = {.out_mask = 0xFu};
+        VkBindingInfo rs_binds[1] = {{.set = 0, .binding = 18, .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC}};
+        Prog rs_pr = {.vi = &rs_vs, .fi = &rs_fs, .nbinds = 1, .fs_out_mask = 0xFu};
+        rs_pr.binds[0] = rs_binds[0];
+#ifdef __ANDROID__
+        vk_build_descriptor_plan(rs_pr.binds, rs_pr.nbinds, 0, &rs_pr.descriptor_plans[0]);
+#endif
+        float row0[4] = {1.5f, 1.5f, 0.0f, 0.0f};
+        tex_sc[0][0][0] = 2.0f; tex_sc[0][0][1] = 2.0f;
+        uint32_t dyn1[4] = {0}, dyn2[4] = {0}, dyn3[4] = {0}, nd1 = 0, nd2 = 0, nd3 = 0;
+        uint64_t up0 = stat_upload_bytes;
+        stage_set(&rs_pr, VK_NULL_HANDLE, 0, 0, &rs_vs, NULL, NULL, 0, 0, 0, row0, dyn1, &nd1);
+        uint64_t up1 = stat_upload_bytes;
+        stage_set(&rs_pr, VK_NULL_HANDLE, 0, 0, &rs_vs, NULL, NULL, 0, 0, 0, row0, dyn2, &nd2);
+        uint64_t up2 = stat_upload_bytes;
+        renderer_flush();
+        stage_set(&rs_pr, VK_NULL_HANDLE, 0, 0, &rs_vs, NULL, NULL, 0, 0, 0, row0, dyn3, &nd3);
+        uint64_t up3 = stat_upload_bytes;
+        bool ok_rscale = nd1 == 1 && nd2 == 1 && nd3 == 1 &&
+                         up1 > up0 && up2 == up1 && dyn2[0] == dyn1[0] && up3 > up2;
+        vk_exec_reset();
+        check("stage_set RscaleDedupe hit/miss across submissions", ok_rscale);
     }
 
     check("Vulkan mock synchronization validator recorded 0 hazards", !mock_hazards);
