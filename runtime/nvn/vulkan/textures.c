@@ -674,6 +674,7 @@ static void create_image(NvnTexture *t, TexBackend *b) {
         depthfmt = false;
     }
     b->format = vf;
+    b->soft_linear_state = 0;
     b->width = tw; b->height = th; b->depth = depth; b->layers = layers; b->levels = levels; b->samples = samples;
     b->aspect = depthfmt ? aspect_of(t->format) : VK_IMAGE_ASPECT_COLOR_BIT;
     b->base_type = type == VK_IMAGE_TYPE_1D ? (layers > 1 ? VK_IMAGE_VIEW_TYPE_1D_ARRAY : VK_IMAGE_VIEW_TYPE_1D)
@@ -794,6 +795,7 @@ static void destroy_image(TexBackend *b) {
     b->sample_hash = 0;
     b->wgen = 0;
     b->full_wgen = 0;
+    b->soft_linear_state = 0;
 }
 
 // Live game textures: an in-place reboot (vk_textures_reset) destroys them all.
@@ -2090,13 +2092,13 @@ bool vk_format_is_int(VkFormat f) {
 static _Atomic int g_any_no_linear;
 
 bool vk_any_format_no_linear(void) {
-    int v = atomic_load_explicit(&g_any_no_linear, memory_order_relaxed);
+    int v = atomic_load_explicit(&g_any_no_linear, memory_order_acquire);
     if (v & 1) return (v & 2) != 0;
     int bits = 1;
     if (!getenv("LARECOMP_NO_FILTER_FALLBACK") &&
         !format_supports(VK_FORMAT_R16G16B16A16_UNORM, VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
         bits |= 2;
-    v = atomic_fetch_or_explicit(&g_any_no_linear, bits, memory_order_relaxed) | bits;
+    v = atomic_fetch_or_explicit(&g_any_no_linear, bits, memory_order_acq_rel) | bits;
     return (v & 2) != 0;
 }
 
@@ -2105,15 +2107,44 @@ bool vk_any_format_no_linear(void) {
 // garbage: the grass stretched and black (#307 Immortalis-G715, #258 G68; #244, Propinbo). Those take the sampler's
 // nearest twin instead (exec.c). LARECOMP_NO_FILTER_FALLBACK=1: as before.
 bool vk_format_filters_linear(VkFormat f) {
+    static _Atomic uint8_t lut[256];
+    static _Atomic int no_fb = -1;
+    static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
     static struct { VkFormat f; bool ok; } cache[64];
     static int n;
-    for (int i = 0; i < n; i++) if (cache[i].f == f) return cache[i].ok;
-    bool ok = format_supports(f, VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) || getenv("LARECOMP_NO_FILTER_FALLBACK");
+    if ((uint32_t)f < 256u) {
+        uint8_t c = atomic_load_explicit(&lut[(uint32_t)f], memory_order_acquire);
+        if (c) return c == 2;
+    }
+    int nf = atomic_load_explicit(&no_fb, memory_order_relaxed);
+    if (nf < 0) {
+        nf = getenv("LARECOMP_NO_FILTER_FALLBACK") != NULL ? 1 : 0;
+        atomic_store_explicit(&no_fb, nf, memory_order_relaxed);
+    }
+    pthread_mutex_lock(&mu);
+    if ((uint32_t)f < 256u) {
+        uint8_t c = atomic_load_explicit(&lut[(uint32_t)f], memory_order_relaxed);
+        if (c) {
+            pthread_mutex_unlock(&mu);
+            return c == 2;
+        }
+    } else {
+        for (int i = 0; i < n; i++) {
+            if (cache[i].f == f) {
+                bool ok = cache[i].ok;
+                pthread_mutex_unlock(&mu);
+                return ok;
+            }
+        }
+    }
+    bool ok = format_supports(f, VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) || nf;
     if (!ok) {
         if (!vk_format_is_int(f)) atomic_fetch_or_explicit(&g_any_no_linear, 3, memory_order_relaxed);
         LOG("[vk] format %d can't be filtered linearly on this GPU: its textures sampled nearest\n", f);
     }
-    if (n < 64) cache[n].f = f, cache[n].ok = ok, n++;
+    if ((uint32_t)f < 256u) atomic_store_explicit(&lut[(uint32_t)f], ok ? 2u : 1u, memory_order_release);
+    else if (n < 64) cache[n].f = f, cache[n].ok = ok, n++;
+    pthread_mutex_unlock(&mu);
     return ok;
 }
 

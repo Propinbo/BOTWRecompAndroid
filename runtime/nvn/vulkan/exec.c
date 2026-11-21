@@ -30,6 +30,9 @@
 #define CBWIN_SPAN_TYPE
 typedef VkSpan CbwinSpan;
 #include "cbwin_snap.h"
+#define RSCALE_SPAN_TYPE
+typedef VkSpan RscaleSpan;
+#include "render_hotpath.h"
 #if defined(__has_include)
 #if __has_include("benchmark_commit.h")
 #include "benchmark_commit.h"
@@ -3108,26 +3111,6 @@ static void clear(int index, int kind, const void *color, uint32_t mask, bool de
 }
 
 // ================================================================== programs
-#define MAX_BIND 96
-#ifdef __ANDROID__
-// Reflection is immutable once a program is published. Partition its bindings once, rather than scanning both
-// stages twice per draw. Only metadata is reused: live buffers, texture views and UBO contents are still resolved.
-typedef struct { uint8_t regular[MAX_BIND], deferred[MAX_BIND]; int nregular, ndeferred; } DescriptorPlan;
-static void descriptor_plan(const VkBindingInfo *binds, int count, uint32_t set, DescriptorPlan *plan) {
-    plan->nregular = plan->ndeferred = 0;
-    for (int i = 0; i < count; i++) {
-        const VkBindingInfo *b = &binds[i];
-        if (b->set != set) continue;
-        int ubo = b->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || b->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-        if ((b->type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER && b->binding >= 32) ||
-            (ubo && b->binding < 17) || b->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            plan->regular[plan->nregular++] = (uint8_t)i;
-        else if (ubo &&
-                 (b->binding == 18 || b->binding == 19 || b->binding == GMAP_BUFFER_INDEX || b->binding == CBPATCH_BUFFER_INDEX))
-            plan->deferred[plan->ndeferred++] = (uint8_t)i;
-    }
-}
-#endif
 #ifdef __ANDROID__
 typedef struct { uint64_t vs_h, fs_h, key_h; uint32_t nv, nf; } PwProgId;
 static _Atomic int pw_env = -2;  // -2 unread, -1 unset, 0 forced off, 1 forced on
@@ -3149,6 +3132,7 @@ typedef struct {
     VkShaderModule vs, fs;
     VkBindingInfo binds[MAX_BIND];
     int nbinds;
+    uint64_t soft_linear_cand[2];
 #ifdef __ANDROID__
     DescriptorPlan descriptor_plans[2];
     PwProgId pw_id;
@@ -3171,8 +3155,10 @@ typedef struct {
 
 static VkPipelineLayout make_layout(Prog *p, int nsets, VkShaderStageFlags s0, VkShaderStageFlags s1) {
 #ifdef __ANDROID__
-    for (int set = 0; set < nsets; set++) descriptor_plan(p->binds, p->nbinds, (uint32_t)set, &p->descriptor_plans[set]);
+    for (int set = 0; set < nsets; set++) vk_build_descriptor_plan(p->binds, p->nbinds, (uint32_t)set, &p->descriptor_plans[set]);
 #endif
+    p->soft_linear_cand[0] = vk_soft_linear_cand_mask(p->vi);
+    p->soft_linear_cand[1] = vk_soft_linear_cand_mask(p->fi);
     p->set_layout[0] = vk_set_layout(p->binds, p->nbinds, 0, s0);
     if (nsets > 1) p->set_layout[1] = vk_set_layout(p->binds, p->nbinds, 1, s1);
     VkPipelineLayoutCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = (uint32_t)nsets,
@@ -5044,6 +5030,9 @@ static uint64_t cbwin_row_(uint64_t addr, uint64_t size);
 // (cbwin) the patch buffers of the draw being bound, vertex and fragment: shader.h maxwell_cb_window
 static CbpatchBuf cbw_patch[2];
 static CbpatchDedupe g_cbpatch_dedupe;
+#ifdef __ANDROID__
+static RscaleDedupe g_rscale_dedupe;
+#endif
 
 // Constant buffer k of a stage (renderer.m bind_cbufs), copied into transient memory.
 // BOTW's half-size passes on a scaled scene (from SavageWindRecomp's up_fix, MIT): the draws that bring its half-size
@@ -7338,6 +7327,7 @@ void vk_exec_reset(void) {
     g_inplace_copy = -1;  // (the next boot reads the setting again: resolve_feedback)
     cbpatch_dedupe_reset(&g_cbpatch_dedupe);
 #ifdef __ANDROID__
+    rscale_dedupe_reset(&g_rscale_dedupe);
     gwin_mode = false;
     gfast_win = (VkDescriptorBufferInfo){0};
     atomic_store_explicit(&cbwin_env, -2, memory_order_relaxed);
@@ -7371,10 +7361,14 @@ void vk_exec_reset(void) {
 _Static_assert(offsetof(ShaderKey, soft_linear_rep_v) - offsetof(ShaderKey, soft_linear) == 3 * sizeof(uint64_t),
                "ShaderKey soft_linear fields must remain contiguous");
 
-static void stage_fill_soft_linear(int stage, const ShaderInfo *si, ShaderKey *k) {
+static void stage_fill_soft_linear(int stage, const ShaderInfo *si, uint64_t cand_mask, ShaderKey *k) {
     k->soft_linear = k->soft_linear_mip = k->soft_linear_rep_u = k->soft_linear_rep_v = 0;
-    if (!vk_any_format_no_linear() || !si || !si->ntex || !st.tpool || !st.spool) return;
-    for (int i = 0; i < si->ntex && i < 64; i++) {
+    if (!vk_any_format_no_linear() || !cand_mask || !si || !si->ntex || !st.tpool || !st.spool) return;
+    uint64_t m = cand_mask;
+    while (m) {
+        int i = __builtin_ctzll(m);
+        m &= m - 1;
+        if (i >= si->ntex) break;
         const ShaderTexture *t_ = &si->tex[i];
         if (!t_->sampled || t_->shadow || t_->is_image ||
             (t_->type != TEXTYPE_2D && t_->type != TEXTYPE_2D_ARRAY))
@@ -7391,8 +7385,20 @@ static void stage_fill_soft_linear(int stage, const ShaderInfo *si, ShaderKey *k
         const NvnTexEntry *te = &((const NvnTexEntry *)st.tpool->entries)[tic];
         if (!te->tex) continue;
         NvnTexture *rt = naliases ? alias_read(te->tex) : te->tex;
-        VkFormat tfmt = vk_sampled_format(rt, &te->view, te->has_view);
-        if (tfmt == VK_FORMAT_UNDEFINED || vk_format_is_int(tfmt) || vk_format_filters_linear(tfmt)) continue;
+        if (!naliases && (!te->has_view || !(te->view.setmask & 4)) && rt == te->tex && rt->backend) {
+            TexBackend *tb = (TexBackend *)rt->backend;
+            uint8_t sl = tb->soft_linear_state;
+            if (sl == 2) continue;
+            if (!sl) {
+                VkFormat tfmt = vk_sampled_format(rt, &te->view, te->has_view);
+                sl = (tfmt == VK_FORMAT_UNDEFINED || vk_format_is_int(tfmt) || vk_format_filters_linear(tfmt)) ? 2 : 1;
+                tb->soft_linear_state = sl;
+                if (sl == 2) continue;
+            }
+        } else {
+            VkFormat tfmt = vk_sampled_format(rt, &te->view, te->has_view);
+            if (tfmt == VK_FORMAT_UNDEFINED || vk_format_is_int(tfmt) || vk_format_filters_linear(tfmt)) continue;
+        }
         uint64_t bit = 1ULL << i;
         k->soft_linear |= bit;
         if (sd->min_filter > 1) k->soft_linear_mip |= bit;
@@ -7496,8 +7502,6 @@ static void texture_info(int stage, ShaderInfo *si, int i, VkDescriptorImageInfo
 // viewport decision), or NULL.
 static float g_mirror_w;  // mirror mode's composite: its render target width (rscale[65].x; 0 otherwise)
 
-static bool is_ubo(VkDescriptorType t) { return t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC; }
-
 // dyn / ndyn: the set's dynamic uniform buffer offsets, in binding order (its bindings of that type: compile_program)
 static VkDescriptorSet stage_set(Prog *p, VkDescriptorSetLayout layout, uint32_t set, int stage, ShaderInfo *si, const float *rscale_row0,
                                  const float tint[8], uint32_t gx, uint32_t gy, uint32_t gz, const VkDescriptorImageInfo *pre_ii,
@@ -7516,14 +7520,14 @@ static VkDescriptorSet stage_set(Prog *p, VkDescriptorSetLayout layout, uint32_t
     static int planned = -1;
     if (planned < 0) {
         const char *e = getenv("LARECOMP_VK_DESCRIPTOR_PLAN");
-        planned = e && atoi(e) != 0;  // experimental: keep the measured stable path as the default
+        planned = !e || !*e || atoi(e) != 0;  // LARECOMP_VK_DESCRIPTOR_PLAN=0: linear scan fallback
     }
     const DescriptorPlan *plan = &p->descriptor_plans[set];
 #endif
 #ifdef __ANDROID__
-    float rs[66][4];  // (filled when the shader has the table: binding 18 below)
+    float rs[RSCALE_ROWS][4];  // (filled when the shader has the table: binding 18 below)
 #else
-    float rs[66][4] = {{1, 1, 0, 0}};  // ([65]: mirror mode, renderer.m)
+    float rs[RSCALE_ROWS][4] = {{1, 1, 0, 0}};  // ([65]: mirror mode, renderer.m)
     if (rscale_row0) memcpy(rs[0], rscale_row0, 16);
     rs[65][0] = g_mirror_w;
 #endif
@@ -7531,11 +7535,12 @@ static VkDescriptorSet stage_set(Prog *p, VkDescriptorSetLayout layout, uint32_t
     int regular_count = planned ? plan->nregular : p->nbinds;
     for (int i = 0; i < regular_count; i++) {
         VkBindingInfo *b = &p->binds[planned ? plan->regular[i] : i];
+        if (!planned && b->set != set) continue;
 #else
     for (int i = 0; i < p->nbinds; i++) {
         VkBindingInfo *b = &p->binds[i];
-#endif
         if (b->set != set) continue;
+#endif
         w[n] = (VkWriteDescriptorSet){.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = ds, .dstBinding = b->binding,
                                       .descriptorCount = 1, .descriptorType = b->type};
         if (b->type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER && b->binding >= 32) {
@@ -7549,7 +7554,7 @@ static VkDescriptorSet stage_set(Prog *p, VkDescriptorSetLayout layout, uint32_t
                 tex_wh[sg][ti][0] = wh[0]; tex_wh[sg][ti][1] = wh[1];
             }
             w[n].pImageInfo = &ii[n];
-        } else if (is_ubo(b->type) && b->binding < 17) {
+        } else if (vk_binding_is_ubo(b->type) && b->binding < 17) {
             uint64_t tc_ = prof > 0 ? plat_now_ns() : 0;
             bi[n] = cbuf_info(stage, si, (int)b->binding, gx, gy, gz);
             if (prof > 0) prof_cbuf += plat_now_ns() - tc_;
@@ -7583,12 +7588,14 @@ static VkDescriptorSet stage_set(Prog *p, VkDescriptorSetLayout layout, uint32_t
     int deferred_count = planned ? plan->ndeferred : p->nbinds;
     for (int i = 0; i < deferred_count; i++) {
         VkBindingInfo *b = &p->binds[planned ? plan->deferred[i] : i];
+        if (!planned && (b->set != set || !vk_binding_is_ubo(b->type) ||
+            (b->binding != 18 && b->binding != 19 && b->binding != GMAP_BUFFER_INDEX && b->binding != CBPATCH_BUFFER_INDEX))) continue;
 #else
     for (int i = 0; i < p->nbinds; i++) {
         VkBindingInfo *b = &p->binds[i];
-#endif
-        if (b->set != set || !is_ubo(b->type) ||
+        if (b->set != set || !vk_binding_is_ubo(b->type) ||
             (b->binding != 18 && b->binding != 19 && b->binding != GMAP_BUFFER_INDEX && b->binding != CBPATCH_BUFFER_INDEX)) continue;
+#endif
         w[n] = (VkWriteDescriptorSet){.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = ds, .dstBinding = b->binding,
                                       .descriptorCount = 1, .descriptorType = b->type};
         if (b->binding == CBPATCH_BUFFER_INDEX) {  // the rows cbwin_bind took for this stage (its cbuf_info calls: above)
@@ -7608,13 +7615,30 @@ static VkDescriptorSet stage_set(Prog *p, VkDescriptorSetLayout layout, uint32_t
 #endif
         } else if (b->binding == 18) {
 #ifdef __ANDROID__
-            memset(rs, 0, sizeof rs);
-            rs[0][0] = rs[0][1] = 1;  // ([65]: mirror mode, renderer.m)
-            if (rscale_row0) memcpy(rs[0], rscale_row0, 16);
-            rs[65][0] = g_mirror_w;
-#endif
+            static int no_rscale_cache = -1;
+            if (no_rscale_cache < 0) {
+                const char *re = getenv("LARECOMP_NO_RSCALE_CACHE");
+                no_rscale_cache = re && *re && atoi(re) != 0;  // LARECOMP_NO_RSCALE_CACHE=1: off
+            }
+            if (!no_rscale_cache) {
+                uint64_t rseq = vk_pending_seq();
+                uint32_t rslot = 0;
+                VkSpan rsp;
+                if (!rscale_dedupe_lookup(&g_rscale_dedupe, sg, rseq, rscale_row0, g_mirror_w, si->ntex, tex_sc[sg],
+                                          &rslot, &rsp)) {
+                    rscale_fill_buffer(rs, rscale_row0, g_mirror_w, si->ntex, tex_sc[sg]);
+                    rsp = vk_transient_copy(rs, sizeof rs, 256);
+                    rscale_dedupe_commit(&g_rscale_dedupe, sg, rslot, rseq, rscale_row0, g_mirror_w, si->ntex, tex_sc[sg], rsp);
+                }
+                bi[n] = ubo_span(rsp, sizeof rs);
+            } else {
+                rscale_fill_buffer(rs, rscale_row0, g_mirror_w, si->ntex, tex_sc[sg]);
+                bi[n] = ubo_span(copy_dedupe(sg ? DEDUPE_RSCALE_F : DEDUPE_RSCALE_V, rs, sizeof rs, 256), sizeof rs);
+            }
+#else
             for (int t = 0; t < si->ntex && t < 64; t++) { rs[1 + t][0] = tex_sc[sg][t][0]; rs[1 + t][1] = tex_sc[sg][t][1]; }
             bi[n] = ubo_span(copy_dedupe(sg ? DEDUPE_RSCALE_F : DEDUPE_RSCALE_V, rs, sizeof rs, 256), sizeof rs);
+#endif
         } else {
             float zero[8] = {0};
             bi[n] = ubo_span(copy_dedupe(DEDUPE_TINT, tint ? tint : zero, 32, 256), 32);
@@ -7841,7 +7865,7 @@ static void dispatch_compute(uint32_t gx, uint32_t gy, uint32_t gz) {
     if (!cp || atomic_load(&cp->p.state) != 1) { stat_skipped++; return; }
     if (vk_any_format_no_linear()) {
         ShaderKey ck = {0};
-        stage_fill_soft_linear(5, cp->si, &ck);
+        stage_fill_soft_linear(5, cp->si, cp->p.soft_linear_cand[0], &ck);
         if (ck.soft_linear) {
             CsProg *sl = compute_program(st.program, &ck);
             int sl_state = sl ? atomic_load(&sl->p.state) : 2;
@@ -8109,11 +8133,13 @@ static void draw_(CmdRec *r, bool indexed) {
         keep = kkeep;
     }
     ShaderKey vbase = vkey, fbase = fkey;
+    bool want_sl = vk_any_format_no_linear();
     bool masks_done = false;
-    if (vk_any_format_no_linear() && last_prog && atomic_load(&last_prog->state) == 1 &&
-        last_prog->code[0] == st.program->stages[0].code_addr && last_prog->code[1] == st.program->stages[1].code_addr) {
-        stage_fill_soft_linear(0, last_prog->vi, &vkey);
-        stage_fill_soft_linear(1, last_prog->fi, &fkey);
+    if (want_sl && last_prog && atomic_load(&last_prog->state) == 1 &&
+        last_prog->code[0] == st.program->stages[0].code_addr &&
+        last_prog->code[1] == st.program->stages[1].code_addr) {
+        stage_fill_soft_linear(0, last_prog->vi, last_prog->soft_linear_cand[0], &vkey);
+        stage_fill_soft_linear(1, last_prog->fi, last_prog->soft_linear_cand[1], &fkey);
         masks_done = true;
     }
     Prog *pr = get_program(st.program, &vkey, &fkey, keep && urgent_shaders_on());
@@ -8128,8 +8154,8 @@ static void draw_(CmdRec *r, bool indexed) {
     if (!pr || atomic_load(&pr->state) != 1) { stat_skipped++; skip_note("shader"); return; }
     if (!masks_done && vk_any_format_no_linear()) {
         ShaderKey vk2 = vkey, fk2 = fkey;
-        stage_fill_soft_linear(0, pr->vi, &vk2);
-        stage_fill_soft_linear(1, pr->fi, &fk2);
+        stage_fill_soft_linear(0, pr->vi, pr->soft_linear_cand[0], &vk2);
+        stage_fill_soft_linear(1, pr->fi, pr->soft_linear_cand[1], &fk2);
         if (vk2.soft_linear || fk2.soft_linear) {
             Prog *sl = get_program(st.program, &vk2, &fk2, keep && urgent_shaders_on());
             if (sl && keep) wait_built_job(&sl->state, &sl->urgent, sl, sl->code[1]);

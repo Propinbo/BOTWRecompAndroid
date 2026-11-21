@@ -137,6 +137,7 @@ typedef struct TexBackend {
     struct BcShadow *bc_shadow;  // (bc_vf) drawn into through a view of the block's size: the blocks (textures.c)
     VkFormat view_alt;  // (a render target made without MUTABLE_FORMAT: textures.c rt_formats) the one other format its
     bool fixed_fmt;     // views may have - its sRGB / UNORM twin, or none
+    uint8_t soft_linear_state;  // lazy cache: 0 unknown, 1 needs software linear filter, 2 hardware-ok or int
     int tp;              // runtime/nvn/texpatch.c: 0 not checked yet, -1 none, else known UI texture + 1
     uint32_t tp_gen;     // texpatch_generation() it was last uploaded with
     int reg;  // slot in textures.c's live list + 1 (a reboot destroys them all)

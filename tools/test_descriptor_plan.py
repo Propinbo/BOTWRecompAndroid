@@ -11,19 +11,21 @@ root = Path(__file__).resolve().parents[1]
 out = root / 'build' / 'descriptor-plan-tests'
 out.mkdir(parents=True, exist_ok=True)
 bin_dir = Path(sys.argv[1])
-source = (root / 'runtime/nvn/vulkan/exec.c').read_text()
-start = source.index('typedef struct { uint8_t regular[MAX_BIND]')
-helper = source[start:source.index('\n#endif', start)]
+source = (root / 'runtime/nvn/vulkan/render_hotpath.h').read_text()
+start = source.index('static inline bool vk_binding_is_ubo(')
+helper = source[start:source.index('\nstatic inline uint64_t vk_soft_linear_cand_mask(', start)]
 prefix = r'''
+typedef _Bool bool;
 typedef unsigned char uint8_t;
 typedef unsigned int uint32_t;
+typedef uint32_t VkDescriptorType;
 #define MAX_BIND 96
 #define GMAP_BUFFER_INDEX 20
 #define CBPATCH_BUFFER_INDEX 23
-enum { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-       UNUSED_STORAGE_IMAGE, UNUSED_SAMPLER };
-typedef struct { uint32_t set, binding, type; } VkBindingInfo;
+enum { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+       VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, UNUSED_STORAGE_IMAGE, UNUSED_SAMPLER };
+typedef struct { uint32_t set, binding; VkDescriptorType type; } VkBindingInfo;
 '''
 test = r'''
 static unsigned rng;
@@ -45,24 +47,25 @@ int check(unsigned seed, int count, unsigned set) {
     for (int i = 0; i < count; i++) {
         const VkBindingInfo *b = &binds[i];
         if (b->set != set) continue;
-        int ubo = b->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
-                  b->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        bool is_ubo = b->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
+                      b->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
         if (b->type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER && b->binding >= 32) legacy[n++] = i;
-        else if (ubo && b->binding < 17) legacy[n++] = i;
+        else if (b->type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT && b->binding >= 32) legacy[n++] = i;
+        else if (is_ubo && b->binding < 17) legacy[n++] = i;
         else if (b->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) legacy[n++] = i;
     }
     for (int i = 0; i < count; i++) {
         const VkBindingInfo *b = &binds[i];
-        int ubo = b->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
-                  b->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-        if (b->set != set || !ubo ||
+        bool is_ubo = b->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
+                      b->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        if (b->set != set || !is_ubo ||
             (b->binding != 18 && b->binding != 19 &&
              b->binding != GMAP_BUFFER_INDEX && b->binding != CBPATCH_BUFFER_INDEX)) continue;
         legacy[n++] = i;
     }
     struct { unsigned before; DescriptorPlan plan; unsigned after; } checked;
     checked.before = 0x12345678; checked.after = 0xabcdef01;
-    descriptor_plan(binds, count, set, &checked.plan);
+    vk_build_descriptor_plan(binds, count, set, &checked.plan);
     DescriptorPlan *p = &checked.plan;
     if (checked.before != 0x12345678 || checked.after != 0xabcdef01) return 1;
     if (p->nregular + p->ndeferred != n) return 2;
@@ -71,7 +74,7 @@ int check(unsigned seed, int count, unsigned set) {
     for (int i = 0; i < count; i++)
         if (binds[i].set != original[i].set || binds[i].binding != original[i].binding || binds[i].type != original[i].type) return 4;
     // Rebuilding another set must clear a plan's prior counts.
-    descriptor_plan(binds, 0, set, p);
+    vk_build_descriptor_plan(binds, 0, set, p);
     if (p->nregular || p->ndeferred) return 5;
     return 0;
 }
