@@ -1,9 +1,18 @@
 # BOTWRecompAndroid Mali Engineering Rules
 
-## 1. Language Policy
+## 1. Language & Owner Reporting Policy
 
 - **Owner communication:** Communicate with the owner in **Russian** (chat replies, summaries, questions, and status updates). Always end status updates and task completion replies with a concrete recommended next step.
-- **Repository and artifacts:** Write all code, comments, commit messages, PR descriptions, workspace rules, skills, subagent definitions, and tracking/technical documentation (`AGENTS.md`, `MALI_STATUS.md`, `MALI_PLAN.md`, `MALI_PROGRESS.md`, `.mali/**/REPORT.md`) in **English**.
+- **Owner report format (advanced enthusiast level):**
+  - Keep clear explanations of the mechanics behind changes (render fixes, synchronization, caching, shaders, timings) and **all exact test and measurement numbers** (`FPS`, `1% low`, frametimes in ms, temperatures in `°C`, error/crash counters, test pass/fail status).
+  - Use short technical terms and metrics (`FPS`, `1% low`, ms, `°C`, cache) plus readable names of scenes, threads, and modes.
+  - Avoid raw long identifiers (function, variable, constant, struct, and shader-stage names) and commit/file hashes in owner-facing chat reports—describe what they do briefly in plain language instead (unless the owner explicitly asks for raw symbols or hashes). Do not bloat reports with long lists of test filenames or branch/PR numbers; provide a compact summary instead.
+  - Present numbers compactly in a short bullet list or table without fluff, following a 3-part Russian structure for task/test reports:
+    1. *Substance & mechanics* — what was changed/fixed and why it was needed.
+    2. *Test & measurement numbers* — exact before/after metrics by scene/thread and overall verification status.
+    3. *What to do next* — which build to install, which settings to configure, and what to check next (or concrete recommended next step when no build/test action applies).
+  - Short clarifying questions or brief replies do not need forced empty sections, but still follow the plain-language no-raw-symbol-dump style.
+- **Repository and artifacts:** Write all code, comments, commit messages, PR descriptions, workspace rules, skills, subagent definitions, and tracking/technical documentation (`AGENTS.md`, `MALI_STATUS.md`, `MALI_PLAN.md`, `MALI_PROGRESS.md`, `.mali/**/REPORT.md`) in **English**, preserving full exact SHAs, hashes, symbols, filenames, and PR/branch references there for reproducibility and upstream maintainer review.
 
 ## 2. Governance, Roles, and Delegation
 
