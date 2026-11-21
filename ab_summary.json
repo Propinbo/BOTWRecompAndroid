@@ -1,0 +1,771 @@
+{
+  "commit": "9d5e732c15da16a32a3f99797682ab26c5ccd4e4",
+  "apk_sha256": "d69356b03c31b4a75ffd78e1a3c725f2f2a8c990a1bdf2de2e5d469a2f820dd5",
+  "cache_snap_counts": {
+    "spv": 4230,
+    "smeta": 7087
+  },
+  "ArmA_cap30_dr": {
+    "tag": "ArmA_cap30_dr",
+    "pre_therm": {
+      "thermal_status": 0,
+      "skin_c": 36.5,
+      "ap_c": 37.0,
+      "bat_c": 29.7,
+      "gpu_mhz": 26.0,
+      "gpu_ceiling_idx": 35,
+      "cpu_mhz": [
+        1700,
+        622,
+        798
+      ]
+    },
+    "post_therm": {
+      "thermal_status": 2,
+      "skin_c": 42.8,
+      "ap_c": 52.9,
+      "bat_c": 29.8,
+      "gpu_mhz": 26.0,
+      "gpu_ceiling_idx": 7,
+      "cpu_mhz": [
+        1800,
+        2500,
+        2800
+      ]
+    },
+    "report_status": "done",
+    "passport_commit": "9d5e732c15da",
+    "passport": {
+      "gpu": "Mali-G925-Immortalis MC12 - Mali-G925-Immortalis MC12",
+      "driver": "Mali-G925-Immortalis MC12 - v1.r49p1-03bet0.f8a98b506b89b21c80a508d70abfcb3f",
+      "android": "16",
+      "android_api": "36",
+      "model": "SM-X730",
+      "soc": "MT6991",
+      "apk": "0.4.10-beta",
+      "commit": "9d5e732c15da",
+      "game_version": "1.9.0",
+      "game_code": "native",
+      "settings": {
+        "fps_mode": 1,
+        "res_mode": 10,
+        "upscaler": 3,
+        "out_lines": 0,
+        "antialias": 0,
+        "aspect": 0,
+        "sync_lag": 1,
+        "event_fps_unlock": 0,
+        "touch_controls": 0,
+        "show_fps": 0
+      },
+      "shader_cache_at_start": "warm",
+      "cache": {
+        "spirv_files": 11317,
+        "pipeline_bytes": 56893616
+      },
+      "power": {
+        "battery_c": 29.9,
+        "battery_pct": 79,
+        "watts": 0.0,
+        "soc_c": -1.0,
+        "thermal": 0,
+        "headroom": 0.72,
+        "plugged": 2
+      },
+      "pass": "cap30"
+    },
+    "errors": [],
+    "dr_logs": [
+      "[vk-cap] memory export: fd yes, dma-buf yes, Android hardware buffer yes, placed maps no, host import no",
+      "[vk] dynamic rendering enabled (LARECOMP_NO_DYNAMIC_RENDERING=0)",
+      "[vk-cap] gpu Mali-G925-Immortalis MC12 vendor 0x13b5 device 0xd8300010 api 1.3.278 driver-id 9 name Mali-G925-Immortalis MC12 info v1.r49p1-03bet0.f8a98b506b89b21c80a508d70abfcb3f",
+      "[vk-cap] storage16 1 timeline 1 mirror-clamp 1 scalar 1 dynamic-rendering 1 sync2 1 demote 1 terminate 1 maintenance4 1 int64 1 int8 1 storage8 1 uniform-storage8 1 BC 0 ASTC 1 timestamps 1",
+      "[vk-cap] storage range 2048 MB, storage offset alignment 64, memory types 0:0x7 1:0xb 2:0x11 3:0x21",
+      "[vk-cap] maintenance5 on",
+      "[vk-cap] dynamic vertex input: on (driver default)"
+    ],
+    "reboot_logs": [
+      "[vk] reboot: 1238 textures released",
+      "[vk] shader-build (reboot): wait 70.95 ms (max 0.83 ms, 540 waits, 140 stolen), live 438 progs / 834 gpipes",
+      "[vk] reboot: 438 programs, 834 pipelines and 16 compute programs freed (0 kept)",
+      "[vk] reboot: 861 textures released",
+      "[vk] shader-build (reboot): wait 94.61 ms (max 1.61 ms, 645 waits, 187 stolen), live 404 progs / 734 gpipes",
+      "[vk] reboot: 404 programs, 734 pipelines and 14 compute programs freed (0 kept)"
+    ],
+    "report_scenes": {
+      "plateau": {
+        "status": "ok",
+        "fps": 30.0,
+        "low1": null,
+        "display_fps": 30.016725,
+        "display_low1": 23.965095,
+        "gpu_p50_ms": null,
+        "cpu_p50_ms": null,
+        "frame_p50_ms": null,
+        "frame_p95_ms": null,
+        "frame_p99_ms": null
+      },
+      "zora-plaza": {
+        "status": "ok",
+        "fps": 30.0,
+        "low1": null,
+        "display_fps": 30.00001,
+        "display_low1": 23.988843,
+        "gpu_p50_ms": null,
+        "cpu_p50_ms": null,
+        "frame_p50_ms": null,
+        "frame_p95_ms": null,
+        "frame_p99_ms": null
+      },
+      "kakariko-day": {
+        "status": "ok",
+        "fps": 30.0,
+        "low1": null,
+        "display_fps": 30.000068,
+        "display_low1": 23.983364,
+        "gpu_p50_ms": null,
+        "cpu_p50_ms": null,
+        "frame_p50_ms": null,
+        "frame_p95_ms": null,
+        "frame_p99_ms": null
+      }
+    },
+    "csv_stats": {
+      "plateau": {
+        "frames": 451,
+        "wall_s": 15.03,
+        "fps_mean": 30.0,
+        "low_1pct_fps": 29.39,
+        "period_p50_ms": 33.335,
+        "period_p95_ms": 33.835,
+        "period_p99_ms": 33.961,
+        "display_fps_mean": 30.0,
+        "display_low1_fps": 23.97,
+        "render_ms_p50": 19.129,
+        "render_ms_p95": 22.464,
+        "render_ms_p99": 23.812,
+        "game_ms_p50": 4.372,
+        "gpu_ms_p50": 27.529,
+        "gpu_ms_p95": 31.438
+      },
+      "zora-plaza": {
+        "frames": 451,
+        "wall_s": 15.03,
+        "fps_mean": 30.0,
+        "low_1pct_fps": 29.39,
+        "period_p50_ms": 33.331,
+        "period_p95_ms": 33.749,
+        "period_p99_ms": 33.902,
+        "display_fps_mean": 30.0,
+        "display_low1_fps": 23.99,
+        "render_ms_p50": 19.486,
+        "render_ms_p95": 22.593,
+        "render_ms_p99": 25.174,
+        "game_ms_p50": 4.752,
+        "gpu_ms_p50": 30.128,
+        "gpu_ms_p95": 36.266
+      },
+      "kakariko-day": {
+        "frames": 451,
+        "wall_s": 15.03,
+        "fps_mean": 30.0,
+        "low_1pct_fps": 29.14,
+        "period_p50_ms": 33.335,
+        "period_p95_ms": 33.768,
+        "period_p99_ms": 34.013,
+        "display_fps_mean": 30.0,
+        "display_low1_fps": 23.98,
+        "render_ms_p50": 19.919,
+        "render_ms_p95": 23.356,
+        "render_ms_p99": 24.699,
+        "game_ms_p50": 5.481,
+        "gpu_ms_p50": 27.789,
+        "gpu_ms_p95": 31.777
+      }
+    }
+  },
+  "ArmB_cap30_default": {
+    "tag": "ArmB_cap30_default",
+    "pre_therm": {
+      "thermal_status": 0,
+      "skin_c": 36.5,
+      "ap_c": 37.0,
+      "bat_c": 29.8,
+      "gpu_mhz": 26.0,
+      "gpu_ceiling_idx": 35,
+      "cpu_mhz": [
+        2400,
+        622,
+        798
+      ]
+    },
+    "post_therm": {
+      "thermal_status": 2,
+      "skin_c": 42.9,
+      "ap_c": 52.5,
+      "bat_c": 29.9,
+      "gpu_mhz": 26.0,
+      "gpu_ceiling_idx": 7,
+      "cpu_mhz": [
+        1800,
+        2500,
+        2800
+      ]
+    },
+    "report_status": "done",
+    "passport_commit": "9d5e732c15da",
+    "passport": {
+      "gpu": "Mali-G925-Immortalis MC12 - Mali-G925-Immortalis MC12",
+      "driver": "Mali-G925-Immortalis MC12 - v1.r49p1-03bet0.f8a98b506b89b21c80a508d70abfcb3f",
+      "android": "16",
+      "android_api": "36",
+      "model": "SM-X730",
+      "soc": "MT6991",
+      "apk": "0.4.10-beta",
+      "commit": "9d5e732c15da",
+      "game_version": "1.9.0",
+      "game_code": "native",
+      "settings": {
+        "fps_mode": 1,
+        "res_mode": 10,
+        "upscaler": 3,
+        "out_lines": 0,
+        "antialias": 0,
+        "aspect": 0,
+        "sync_lag": 1,
+        "event_fps_unlock": 0,
+        "touch_controls": 0,
+        "show_fps": 0
+      },
+      "shader_cache_at_start": "warm",
+      "cache": {
+        "spirv_files": 11317,
+        "pipeline_bytes": 56893616
+      },
+      "power": {
+        "battery_c": 29.8,
+        "battery_pct": 78,
+        "watts": 4.66,
+        "soc_c": -1.0,
+        "thermal": 0,
+        "headroom": 0.72,
+        "plugged": 2
+      },
+      "pass": "cap30"
+    },
+    "errors": [],
+    "dr_logs": [
+      "[vk-cap] memory export: fd yes, dma-buf yes, Android hardware buffer yes, placed maps no, host import no",
+      "[vk] no dynamic rendering (Mali r49+ default): classic render passes",
+      "[vk-cap] gpu Mali-G925-Immortalis MC12 vendor 0x13b5 device 0xd8300010 api 1.3.278 driver-id 9 name Mali-G925-Immortalis MC12 info v1.r49p1-03bet0.f8a98b506b89b21c80a508d70abfcb3f",
+      "[vk-cap] storage16 1 timeline 1 mirror-clamp 1 scalar 1 dynamic-rendering 1 sync2 1 demote 1 terminate 1 maintenance4 1 int64 1 int8 1 storage8 1 uniform-storage8 1 BC 0 ASTC 1 timestamps 1",
+      "[vk-cap] storage range 2048 MB, storage offset alignment 64, memory types 0:0x7 1:0xb 2:0x11 3:0x21",
+      "[vk-cap] maintenance5 on",
+      "[vk-cap] dynamic vertex input: on (driver default)",
+      "[vk] render passes (no dynamic rendering): 1",
+      "[vk] render passes (no dynamic rendering): 2",
+      "[vk] render passes (no dynamic rendering): 3",
+      "[vk] render passes (no dynamic rendering): 4",
+      "[vk] render passes (no dynamic rendering): 5",
+      "[vk] render passes (no dynamic rendering): 6",
+      "[vk] render passes (no dynamic rendering): 7",
+      "[vk] render passes (no dynamic rendering): 8"
+    ],
+    "reboot_logs": [
+      "[vk] reboot: 1238 textures released",
+      "[vk] shader-build (reboot): wait 163.45 ms (max 44.40 ms, 547 waits, 141 stolen), live 439 progs / 843 gpipes",
+      "[vk] reboot: 439 programs, 843 pipelines and 16 compute programs freed (0 kept)",
+      "[vk] reboot: 859 textures released",
+      "[vk] shader-build (reboot): wait 93.52 ms (max 4.00 ms, 612 waits, 185 stolen), live 405 progs / 703 gpipes",
+      "[vk] reboot: 405 programs, 703 pipelines and 14 compute programs freed (0 kept)"
+    ],
+    "report_scenes": {
+      "plateau": {
+        "status": "ok",
+        "fps": 30.0,
+        "low1": null,
+        "display_fps": 29.999993,
+        "display_low1": 23.97588,
+        "gpu_p50_ms": null,
+        "cpu_p50_ms": null,
+        "frame_p50_ms": null,
+        "frame_p95_ms": null,
+        "frame_p99_ms": null
+      },
+      "zora-plaza": {
+        "status": "ok",
+        "fps": 30.0,
+        "low1": null,
+        "display_fps": 30.000142,
+        "display_low1": 22.170854,
+        "gpu_p50_ms": null,
+        "cpu_p50_ms": null,
+        "frame_p50_ms": null,
+        "frame_p95_ms": null,
+        "frame_p99_ms": null
+      },
+      "kakariko-day": {
+        "status": "ok",
+        "fps": 30.0,
+        "low1": null,
+        "display_fps": 30.000044,
+        "display_low1": 23.038543,
+        "gpu_p50_ms": null,
+        "cpu_p50_ms": null,
+        "frame_p50_ms": null,
+        "frame_p95_ms": null,
+        "frame_p99_ms": null
+      }
+    },
+    "csv_stats": {
+      "plateau": {
+        "frames": 451,
+        "wall_s": 15.03,
+        "fps_mean": 30.0,
+        "low_1pct_fps": 29.37,
+        "period_p50_ms": 33.343,
+        "period_p95_ms": 33.798,
+        "period_p99_ms": 33.911,
+        "display_fps_mean": 30.0,
+        "display_low1_fps": 23.98,
+        "render_ms_p50": 16.725,
+        "render_ms_p95": 19.227,
+        "render_ms_p99": 20.334,
+        "game_ms_p50": 5.12,
+        "gpu_ms_p50": 27.559,
+        "gpu_ms_p95": 32.333
+      },
+      "zora-plaza": {
+        "frames": 451,
+        "wall_s": 15.03,
+        "fps_mean": 30.0,
+        "low_1pct_fps": 29.3,
+        "period_p50_ms": 33.332,
+        "period_p95_ms": 33.772,
+        "period_p99_ms": 34.022,
+        "display_fps_mean": 30.0,
+        "display_low1_fps": 22.17,
+        "render_ms_p50": 17.311,
+        "render_ms_p95": 20.123,
+        "render_ms_p99": 22.102,
+        "game_ms_p50": 5.231,
+        "gpu_ms_p50": 30.144,
+        "gpu_ms_p95": 35.133
+      },
+      "kakariko-day": {
+        "frames": 451,
+        "wall_s": 15.03,
+        "fps_mean": 30.0,
+        "low_1pct_fps": 29.28,
+        "period_p50_ms": 33.34,
+        "period_p95_ms": 33.822,
+        "period_p99_ms": 34.087,
+        "display_fps_mean": 30.0,
+        "display_low1_fps": 23.04,
+        "render_ms_p50": 18.05,
+        "render_ms_p95": 20.48,
+        "render_ms_p99": 21.463,
+        "game_ms_p50": 5.538,
+        "gpu_ms_p50": 27.731,
+        "gpu_ms_p95": 31.636
+      }
+    }
+  },
+  "ArmA_60p_dr": {
+    "tag": "ArmA_60p_dr",
+    "pre_therm": {
+      "thermal_status": 0,
+      "skin_c": 36.4,
+      "ap_c": 37.0,
+      "bat_c": 29.9,
+      "gpu_mhz": 26.0,
+      "gpu_ceiling_idx": 35,
+      "cpu_mhz": [
+        2400,
+        622,
+        798
+      ]
+    },
+    "post_therm": {
+      "thermal_status": 2,
+      "skin_c": 44.3,
+      "ap_c": 56.2,
+      "bat_c": 30.0,
+      "gpu_mhz": 26.0,
+      "gpu_ceiling_idx": 35,
+      "cpu_mhz": [
+        1800,
+        2500,
+        2600
+      ]
+    },
+    "report_status": "done",
+    "passport_commit": "9d5e732c15da",
+    "passport": {
+      "gpu": "Mali-G925-Immortalis MC12 - Mali-G925-Immortalis MC12",
+      "driver": "Mali-G925-Immortalis MC12 - v1.r49p1-03bet0.f8a98b506b89b21c80a508d70abfcb3f",
+      "android": "16",
+      "android_api": "36",
+      "model": "SM-X730",
+      "soc": "MT6991",
+      "apk": "0.4.10-beta",
+      "commit": "9d5e732c15da",
+      "game_version": "1.9.0",
+      "game_code": "native",
+      "settings": {
+        "fps_mode": 1,
+        "res_mode": 10,
+        "upscaler": 3,
+        "out_lines": 0,
+        "antialias": 0,
+        "aspect": 0,
+        "sync_lag": 1,
+        "event_fps_unlock": 0,
+        "touch_controls": 0,
+        "show_fps": 0
+      },
+      "shader_cache_at_start": "warm",
+      "cache": {
+        "spirv_files": 11317,
+        "pipeline_bytes": 56893616
+      },
+      "power": {
+        "battery_c": 29.8,
+        "battery_pct": 78,
+        "watts": 5.25,
+        "soc_c": -1.0,
+        "thermal": 0,
+        "headroom": 0.71,
+        "plugged": 2
+      },
+      "pass": "cap30"
+    },
+    "errors": [],
+    "dr_logs": [
+      "[vk-cap] memory export: fd yes, dma-buf yes, Android hardware buffer yes, placed maps no, host import no",
+      "[vk] dynamic rendering enabled (LARECOMP_NO_DYNAMIC_RENDERING=0)",
+      "[vk-cap] gpu Mali-G925-Immortalis MC12 vendor 0x13b5 device 0xd8300010 api 1.3.278 driver-id 9 name Mali-G925-Immortalis MC12 info v1.r49p1-03bet0.f8a98b506b89b21c80a508d70abfcb3f",
+      "[vk-cap] storage16 1 timeline 1 mirror-clamp 1 scalar 1 dynamic-rendering 1 sync2 1 demote 1 terminate 1 maintenance4 1 int64 1 int8 1 storage8 1 uniform-storage8 1 BC 0 ASTC 1 timestamps 1",
+      "[vk-cap] storage range 2048 MB, storage offset alignment 64, memory types 0:0x7 1:0xb 2:0x11 3:0x21",
+      "[vk-cap] maintenance5 on",
+      "[vk-cap] dynamic vertex input: on (driver default)"
+    ],
+    "reboot_logs": [
+      "[vk] reboot: 1235 textures released",
+      "[vk] shader-build (reboot): wait 74.43 ms (max 0.94 ms, 566 waits, 141 stolen), live 434 progs / 861 gpipes",
+      "[vk] reboot: 434 programs, 861 pipelines and 16 compute programs freed (0 kept)",
+      "[vk] reboot: 911 textures released",
+      "[vk] shader-build (reboot): wait 77.50 ms (max 1.36 ms, 639 waits, 186 stolen), live 402 progs / 725 gpipes",
+      "[vk] reboot: 402 programs, 725 pipelines and 14 compute programs freed (0 kept)"
+    ],
+    "report_scenes": {
+      "plateau": {
+        "status": "harness_error",
+        "fps": null,
+        "low1": null,
+        "display_fps": null,
+        "display_low1": null,
+        "gpu_p50_ms": null,
+        "cpu_p50_ms": null,
+        "frame_p50_ms": null,
+        "frame_p95_ms": null,
+        "frame_p99_ms": null
+      },
+      "zora-plaza": {
+        "status": "harness_error",
+        "fps": null,
+        "low1": null,
+        "display_fps": null,
+        "display_low1": null,
+        "gpu_p50_ms": null,
+        "cpu_p50_ms": null,
+        "frame_p50_ms": null,
+        "frame_p95_ms": null,
+        "frame_p99_ms": null
+      },
+      "kakariko-day": {
+        "status": "harness_error",
+        "fps": null,
+        "low1": null,
+        "display_fps": null,
+        "display_low1": null,
+        "gpu_p50_ms": null,
+        "cpu_p50_ms": null,
+        "frame_p50_ms": null,
+        "frame_p95_ms": null,
+        "frame_p99_ms": null
+      }
+    },
+    "csv_stats": {
+      "plateau": {
+        "frames": 655,
+        "wall_s": 15.02,
+        "fps_mean": 43.6,
+        "low_1pct_fps": 35.35,
+        "period_p50_ms": 22.753,
+        "period_p95_ms": 25.736,
+        "period_p99_ms": 27.646,
+        "display_fps_mean": 43.58,
+        "display_low1_fps": 29.98,
+        "render_ms_p50": 15.288,
+        "render_ms_p95": 17.886,
+        "render_ms_p99": 19.98,
+        "game_ms_p50": 3.82,
+        "gpu_ms_p50": 20.148,
+        "gpu_ms_p95": 24.024
+      },
+      "zora-plaza": {
+        "frames": 536,
+        "wall_s": 15.03,
+        "fps_mean": 35.66,
+        "low_1pct_fps": 27.64,
+        "period_p50_ms": 27.602,
+        "period_p95_ms": 32.887,
+        "period_p99_ms": 35.272,
+        "display_fps_mean": 35.69,
+        "display_low1_fps": 29.95,
+        "render_ms_p50": 18.737,
+        "render_ms_p95": 23.628,
+        "render_ms_p99": 25.79,
+        "game_ms_p50": 4.359,
+        "gpu_ms_p50": 27.025,
+        "gpu_ms_p95": 31.329
+      },
+      "kakariko-day": {
+        "frames": 510,
+        "wall_s": 15.03,
+        "fps_mean": 33.94,
+        "low_1pct_fps": 25.23,
+        "period_p50_ms": 29.149,
+        "period_p95_ms": 33.023,
+        "period_p99_ms": 34.991,
+        "display_fps_mean": 33.93,
+        "display_low1_fps": 23.23,
+        "render_ms_p50": 19.775,
+        "render_ms_p95": 21.053,
+        "render_ms_p99": 23.285,
+        "game_ms_p50": 4.904,
+        "gpu_ms_p50": 25.432,
+        "gpu_ms_p95": 29.232
+      }
+    }
+  },
+  "ArmB_60p_default": {
+    "tag": "ArmB_60p_default",
+    "pre_therm": {
+      "thermal_status": 0,
+      "skin_c": 36.8,
+      "ap_c": 37.3,
+      "bat_c": 30.0,
+      "gpu_mhz": 26.0,
+      "gpu_ceiling_idx": 35,
+      "cpu_mhz": [
+        900,
+        1400,
+        798
+      ]
+    },
+    "post_therm": {
+      "thermal_status": 2,
+      "skin_c": 44.9,
+      "ap_c": 57.4,
+      "bat_c": 30.0,
+      "gpu_mhz": 26.0,
+      "gpu_ceiling_idx": 12,
+      "cpu_mhz": [
+        1500,
+        2300,
+        2300
+      ]
+    },
+    "report_status": "done",
+    "passport_commit": "9d5e732c15da",
+    "passport": {
+      "gpu": "Mali-G925-Immortalis MC12 - Mali-G925-Immortalis MC12",
+      "driver": "Mali-G925-Immortalis MC12 - v1.r49p1-03bet0.f8a98b506b89b21c80a508d70abfcb3f",
+      "android": "16",
+      "android_api": "36",
+      "model": "SM-X730",
+      "soc": "MT6991",
+      "apk": "0.4.10-beta",
+      "commit": "9d5e732c15da",
+      "game_version": "1.9.0",
+      "game_code": "native",
+      "settings": {
+        "fps_mode": 1,
+        "res_mode": 10,
+        "upscaler": 3,
+        "out_lines": 0,
+        "antialias": 0,
+        "aspect": 0,
+        "sync_lag": 1,
+        "event_fps_unlock": 0,
+        "touch_controls": 0,
+        "show_fps": 0
+      },
+      "shader_cache_at_start": "warm",
+      "cache": {
+        "spirv_files": 11317,
+        "pipeline_bytes": 56893616
+      },
+      "power": {
+        "battery_c": 29.8,
+        "battery_pct": 78,
+        "watts": 0.44,
+        "soc_c": -1.0,
+        "thermal": 0,
+        "headroom": 0.73,
+        "plugged": 2
+      },
+      "pass": "cap30"
+    },
+    "errors": [],
+    "dr_logs": [
+      "[vk-cap] memory export: fd yes, dma-buf yes, Android hardware buffer yes, placed maps no, host import no",
+      "[vk] no dynamic rendering (Mali r49+ default): classic render passes",
+      "[vk-cap] gpu Mali-G925-Immortalis MC12 vendor 0x13b5 device 0xd8300010 api 1.3.278 driver-id 9 name Mali-G925-Immortalis MC12 info v1.r49p1-03bet0.f8a98b506b89b21c80a508d70abfcb3f",
+      "[vk-cap] storage16 1 timeline 1 mirror-clamp 1 scalar 1 dynamic-rendering 1 sync2 1 demote 1 terminate 1 maintenance4 1 int64 1 int8 1 storage8 1 uniform-storage8 1 BC 0 ASTC 1 timestamps 1",
+      "[vk-cap] storage range 2048 MB, storage offset alignment 64, memory types 0:0x7 1:0xb 2:0x11 3:0x21",
+      "[vk-cap] maintenance5 on",
+      "[vk-cap] dynamic vertex input: on (driver default)",
+      "[vk] render passes (no dynamic rendering): 1",
+      "[vk] render passes (no dynamic rendering): 2",
+      "[vk] render passes (no dynamic rendering): 3",
+      "[vk] render passes (no dynamic rendering): 4",
+      "[vk] render passes (no dynamic rendering): 5",
+      "[vk] render passes (no dynamic rendering): 6",
+      "[vk] render passes (no dynamic rendering): 7",
+      "[vk] render passes (no dynamic rendering): 8"
+    ],
+    "reboot_logs": [
+      "[vk] reboot: 1235 textures released",
+      "[vk] shader-build (reboot): wait 72.82 ms (max 1.17 ms, 571 waits, 138 stolen), live 434 progs / 867 gpipes",
+      "[vk] reboot: 434 programs, 867 pipelines and 16 compute programs freed (0 kept)",
+      "[vk] reboot: 1221 textures released",
+      "[vk] shader-build (reboot): wait 89.91 ms (max 3.54 ms, 655 waits, 184 stolen), live 401 progs / 743 gpipes",
+      "[vk] reboot: 401 programs, 743 pipelines and 14 compute programs freed (0 kept)"
+    ],
+    "report_scenes": {
+      "plateau": {
+        "status": "harness_error",
+        "fps": null,
+        "low1": null,
+        "display_fps": null,
+        "display_low1": null,
+        "gpu_p50_ms": null,
+        "cpu_p50_ms": null,
+        "frame_p50_ms": null,
+        "frame_p95_ms": null,
+        "frame_p99_ms": null
+      },
+      "zora-plaza": {
+        "status": "harness_error",
+        "fps": null,
+        "low1": null,
+        "display_fps": null,
+        "display_low1": null,
+        "gpu_p50_ms": null,
+        "cpu_p50_ms": null,
+        "frame_p50_ms": null,
+        "frame_p95_ms": null,
+        "frame_p99_ms": null
+      },
+      "kakariko-day": {
+        "status": "harness_error",
+        "fps": null,
+        "low1": null,
+        "display_fps": null,
+        "display_low1": null,
+        "gpu_p50_ms": null,
+        "cpu_p50_ms": null,
+        "frame_p50_ms": null,
+        "frame_p95_ms": null,
+        "frame_p99_ms": null
+      }
+    },
+    "csv_stats": {
+      "plateau": {
+        "frames": 672,
+        "wall_s": 15.02,
+        "fps_mean": 44.73,
+        "low_1pct_fps": 32.46,
+        "period_p50_ms": 21.934,
+        "period_p95_ms": 29.053,
+        "period_p99_ms": 30.381,
+        "display_fps_mean": 44.72,
+        "display_low1_fps": 29.99,
+        "render_ms_p50": 14.364,
+        "render_ms_p95": 21.772,
+        "render_ms_p99": 22.616,
+        "game_ms_p50": 4.774,
+        "gpu_ms_p50": 21.532,
+        "gpu_ms_p95": 25.975
+      },
+      "zora-plaza": {
+        "frames": 510,
+        "wall_s": 15.04,
+        "fps_mean": 33.9,
+        "low_1pct_fps": 25.32,
+        "period_p50_ms": 28.879,
+        "period_p95_ms": 36.809,
+        "period_p99_ms": 38.548,
+        "display_fps_mean": 33.9,
+        "display_low1_fps": 27.6,
+        "render_ms_p50": 20.508,
+        "render_ms_p95": 26.78,
+        "render_ms_p99": 27.874,
+        "game_ms_p50": 4.844,
+        "gpu_ms_p50": 28.567,
+        "gpu_ms_p95": 33.089
+      },
+      "kakariko-day": {
+        "frames": 562,
+        "wall_s": 15.03,
+        "fps_mean": 37.4,
+        "low_1pct_fps": 27.99,
+        "period_p50_ms": 26.206,
+        "period_p95_ms": 32.522,
+        "period_p99_ms": 35.192,
+        "display_fps_mean": 37.42,
+        "display_low1_fps": 29.95,
+        "render_ms_p50": 16.794,
+        "render_ms_p95": 22.617,
+        "render_ms_p99": 24.926,
+        "game_ms_p50": 5.55,
+        "gpu_ms_p50": 25.837,
+        "gpu_ms_p95": 30.122
+      }
+    }
+  },
+  "simpleperf_default": {
+    "record_output": "simpleperf I cmd_record.cpp:826] Recorded for 5.98318 seconds. Start post processing.\nsimpleperf I cmd_record.cpp:927] Samples recorded: 56,904. Samples lost: 0.",
+    "render_tid": "tid=4698 comm=SDLThread total=31.34% render_dsos=23.72% samples=14403",
+    "highlights_children": [
+      "79.23%    8.19%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  draw_",
+      "35.78%    6.33%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   stdlibp_neon_f32x16_to_f16x16",
+      "23.24%    9.90%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  stage_set",
+      "11.99%    0.24%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  begin_pass",
+      "11.21%    0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c4c0d4]",
+      "7.72%     3.74%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  guest_copy",
+      "4.71%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1ca2314]",
+      "4.46%     0.03%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c85be0]",
+      "3.81%     1.72%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  stage_fill_soft_linear",
+      "2.85%     0.00%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             scudo::MapAllocator<scudo::SecondaryConfig<scudo::AndroidNormalConfig>>::deallocate(scudo::Options const&, void*)",
+      "2.41%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1ca24ec]",
+      "1.81%     1.59%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_sampled_format",
+      "1.59%     0.01%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1ca2320]",
+      "1.34%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c49108]",
+      "1.28%     0.01%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c99db0]",
+      "1.22%     0.01%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1ca2cc0]",
+      "1.12%     0.77%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     unmap_page_range",
+      "1.07%     0.01%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c4bea4]",
+      "1.07%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c85e38]",
+      "1.04%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1ca22c0]",
+      "1.01%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c4ba30]",
+      "0.97%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c4c0b4]",
+      "0.92%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c97398]",
+      "0.84%     0.84%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c97df4]",
+      "0.76%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1cb3e2c]"
+    ]
+  }
+}

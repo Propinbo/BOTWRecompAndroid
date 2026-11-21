@@ -1,0 +1,128 @@
+Cmdline: /system/bin/simpleperf record -p 4554 -f 4000 -g --duration 6 -o /data/local/tmp/_n60_rp_sp.data
+Arch: arm64
+Event: cpu-cycles (type 0, config 0x0, config1 0x0, config2: 0x0)
+Samples: 14674
+Event count: 8183107889
+
+Children  Self   Shared Object                                                                                              Symbol
+99.99%    0.02%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  render_main
+99.99%    0.00%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             __pthread_start(void*) (.__uniq.67847048707805468364044055584648682506)
+99.99%    0.00%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             __start_thread
+93.64%    0.00%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_execute_now
+93.11%    2.95%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  exec_list
+79.23%    8.19%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  draw_
+35.78%    6.33%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   stdlibp_neon_f32x16_to_f16x16
+23.24%    9.90%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  stage_set
+11.99%    0.24%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  begin_pass
+11.21%    0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c4c0d4]
+9.62%     9.57%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             __memmove_aarch64_simd
+7.72%     3.74%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  guest_copy
+6.84%     0.00%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     el0t_64_sync
+6.84%     0.00%  [kernel.kallsyms]                                                                                          el0t_64_sync_handler
+6.71%     0.00%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     do_el0_svc
+6.71%     0.00%  [kernel.kallsyms]                                                                                          el0_svc
+6.64%     0.03%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     invoke_syscall
+5.88%     2.11%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  texture_info
+5.50%     0.02%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_submit_extra
+4.71%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1ca2314]
+4.67%     0.66%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  gcopy_prepare
+4.46%     0.03%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c85be0]
+3.95%     3.95%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             __memcmp_aarch64
+3.89%     0.22%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_begin_rendering
+3.81%     1.72%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  stage_fill_soft_linear
+3.81%     0.10%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  gres_sync
+3.45%     3.29%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vcache_lookup
+3.44%     0.18%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_view
+3.30%     0.01%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_present_now
+3.12%     0.20%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  sub
+3.06%     0.49%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vc_flush
+3.05%     0.05%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_cmd
+2.98%     0.01%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  clear
+2.96%     0.00%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             scudo::Allocator<scudo::AndroidNormalConfig, &scudo_malloc_postinit>::quarantineOrDeallocateChunk(scudo::Options const&, void*, scudo::Chunk::UnpackedHeader*, unsigned long)
+2.96%     0.01%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             scudo::Allocator<scudo::AndroidNormalConfig, &scudo_malloc_postinit>::deallocate(void*, scudo::Chunk::Origin, unsigned long, unsigned long)
+2.85%     0.00%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             scudo::MapAllocator<scudo::SecondaryConfig<scudo::AndroidNormalConfig>>::deallocate(scudo::Options const&, void*)
+2.84%     0.00%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             munmap
+2.84%     0.00%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             scudo::MemMapLinux::unmapImpl(unsigned long, unsigned long)
+2.84%     0.00%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     __arm64_sys_munmap
+2.84%     0.01%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     do_vmi_align_munmap
+2.41%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1ca24ec]
+2.34%     0.27%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  plat_written_pages
+2.30%     0.05%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_tex
+2.24%     0.00%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_frame_end
+1.97%     0.88%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  upload_texture_impl
+1.94%     0.00%  /system/lib64/libvulkan.so                                                                                 vulkan::driver::QueuePresentKHR(VkQueue_T*, VkPresentInfoKHR const*)
+1.81%     1.59%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_sampled_format
+1.80%     0.00%  /system/lib64/libgui.so                                                                                    android::Surface::hook_queueBuffer(ANativeWindow*, ANativeWindowBuffer*, int)
+1.79%     0.04%  /system/lib64/libgui.so                                                                                    android::Surface::queueBuffer(android::sp<android::GraphicBuffer>&&, int, android::SurfaceQueueBufferOutput*)
+1.66%     1.65%  [kernel.kallsyms]                                                                                          _raw_spin_unlock_irqrestore
+1.60%     0.01%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     tlb_finish_mmu
+1.59%     0.03%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     free_pages_and_swap_cache
+1.59%     0.01%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1ca2320]
+1.55%     0.03%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     release_pages
+1.44%     0.02%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_alloc_set
+1.34%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c49108]
+1.33%     0.05%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_end_pass_at
+1.28%     0.01%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c99db0]
+1.27%     0.00%  /system/lib64/libgui.so                                                                                    android::BufferQueueProducer::queueBuffer(int, android::IGraphicBufferProducer::QueueBufferInput const&, android::IGraphicBufferProducer::QueueBufferOutput*)
+1.25%     0.01%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             mprotect
+1.22%     0.01%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1ca2cc0]
+1.16%     0.04%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     __arm64_sys_mprotect
+1.14%     0.01%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     unmap_vmas
+1.13%     0.01%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     folios_put_refs
+1.12%     0.77%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     unmap_page_range
+1.09%     0.01%  /system/lib64/libgui.so                                                                                    android::BLASTBufferQueue::onFrameAvailable(android::BufferItem const&)
+1.09%     0.00%  /system/lib64/libgui.so                                                                                    android::BufferQueue::ProxyConsumerListener::onFrameAvailable(android::BufferItem const&)
+1.09%     0.00%  /system/lib64/libgui.so                                                                                    android::ConsumerBase::onFrameAvailable(android::BufferItem const&)
+1.08%     0.13%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     free_unref_folios
+1.07%     0.01%  /system/lib64/libgui.so                                                                                    android::BLASTBufferQueue::acquireNextBufferLocked(std::__1::optional<android::SurfaceComposerClient::Transaction*>)
+1.07%     0.01%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c4bea4]
+1.07%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c85e38]
+1.05%     0.09%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_pages_changed
+1.04%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1ca22c0]
+1.04%     0.01%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             ioctl
+1.04%     0.02%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             __ioctl
+1.01%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c4ba30]
+1.01%     0.68%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  get_program
+1.00%     0.00%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     __arm64_sys_ioctl
+0.99%     0.00%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_frame_begin
+0.98%     0.97%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             __memset_aarch64
+0.98%     0.00%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_wait_seq
+0.97%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c4c0b4]
+0.95%     0.95%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_image_view
+0.95%     0.01%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             write
+0.92%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c97398]
+0.91%     0.06%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     free_unref_page_commit
+0.88%     0.01%  [kernel.kallsyms]                                                                                          __arm64_sys_write
+0.88%     0.04%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     ksys_write
+0.84%     0.84%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c97df4]
+0.82%     0.03%  /system/lib64/libgui.so                                                                                    android::SurfaceComposerClient::Transaction::apply(bool, bool)
+0.82%     0.23%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  apply_scissor
+0.76%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1cb3e2c]
+0.76%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1cb88cc]
+0.76%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1cb8a4c]
+0.76%     0.01%  /system/lib64/libgui.so                                                                                    android::BpSurfaceComposer::setTransactionState(android::TransactionState&&, android::sp<android::IBinder> const&)
+0.76%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1dd7058]
+0.76%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c9ea6c]
+0.74%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1ca2d64]
+0.74%     0.01%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c46b28]
+0.74%     0.05%  /vendor/lib/modules/wlan_drv_gen4m_6991_6639_tc10sp.ko                                                     vma_merge
+0.74%     0.74%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  tex_backend
+0.74%     0.74%  [kernel.kallsyms]                                                                                          _raw_spin_unlock_irq
+0.73%     0.73%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  hash_words
+0.71%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c571bc]
+0.69%     0.69%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  __aarch64_swp1_acq
+0.68%     0.68%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c974fc]
+0.66%     0.01%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1ca0fc0]
+0.64%     0.04%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_end_rendering
+0.61%     0.30%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             void llvmlibc::internal::quick_sort_impl<llvmlibc::internal::ArrayFixedSize<4ul>, llvmlibc::__qsort_impl__(void*, unsigned long, unsigned long, int (*)(void const*, void const*))::$_0>(llvmlibc::internal::ArrayFixedSize<4ul>&, void const*, unsigned long, llvmlibc::__qsort_impl__(void*, unsigned long, unsigned long, int (*)(void const*, void const*))::$_0 const&) (.__uniq.276965077389778359831294773160616482663)
+0.61%     0.00%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             llvmlibc::qsort(void*, unsigned long, unsigned long, int (*)(void const*, void const*))
+0.59%     0.59%  /apex/com.android.runtime/lib64/bionic/libc.so                                                             pthread_mutex_unlock
+0.59%     0.46%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  renderer_present_count
+0.58%     0.37%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  scissor_rect
+0.56%     0.01%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1ca2638]
+0.56%     0.00%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c4d14c]
+0.56%     0.01%  /data/app/~~bNjf-VG7vmE3tAW0Ex-NPA==/com.botwrecomp.android-LbUfJCcNBIgTIuDh0VT4fQ==/lib/arm64/libmain.so  vk_upload_cmd
+0.52%     0.01%  /system/lib64/libvulkan.so                                                                                 vulkan::driver::AcquireNextImageKHR(VkDevice_T*, VkSwapchainKHR_T*, unsigned long, VkSemaphore_T*, VkFence_T*, unsigned int*)
+0.51%     0.51%  /vendor/lib64/egl/mt6991/libGLES_mali.so                                                                   libGLES_mali.so[+1c4b988]
+0.50%     0.01%  /system/lib64/libbinder.so                                                                                 android::IPCThreadState::transact(int, unsigned int, android::Parcel const&, android::Parcel*, unsigned int)
+0.50%     0.00%  /system/lib64/libbinder.so                                                                                 android::BpBinder::transact(unsigned int, android::Parcel const&, android::Parcel*, unsigned int)
