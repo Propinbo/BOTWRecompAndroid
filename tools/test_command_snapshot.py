@@ -35,6 +35,7 @@ static unsigned recorded, large_rec_count;
 static size_t large_rec_bytes;
 static uint64_t reent_handle;
 static CmdRec *rec(Cpu *c, NvnCmdBuf *cb, uint32_t op, uint32_t extra);
+static void copy_snapshot_to_cb(Cpu *c, NvnCmdBuf *cb, const uint8_t *snapshot, size_t used);
 '''
 suffix = r'''
 static CmdRec *rec(Cpu *c, NvnCmdBuf *cb, uint32_t op, uint32_t extra) {
@@ -59,6 +60,15 @@ static CmdRec *rec(Cpu *c, NvnCmdBuf *cb, uint32_t op, uint32_t extra) {
         copy_lists(c, cb, 1, &h);
     }
     return slot;
+}
+static void copy_snapshot_to_cb(Cpu *c, NvnCmdBuf *cb, const uint8_t *snapshot, size_t used) {
+    for (size_t offset = 0; offset < used;) {
+        const CmdRec *r = (const CmdRec *)(snapshot + offset);
+        uint32_t size = r->size;
+        CmdRec *d = rec(c, cb, r->op, size - (uint32_t)sizeof(CmdRec));
+        memcpy(d, r, size);
+        offset += size;
+    }
 }
 static void item(CmdRec *r, unsigned value) {
     *r = (CmdRec){.op=CMD_TEST, .size=sizeof(CmdRec)}; r->x[0]=value;
