@@ -589,7 +589,9 @@ void vk_pace_frame(void) {
         static int adpf_budget_fix = -1;
         if (adpf_budget_fix < 0) {
             const char *fe = getenv("LARECOMP_ADPF_BUDGET_FIX");
-            adpf_budget_fix = !fe || atoi(fe) != 0;
+            // Opt-in (=1): lowering from 16.67 ms to 18.75 ms before android.c's 20% margin yields 15.0 ms,
+            // which collapses MediaTek ADPF uclamp_min from ~350 to 0 when Thread-5 takes ~14.1-14.8 ms.
+            adpf_budget_fix = fe && atoi(fe) != 0;
         }
         uint64_t budget = mode == 3 ? 37500000ull  // (Frame rate 20: 20 fps's, three quarters)
                           : (follow && pace_slow) || fixed30 ? 25000000ull : 16666667ull;
