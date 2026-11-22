@@ -109,6 +109,7 @@ void plat_adpf_stats(PlatAdpfStats *out);
 // A new thread back on every core: threads inherit the creating thread's affinity, and the presenting thread is
 // pinned to the fastest cores (platform/android.c)
 void plat_thread_unpin(void);
+void plat_guest_thread_affinity(void);
 #endif
 #endif
 
