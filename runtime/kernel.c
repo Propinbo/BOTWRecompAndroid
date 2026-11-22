@@ -71,7 +71,11 @@ static void wake(KThread *t) { pthread_cond_signal(&t->cond); }
 void kernel_signal(KObject *o) {
     // caller holds g_klock
     o->signaled = true;
-    for (KThread *t = g_syncwaiters; t; t = t->snext) wake(t);
+    for (KThread *t = g_syncwaiters; t; t = t->snext) {
+        if (t->sync_overflow) { wake(t); continue; }
+        for (int i = 0; i < t->sync_nobjs; i++)
+            if (t->sync_objs[i] == o) { wake(t); break; }
+    }
 }
 
 // ------------------------------------------------------------------ time
@@ -120,14 +124,22 @@ static void nothread_cond_init(void) { kcond_init(&g_nothread_cond); }
 // takes the presenting thread's: a frame's busy time is its period minus this.
 __thread uint64_t g_blocked_ns;
 
+static void add_blocked_ns(KThread *t, uint64_t dt) {
+    if (t) t->blocked_ns += dt;
+    else g_blocked_ns += dt;
+}
+
+uint64_t kernel_blocked_ns(void) { return g_blocked_ns + (t_cur ? t_cur->blocked_ns : 0); }
+
 static bool kwait(int64_t timeout_ns, const struct timespec *ts) {
-    if (!t_cur) pthread_once(&g_nothread_once, nothread_cond_init);
-    pthread_cond_t *cv = t_cur ? &t_cur->cond : &g_nothread_cond;
+    KThread *t = t_cur;
+    if (!t) pthread_once(&g_nothread_once, nothread_cond_init);
+    pthread_cond_t *cv = t ? &t->cond : &g_nothread_cond;
     uint64_t t0 = plat_now_ns();
     bool r = true;
     if (timeout_ns < 0) pthread_cond_wait(cv, &g_klock);
     else r = pthread_cond_timedwait(cv, &g_klock, ts) == 0;
-    g_blocked_ns += plat_now_ns() - t0;
+    add_blocked_ns(t, plat_now_ns() - t0);
     return r;
 }
 
@@ -241,7 +253,10 @@ static struct { KThread *head, *tail, *holder; uint64_t since; } cq[4];  // (c0_
 #define c0_holder cq[0].holder  // (c0_m) the thread that has core 0, since c0_since
 #define c0_since cq[0].since
 static int c0_on = -1;
+static bool c0_ready;
 static unsigned core_locks = 1;  // the cores whose threads take turns (bit n: core n)
+bool g_core_turns_past0;
+static int cq_nwaiters[4];
 
 // Telemetry (c0_m; issue #41: how much of a frame goes to waiting for core 0, against a slow clock): every 30 s one log
 // line - how often core 0 changed hands, the waits for it (total, longest) and how much of the time it was held.
@@ -303,6 +318,8 @@ static void core0_init(void) {
         pthread_create(&th, NULL, core0_slicer, NULL);
         pthread_detach(th);
     }
+    __atomic_store_n(&g_core_turns_past0, c0_on && (core_locks & ~1u) != 0, __ATOMIC_RELEASE);
+    __atomic_store_n(&c0_ready, true, __ATOMIC_RELEASE);
 }
 // Give up the turn t holds (caller holds c0_m)
 static void core_drop(KThread *t) {
@@ -313,11 +330,16 @@ static void core_drop(KThread *t) {
         if (!k) c0_held_until(plat_now_ns());
         cq[k].holder = NULL;
     }
-    pthread_cond_broadcast(&c0_cv);
+    if (cq[k].head) pthread_cond_broadcast(&c0_cv);
 }
 static void core0_acquire(KThread *t) {
-    pthread_once(&c0_once, core0_init);
-    if (!t || !c0_on) return;
+    if (!t) return;
+    if (!__atomic_load_n(&c0_ready, __ATOMIC_ACQUIRE)) pthread_once(&c0_once, core0_init);
+    if (!c0_on) return;
+    int core0 = __atomic_load_n(&t->core, __ATOMIC_ACQUIRE);
+    if (!t->core0_held && !__atomic_load_n(&t->core0_evicted, __ATOMIC_ACQUIRE) &&
+        (core0 < 0 || core0 > 3 || !(core_locks & (1u << core0))))
+        return;
     pthread_mutex_lock(&c0_m);
     if (t->core0_evicted) {
         __atomic_store_n(&t->core0_evicted, false, __ATOMIC_RELEASE);
@@ -334,18 +356,31 @@ static void core0_acquire(KThread *t) {
             if (t->lock_core == core) break;
             core_drop(t);  // (moved to another core: that core's turn now)
         }
+        if (!cq[core].holder && !cq[core].head && !g_rt_unwind) {
+            uint64_t now = plat_now_ns();
+            if (!core) {
+                c0_stat.takes++;
+                c0_stat_log(now);
+            }
+            t->core0_held = true;
+            t->lock_core = core;
+            cq[core].holder = t;
+            cq[core].since = now;
+            break;
+        }
         // A removable queue lets SetThreadCoreMask move a waiter to another core without waiting for the current
         // owner to yield (that owner may itself be spinning for this worker).
         t->core0_next = NULL;
         if (cq[core].tail) cq[core].tail->core0_next = t;
         else cq[core].head = t;
         cq[core].tail = t;
+        __atomic_fetch_add(&cq_nwaiters[core], 1, __ATOMIC_RELEASE);
         uint64_t t0 = plat_now_ns();
         while ((cq[core].holder || cq[core].head != t) && __atomic_load_n(&t->core, __ATOMIC_ACQUIRE) == core &&
                !g_rt_unwind)
             pthread_cond_wait(&c0_cv, &c0_m);
         uint64_t now = plat_now_ns(), w = now - t0;
-        g_blocked_ns += w;
+        add_blocked_ns(t, w);
         if (!core) {
             c0_stat.takes++, c0_stat.waited += w;
             if (w > c0_stat.longest) c0_stat.longest = w;
@@ -356,6 +391,7 @@ static void core0_acquire(KThread *t) {
         *p = t->core0_next;
         if (cq[core].tail == t) cq[core].tail = prev;
         t->core0_next = NULL;
+        __atomic_fetch_sub(&cq_nwaiters[core], 1, __ATOMIC_RELEASE);
         if (g_rt_unwind) {
             pthread_cond_broadcast(&c0_cv);
             break;
@@ -381,6 +417,7 @@ void kernel_preempt_point(void) {
 
 static void core0_release(KThread *t) {
     if (!t) return;
+    if (!t->core0_held && !__atomic_load_n(&t->core0_evicted, __ATOMIC_ACQUIRE)) return;
     pthread_mutex_lock(&c0_m);
     if (t->core0_evicted) {
         __atomic_store_n(&t->core0_evicted, false, __ATOMIC_RELEASE);
@@ -402,35 +439,55 @@ static bool svc_blocks(uint32_t imm) {
 // (the wait counts as blocked, as a kernel wait: the frame pacer measures the presenting thread's own work)
 // Nested pairs count: only the outermost hands core 0 on and takes it back (vulkan/async.c's waits run inside
 // objects.c's GPU waits - taking core 0 back at the inner end would hold it through the rest of the outer wait).
-static __thread uint64_t blocking_t0;
-static __thread int blocking_depth;
-// With LARECOMP_CORE_LOCKS past core 0, a wait that ends inside a host function (native.c native_hle_c) takes the
-// core's turn back only when that function returns to the game's code: the host code may still hold its own locks
-// there (the first try, 2026-11-20: a core-1 thread back from push's queue-full wait waited for core 1's turn while
-// holding a lock that core 1's holder, t87 in an NVN call, waited for - the game stopped at frame 59). The lifted
-// game reaches host functions through rt_dispatch, not native_hle_c (dispatch.c hle_counted wraps those calls;
-// the second try, without it, stopped at frame 60 the same way: t82 back from push with p_lock, t87 in
-// vk_async_call waiting for p_lock while holding core 1's turn).
-static __thread int hle_depth;
-static __thread bool turn_owed;
-bool kernel_turns_past_core0(void) { return (core_locks & ~1u) != 0; }
-void kernel_hle_enter(void) { hle_depth++; }
-void kernel_hle_leave(void) {
-    if (--hle_depth > 0 || !turn_owed) return;
-    turn_owed = false;
-    core0_acquire(t_cur);
+static __thread uint64_t g_tls_blocking_t0;
+static __thread int g_tls_blocking_depth;
+static __thread int g_tls_hle_depth;
+static __thread bool g_tls_turn_owed;
+bool kernel_turns_past_core0(void) {
+    if (!__atomic_load_n(&c0_ready, __ATOMIC_ACQUIRE)) pthread_once(&c0_once, core0_init);
+    return __atomic_load_n(&g_core_turns_past0, __ATOMIC_RELAXED);
 }
+void kernel_hle_enter_t(KThread *t) {
+    if (!__atomic_load_n(&g_core_turns_past0, __ATOMIC_RELAXED)) return;
+    if (t) t->hle_depth++;
+    else g_tls_hle_depth++;
+}
+void kernel_hle_leave_t(KThread *t) {
+    if (!__atomic_load_n(&g_core_turns_past0, __ATOMIC_RELAXED)) return;
+    if (t) {
+        if (--t->hle_depth > 0 || !t->turn_owed) return;
+        t->turn_owed = false;
+        core0_acquire(t);
+    } else {
+        if (--g_tls_hle_depth > 0 || !g_tls_turn_owed) return;
+        g_tls_turn_owed = false;
+        core0_acquire(t_cur);
+    }
+}
+void kernel_hle_enter(void) { kernel_hle_enter_t(t_cur); }
+void kernel_hle_leave(void) { kernel_hle_leave_t(t_cur); }
 void kernel_blocking_begin(void) {
-    if (blocking_depth++) return;
-    blocking_t0 = plat_now_ns();
-    core0_release(t_cur);
+    KThread *t = t_cur;
+    int *bd = t ? &t->blocking_depth : &g_tls_blocking_depth;
+    if ((*bd)++) return;
+    uint64_t *bt0 = t ? &t->blocking_t0 : &g_tls_blocking_t0;
+    *bt0 = plat_now_ns();
+    core0_release(t);
 }
 void kernel_blocking_end(void) {
-    if (blocking_depth <= 0 || --blocking_depth) return;
-    if (hle_depth > 0 && (core_locks & ~1u)) turn_owed = true;
-    else core0_acquire(t_cur);
-    if (blocking_t0) g_blocked_ns += plat_now_ns() - blocking_t0;
-    blocking_t0 = 0;
+    KThread *t = t_cur;
+    int *bd = t ? &t->blocking_depth : &g_tls_blocking_depth;
+    if (*bd <= 0 || --(*bd)) return;
+    int hd = t ? t->hle_depth : g_tls_hle_depth;
+    if (hd > 0 && __atomic_load_n(&g_core_turns_past0, __ATOMIC_RELAXED)) {
+        if (t) t->turn_owed = true;
+        else g_tls_turn_owed = true;
+    } else {
+        core0_acquire(t);
+    }
+    uint64_t *bt0 = t ? &t->blocking_t0 : &g_tls_blocking_t0;
+    if (*bt0) add_blocked_ns(t, plat_now_ns() - *bt0);
+    *bt0 = 0;
 }
 
 // ---- for the freeze watchdog (vulkan/watchdog.c): who has core 0, and where it is.
@@ -937,6 +994,9 @@ static uint32_t svc_wait_synchronization(uint64_t handles_ptr, int32_t count, in
         if (t->cancel) { t->cancel = false; r = R_CANCELLED; goto out; }
         if (g_rt_unwind) { r = R_CANCELLED; goto out; }
         if (timeout == 0) { r = R_TIMEOUT; goto out; }
+        t->sync_nobjs = count < 8 ? count : 8;
+        t->sync_overflow = count > 8;
+        for (int i = 0; i < t->sync_nobjs; i++) t->sync_objs[i] = handle_get(hs[i]);
         t->in_sync_wait = true;
         t->snext = g_syncwaiters;
         g_syncwaiters = t;
@@ -944,6 +1004,8 @@ static uint32_t svc_wait_synchronization(uint64_t handles_ptr, int32_t count, in
         for (KThread **p = &g_syncwaiters; *p; p = &(*p)->snext)
             if (*p == t) { *p = t->snext; break; }
         t->in_sync_wait = false;
+        t->sync_nobjs = 0;
+        t->sync_overflow = false;
         if (!ok) { r = R_TIMEOUT; goto out; }
     }
 out:
@@ -982,7 +1044,7 @@ void kernel_log_threads(uint64_t svc_ns) {
 #else
         const char *c0 = "";
 #endif
-        if (n && now - t->svc_since > svc_ns)
+        if (n && t->svc_since && now - t->svc_since > svc_ns)
             LOG("[watchdog]  t%llu prio %d core %d: svc %02x for %.1f s (%llx, %llx, %llx, %llx) from %llx; wait kind %d addr %llx%s\n",
                 (unsigned long long)t->id, t->prio, __atomic_load_n(&t->core, __ATOMIC_RELAXED), n - 1,
                 (now - t->svc_since) / 1e9, (unsigned long long)t->svc_args[0], (unsigned long long)t->svc_args[1],
@@ -1033,24 +1095,71 @@ static void test_crash(void) {
     *(volatile uint32_t *)(uintptr_t)0 = 0;
 }
 
+#ifdef __ANDROID__
+static int svc_ab_yield(void) {
+    extern __attribute__((weak)) int vk_ab(const char *what);
+    return vk_ab ? vk_ab("yield") : -1;
+}
+
+static bool svc_host_yield_skipped(bool c0) {
+    static int host_yield = -1;
+    if (host_yield < 0) {
+        const char *e = getenv("LARECOMP_HOST_YIELD");
+        host_yield = e ? atoi(e) : 0;
+    }
+    int ab = svc_ab_yield();
+    return ab >= 0 ? ab == 1 : host_yield == 0 || (host_yield == 2 && !c0);
+}
+#endif
+
 void rt_svc(Cpu *c, uint32_t imm, uint64_t pc) {
     rt_unwind_point();
     test_crash();
-    KThread *me = t_cur;
+    KThread *me = (c && c->thread) ? (KThread *)c->thread : t_cur;
+#ifdef __ANDROID__
+    if (imm == 0x0B && (int64_t)c->x[0] <= 0 && me) {
+        if (prof_svc < 0) prof_svc = ENV("LARECOMP_PROF_SVC") != NULL;
+        if (trace_svc < 0) trace_svc = getenv("LARECOMP_TRACE_SVC") != NULL;
+        static int no_fast_yield = -1;
+        if (no_fast_yield < 0) no_fast_yield = ENV("LARECOMP_NO_FAST_YIELD") != NULL;
+        if (!prof_svc && !trace_svc && !no_fast_yield &&
+            __atomic_load_n(&c0_ready, __ATOMIC_ACQUIRE) && !g_rt_unwind) {
+            int k = __atomic_load_n(&me->core, __ATOMIC_ACQUIRE);
+            if (!__atomic_load_n(&me->core0_evicted, __ATOMIC_ACQUIRE) &&
+                svc_host_yield_skipped(k == 0)) {
+                bool locked = c0_on && k >= 0 && k <= 3 && (core_locks & (1u << k));
+                if (locked
+                        ? (me->core0_held && me->lock_core == k &&
+                           __atomic_load_n(&cq_nwaiters[k], __ATOMIC_ACQUIRE) == 0)
+                        : !me->core0_held) {
+                    return;
+                }
+            }
+        }
+    }
+#endif
+    bool blocks = false;
+#ifdef __ANDROID__
+    blocks = svc_blocks(imm);
+    if (me) {
+        me->svc_since = blocks ? plat_now_ns() : 0;
+        for (int i = 0; i < 4; i++) me->svc_args[i] = c->x[i];
+        me->svc_lr = c->x[30];
+        me->svc_now = imm + 1;
+    }
+    kernel_preempt_point();
+    if (blocks) core0_release(me);
+    svc_entry(c, imm, pc);
+    if (blocks) core0_acquire(me);
+    kernel_preempt_point();
+#else
+    (void)blocks;
     if (me) {
         me->svc_since = plat_now_ns();
         for (int i = 0; i < 4; i++) me->svc_args[i] = c->x[i];
         me->svc_lr = c->x[30];
         me->svc_now = imm + 1;
     }
-#ifdef __ANDROID__
-    kernel_preempt_point();
-    bool blocks = svc_blocks(imm);
-    if (blocks) core0_release(t_cur);
-    svc_entry(c, imm, pc);
-    if (blocks) core0_acquire(t_cur);
-    kernel_preempt_point();
-#else
     svc_entry(c, imm, pc);
 #endif
     if (me) me->svc_now = 0;
@@ -1200,12 +1309,8 @@ static void svc_impl(Cpu *c, uint32_t imm, uint64_t pc) {
             // +14% with core 0's too, whose yield still hands the core on: its queue, svc_blocks).
             // LARECOMP_HOST_YIELD=1: the host's yield as before; =2: skipped off core 0 only. LARECOMP_AB=<n>:yield.
 #ifdef __ANDROID__
-            static int host_yield = -1;
-            if (host_yield < 0) host_yield = getenv("LARECOMP_HOST_YIELD") ? atoi(getenv("LARECOMP_HOST_YIELD")) : 0;
-            extern int vk_ab(const char *what);
-            int ab = vk_ab("yield");
             bool c0 = t_cur && __atomic_load_n(&t_cur->core, __ATOMIC_ACQUIRE) == 0;
-            if (ab >= 0 ? ab == 1 : host_yield == 0 || (host_yield == 2 && !c0)) break;
+            if (svc_host_yield_skipped(c0)) break;
 #endif
             sched_yield();
             break;
@@ -1214,7 +1319,7 @@ static void svc_impl(Cpu *c, uint32_t imm, uint64_t pc) {
             uint64_t d = end - now < 50000000 ? end - now : 50000000;
             struct timespec ts = {(time_t)(d / 1000000000), (long)(d % 1000000000)};
             nanosleep(&ts, NULL);
-            g_blocked_ns += plat_now_ns() - now;
+            add_blocked_ns(t_cur, plat_now_ns() - now);
         }
         break;
     }
@@ -1483,6 +1588,7 @@ void kernel_reset(void) {
 #ifdef __ANDROID__
     pthread_mutex_lock(&c0_m);
     memset(cq, 0, sizeof cq);
+    for (int i = 0; i < 4; i++) __atomic_store_n(&cq_nwaiters[i], 0, __ATOMIC_RELAXED);
     c0_nevicted = 0;
     __atomic_fetch_and(&g_fnprof, ~2, __ATOMIC_SEQ_CST);
     pthread_mutex_unlock(&c0_m);
@@ -1510,6 +1616,7 @@ void kernel_reset(void) {
 void kernel_init(void) {
     watchdog_start();
 #ifdef __ANDROID__
+    pthread_once(&c0_once, core0_init);
     tls_next = TLS_BASE;
 #endif
     // Reserve the heap, alias, stack, and TLS regions.
