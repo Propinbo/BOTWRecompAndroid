@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-18 to 2026-11-22). Query sele
 
 ## Table of Contents
 
+- [2026-11-22] v0411-beta-mali-rollout — Consolidated `v0.4.11-beta-mali` Build, Isolated SM-X730 3-Pass Verification & Device Rollout (COMPLETE)
 - [2026-11-22] narrow-shadow-539 — Narrow-Landscape Vert+ Shadow Fix (#539) & Upstream PR #543 (OPEN)
 - [2026-11-22] op13-turnip-opt-and-release-0410-op13 — OnePlus 13 (`CPH2653` / Turnip V38) Fullscreen Display Tuning, Mali Parity Audit, CPU Hotpath Opts & `v0.4.10-beta-op13` Rollout (COMPLETE)
 - [2026-11-21] pr537-descriptor-plan-and-release-0410 — PR #537 Dynamic UBO Plan Fix & Consolidated `v0.4.10-beta-mali` Rollout (COMPLETE)
@@ -20,6 +21,21 @@ Active indexed English engineering ledger (2026-11-18 to 2026-11-22). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-17)
 
 ---
+
+## [2026-11-22] v0411-beta-mali-rollout — Consolidated `v0.4.11-beta-mali` Build, Isolated SM-X730 3-Pass Verification & Device Rollout (COMPLETE)
+
+- **Branch, Baseline & Stack (`.mali/worktrees/mali-release-0411`, `release/mali-0.4.11-beta` @ `1a836dda5cf724e460f1cde65b0ac2a7e8d06d7a`):**
+  - Stacked all 6 open Mali PR commits cleanly onto `upstream/main` (`75bfc64c`, which already contains `v0.4.11-beta` `afd7b842` / `versionCode 50`, `#520` OOM retry `2d82502`, `#511/#521` gyro axes `f72bf98`, and merged `#507` `2e36682`): `#534` (`4d37c0a`), `#531` (`31d2105`), `#529` (`99fefad`, resolved `exec.c` conflict around `build_pipeline_ex` by keeping `2d82502`'s OOM retry and guarding `LARECOMP_PIPE_FAIL_OOM` under `if (!cache_only)`), `#518` (`82ef80d`), `#537` (`2447f5e`), and `#543` (`1a836dd`). Kept `GAMELIB_ID`, `tools/patches.py`, and `.gitignore` untouched; pushed `origin/release/mali-0.4.11-beta`.
+- **Host, Bionic & Release APK Checks (`1a836dd`):**
+  - Host suites (`python -B`): `test_fullscreen_narrow.py --wsl` (+ `--negative-control mangle` & `copy_dedup`), `test_descriptor_plan.py` (`31040`), `test_soft_linear.py` (`23+3+203`), `test_vulkan_compat.py` (`16`), `test_vulkan_startup.py` (`33`), `test_shader_cache.py` (`17`), `test_gpu_timing_trace.py` (`8`), `test_pipeline_cache_save.py`, `test_workspace160_guard.py`, `test_command_snapshot.py` — all `PASS`.
+  - Android Bionic (`SM-X730`): `test_android_runtime.ps1` `12/12 PASS` + standalone (`test_shader_meta_cache`, `test_dyn_vertex_input`, `test_pipeline_prewarm`) `3/3 PASS`.
+  - Built & archived `.mali/apk/v0.4.11-beta-mali/BOTWRecompAndroid-0.4.11-beta-mali-release.apk` (`SHA-256: 68a6f611d0ca86e96a5698b93e8477c8d32ff527391543a9a3d976a513ba8666`, cert `60fa2a5f...`, matching installed `v0.4.10-beta-mali`).
+- **Isolated 3-Pass `SM-X730` Verification & Post-Flight Audit (`Mali-G925 r49p1`, BOTW `1.9.0`, pure UI `75% SGSR1` + `shadows=1` + `inplace_reads=1`):**
+  - Installed via `adb install -r`; verified all 5 startup/runtime paths, clean reboots (`440/838/16`, `403/704/14` `0 kept`), warm-cache fastpath (`148/362`, `123/239`, `234/344`), `0` errors, and crisp `zora-plaza`/`kakariko-day` PNGs.
+  - **Pass 1 (`cap30`, `SKIN 33.5 -> 39.0 C TS=0`):** `plateau 30.00` (`1% low 29.49`, `gpu p50 27.500`, `rnd p50 15.711 ms`), `zora-plaza 30.00` (`1% low 29.23`, `gpu p50 27.744`, `rnd p50 15.862 ms`), `kakariko-day 30.00` (`1% low 29.43`, `gpu p50 27.676`, `rnd p50 17.486 ms`).
+  - **Pass 2 (`40 FPS` steady warmup, `frames.csv`, `skip_head_s=5.0`, `SKIN 36.5 -> 43.0 C TS=2`):** `plateau` (`601`f) `40.00 fps` (`low1 39.22`, `rnd p50 14.497`, `gpu p50 19.563 ms`), `zora-plaza` (`602`f) `40.00 fps` (`low1 39.14`, `rnd p50 14.813`, `gpu p50 22.001 ms`), `kakariko-day` (`601`f) `40.00 fps` (`low1 37.79`, `rnd p50 15.244`, `gpu p50 23.046 ms`).
+  - **Pass 3 (`16:10` Vert+ downward-pitch shadows):** `frame_01260.png` `top_10_30 = 126.52`, `mid_30_55 = 123.12`, `low_55_80 = 120.00`, `frame_01340.png` `top_10_30 = 126.95`, uniformly sunlit terrain confirmed visually.
+  - **Post-Flight (`.mali/apk/v0.4.11-beta-mali/install-verification.txt`):** App stopped (`pid=''`), `versionCode=50`, `CLEAN_SCRATCH`, `saves=68/68` (`0` diffs, `log_file = 1` intact), `prefs=4/5`, `spirv=12973`, `vk_pipelines=c008b3285d18...`.
 
 ## [2026-11-22] narrow-shadow-539 — Narrow-Landscape Vert+ Shadow Fix (#539) & Upstream PR #543 (OPEN)
 
