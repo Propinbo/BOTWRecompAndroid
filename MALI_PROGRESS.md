@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-18 to 2026-11-22). Query sele
 
 ## Table of Contents
 
+- [2026-11-22] pr518-rebase-and-review-fixes — PR #518 Rebase onto `v0.4.11-beta` (`75bfc64c`), ROAA & Review Fixes, and SM-X730 FX Verification (COMPLETE)
 - [2026-11-22] pr529-rebase-and-pr518-review-triage — PR #529 Rebase onto `v0.4.11-beta` (`75bfc64c`) & PR #518 Review Triage (COMPLETE)
 - [2026-11-22] v0411-beta-mali-rollout — Consolidated `v0.4.11-beta-mali` Build, Isolated SM-X730 3-Pass Verification & Device Rollout (COMPLETE)
 - [2026-11-22] narrow-shadow-539 — Narrow-Landscape Vert+ Shadow Fix (#539) & Upstream PR #543 (OPEN)
@@ -22,6 +23,25 @@ Active indexed English engineering ledger (2026-11-18 to 2026-11-22). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-17)
 
 ---
+
+## [2026-11-22] pr518-rebase-and-review-fixes — PR #518 Rebase onto `v0.4.11-beta` (`75bfc64c`), ROAA & Review Fixes, and SM-X730 FX Verification (COMPLETE)
+
+- **Branch, Rebase & Maintainer Review Fixes (`.mali/worktrees/tile-local-read`, `feat/vk-local-read` @ `6bb6c668f85fcd4dfcd7defe592dc73c8f9b4c01`):**
+  - Rebased cleanly onto `upstream/main` (`75bfc64c59c2a8f218196fc67528c6e91b5dfd6c`, `0` conflicts, `1` commit, `17` files) and resolved all 5 points of `mamcjr`'s `2026-11-22T08:05:14Z` review:
+    1. Backward-compatible `pw_id.key_h`: `compile_program_from_spirv()` hashes the 88-byte `ShaderKey` prefix (`offsetof(ShaderKey, local_read_slot) == 88`, `_Static_assert` + `sizeof == 104`) when `local_read_slot[0] == 0`; `prewarm_vk_flags()` adds bit `32` (`local_read`) and bit `64` (`raster_order_color`).
+    2. Self-writing local-read draws: enabled `VK_EXT_rasterization_order_attachment_access` (`g_vk.raster_order_color`, `LARECOMP_NO_RASTER_ORDER=1` rollback) in `device.c`, set `VK_PIPELINE_COLOR_BLEND_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_BIT_EXT` only on `!pi.renderPass` self-writing pipelines (`vk_local_read_self_write_mask`) in `exec.c`, and cleanly excluded self-writers in `stage_fill_local_read()` / runtime checks when ROAA is off.
+    3. Post-`begin_pass()` format verification: validates `pass_color[att] == pre_pf[att]` and `vk_sampled_format(lr_e->tex, ...) == pass_color[att]` (catching sRGB/UNORM twin promotion mismatches with clean fallback).
+    4. Removed `LOAD_OP_CLEAR` from `pass_local_dirty` marking at `begin_pass()` (preserving mid-pass `clear()` WAR/RAW barriers).
+    5. Strict zero-overhead off-path guards (`resolve_feedback()` short-circuit and `draw_()` `last_prog_ok` atomic load guarded on `want_sl || g_vk.local_read`).
+- **Reviews, Tests & Release APK (`6bb6c66`, `.mali/tile-local-read/upstream-pr/CODE_REVIEW.md`):**
+  - **2-Parallel `independent-verifier` Audits (`a18a8d22`, `a83c8d21`):** Both **`PASS`** (`0 CRITICAL`, `0 MAJOR`).
+  - **Checks:** Host `python -B` (`test_descriptor_plan` `31040`, `test_soft_linear` `23+3+203`, `test_vulkan_compat` `16`, `test_vulkan_startup` `33`, `test_shader_cache` `17`, `test_shader_constants` `12`, `test_pipeline_cache_save`, `test_gpu_timing_trace` `8`, `test_fullscreen_narrow.py --wsl`), NDK r30 Clang (`-fsyntax-only` across 5 files + `-Werror` plain-link `test_local_read`), **`SM-X730` Bionic `9/9 + 3/3 PASS`** (`test_android_runtime.ps1` + `test_shader_meta_cache`, `test_dyn_vertex_input`, `test_pipeline_prewarm`), `workspace_check.py pr` **`PASS`** (`commits=1 files=17 mergeable=YES`).
+  - Built release APK `.mali/tile-local-read/BOTWRecompAndroid-local-read-review-release.apk` (`SHA-256: d96f45957710...`, cert `60fa2a5f...`, `0` new warnings).
+- **Isolated `SM-X730` 3-Arm Overlapping-FX & 60 FPS Check (`.mali/tile-local-read/verify_review_518.py`, `Mali-G925 r49p1`, `75% SGSR1` native):**
+  - Arms: `copy_lr0` (`LOCAL_READ=0 FEEDBACK_COPY=1`), `lr_roaa` (**driver default**, `local read: on` + `rasterization order color access: on`), `lr_no_roaa` (`LARECOMP_NO_RASTER_ORDER=1`).
+  - **30 FPS 4-scene transparent FX (`zora-plaza`, `korok-clearing`, `hateno-night-rain`, `eldin-road`, `status=ok`, `0` errors):** All 4 comparison sheets inspected cleanly; excluding self-writers without ROAA drops local reads from `12,032–14,361` to `0–970`, confirming ROAA delivers `-50.2%` to `-90.3%` `fbcopy` reduction (`zora-plaza` `1865.2 -> 181.0`, `gpu_p50/p95 27.75/33.61 -> 27.66/31.86 ms`, `eldin-road` `gpu_p50 27.36 -> 26.96 ms`).
+  - **60 FPS warmup check (`plateau`, `zora-plaza`, `hateno-night-rain`):** `lr_roaa` hit `42.3 / 38.7 / 45.15 fps` vs `copy_lr0` `40.4 / 36.15 / 46.65` and `lr_no_roaa` `36.1 / 34.15 / 38.2` (`fbcopy -89.8%` on `zora-plaza`; sequential bat temp rose `29.6 -> 31.1°C`).
+  - Published evidence sheets to orphan branch `origin/evidence/pr-local-read-review-20261122` (`53c84606`, all 4 HTTP `200`), force-pushed PR `#518` (`MERGEABLE / CLEAN`, `7/7` open PRs `CLEAN`), posted `#issuecomment-7079367364`, and verified clean device restore to `v0.4.11-beta-mali` (`68a6f611...`, `68/68` saves, `12973` `.spv`, `vk_pipelines.bin` intact).
 
 ## [2026-11-22] pr529-rebase-and-pr518-review-triage — PR #529 Rebase onto `v0.4.11-beta` (`75bfc64c`) & PR #518 Review Triage (COMPLETE)
 
