@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-18 to 2026-11-22). Query sele
 
 ## Table of Contents
 
+- [2026-11-22] pr529-rebase-and-pr518-review-triage — PR #529 Rebase onto `v0.4.11-beta` (`75bfc64c`) & PR #518 Review Triage (COMPLETE)
 - [2026-11-22] v0411-beta-mali-rollout — Consolidated `v0.4.11-beta-mali` Build, Isolated SM-X730 3-Pass Verification & Device Rollout (COMPLETE)
 - [2026-11-22] narrow-shadow-539 — Narrow-Landscape Vert+ Shadow Fix (#539) & Upstream PR #543 (OPEN)
 - [2026-11-22] op13-turnip-opt-and-release-0410-op13 — OnePlus 13 (`CPH2653` / Turnip V38) Fullscreen Display Tuning, Mali Parity Audit, CPU Hotpath Opts & `v0.4.10-beta-op13` Rollout (COMPLETE)
@@ -21,6 +22,16 @@ Active indexed English engineering ledger (2026-11-18 to 2026-11-22). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-17)
 
 ---
+
+## [2026-11-22] pr529-rebase-and-pr518-review-triage — PR #529 Rebase onto `v0.4.11-beta` (`75bfc64c`) & PR #518 Review Triage (COMPLETE)
+
+- **PR `#529` Rebase & Conflict Resolution (`.mali/worktrees/warm-cache-pipe-fastpath`, `feat/vk-warm-cache-fastpath` @ `ea24f43c94f62896a963086307badd95c25cdbfc`):**
+  - Rebased onto `upstream/main` (`75bfc64c59c2a8f218196fc67528c6e91b5dfd6c`, `v0.4.11-beta` + `#520` OOM retry + `#507`), resolving the sole `runtime/nvn/vulkan/exec.c` conflict in `build_pipeline_ex()` by preserving `#520`'s `retry_s`/`pipe_oom` handling and guarding `LARECOMP_PIPE_FAIL_OOM` under `if (!cache_only)`. Kept strictly `1` commit and `6` files; refreshed `.patch` and appended Round 2 to `upstream-pr/CODE_REVIEW.md`.
+- **Reviews & Verification (`ea24f43c`):**
+  - **2-Parallel `independent-verifier` Audits (`5f6517cd` Concurrency/OOM, `1ec73318` Hygiene/Gating):** Both **`PASS`** (`0 CRITICAL`, `0 MAJOR`).
+  - **Checks:** Host `python -B` (`test_vulkan_compat` `16`, `test_vulkan_startup` `33`, `test_soft_linear` `23+3+203`, `test_shader_cache` `17`, `test_gpu_timing_trace` `8`, `test_fullscreen_narrow.py --wsl`), NDK r30 Clang (`-Wall -Wextra` + `test_warm_cache_fastpath.c` `-Werror`, `0` new warnings), **`SM-X730` `test_android_runtime.ps1` `9/9 PASS`**, and `workspace_check.py pr` **`PASS`** (`commits=1 files=6 mergeable=YES`).
+  - Force-pushed `--force-with-lease` (`origin/feat/vk-warm-cache-fastpath`), posted verification comment (`#issuecomment-7078591200`), and confirmed **all `7/7` open PRs** (`#543`, `#537`, `#534`, `#531`, `#529`, `#518`, `#480`) are **`MERGEABLE / CLEAN`**.
+- **Open PR Review Discovery (`#518`, `2026-11-22T08:05:14Z`):** Logged `mamcjr`'s 5-item review on `PR #518` (`PW_VERSION` bump / 88B hash when local read unused; exclude or rasterization-order-guard draws writing the color slot they sample via `subpassInput` + Tab S11 FX visual capture; match `begin_pass` color format vs predicted layout; skip dirty bit on `LOAD_OP_CLEAR` slots; gate `vk_local_read_slot_att` + `last_prog_ok` atomic on `g_vk.local_read` for strict zero off-path overhead).
 
 ## [2026-11-22] v0411-beta-mali-rollout — Consolidated `v0.4.11-beta-mali` Build, Isolated SM-X730 3-Pass Verification & Device Rollout (COMPLETE)
 
