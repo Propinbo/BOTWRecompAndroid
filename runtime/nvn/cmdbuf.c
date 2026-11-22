@@ -21,6 +21,7 @@
 #define SHADOW_K 8                                                  // shadow bytes per byte of the game's memory
 #define SHADOW_PAGE 0x10000ull                                      // (game bytes)
 #define JUMP_RESERVE ((sizeof(CmdRec) + SHADOW_K - 1) / SHADOW_K)  // (game bytes) the chaining jump at a chunk's end
+_Static_assert(SHADOW_K == 8, "copy_lists bulk copy assumes SHADOW_K == 8");
 
 static NvnCmdBuf *cb_of(uint64_t guest) { return HOST(NvnCmdBuf, guest); }
 
@@ -166,10 +167,9 @@ static void add_host_memory(NvnCmdBuf *cb, uint32_t need) {
     set_chunk(cb, 0, (uint64_t)(uintptr_t)mem, size);
 }
 
-// Reserve a record. May call back into the guest for more memory, so callers snapshot their
-// arguments first.
-static CmdRec *rec(Cpu *c, NvnCmdBuf *cb, uint32_t op, uint32_t extra) {
-    uint32_t real = (uint32_t)((sizeof(CmdRec) + extra + 7) & ~7u);
+// Reserve space for a `real`-byte (8-byte aligned) record without zeroing it. May call back into the guest for
+// more memory, so callers must snapshot their arguments first.
+static CmdRec *rec_reserve(Cpu *c, NvnCmdBuf *cb, uint32_t real) {
     uint32_t size = (real + SHADOW_K - 1) / SHADOW_K;  // (game bytes)
     for (int tries = 0; (!cb->gmem && !cb->mem) || cb->used + size + JUMP_RESERVE > cb->size; tries++) {
         if (!cb->callback || tries == 2) {
@@ -197,9 +197,15 @@ static CmdRec *rec(Cpu *c, NvnCmdBuf *cb, uint32_t op, uint32_t extra) {
             }
         }
     }
-    CmdRec *r = raw_rec(write_at(cb), op, real);
+    CmdRec *r = (CmdRec *)(uintptr_t)write_at(cb);
     cb->used += size;
     return r;
+}
+
+static CmdRec *rec(Cpu *c, NvnCmdBuf *cb, uint32_t op, uint32_t extra) {
+    uint32_t real = (uint32_t)((sizeof(CmdRec) + extra + 7) & ~7u);
+    CmdRec *r = rec_reserve(c, cb, real);
+    return raw_rec((uint64_t)(uintptr_t)r, op, real);
 }
 
 NVN(nvnCommandBufferBeginRecording) {
@@ -824,12 +830,58 @@ static void copy_lists(Cpu *c, NvnCmdBuf *cb, int n, const uint64_t *handles) {
         }
         if (guard == 10000000) FATAL("nvn: copied command list contains a cycle\n");
     }
-    for (size_t offset = 0; offset < used;) {
-        const CmdRec *r = (const CmdRec *)(snapshot + offset);
-        uint32_t size = r->size;
-        CmdRec *d = rec(c, cb, r->op, size - (uint32_t)sizeof(CmdRec));
-        memcpy(d, r, size);
-        offset += size;
+    static _Atomic int no_bulk = -1;
+    int nb = atomic_load_explicit(&no_bulk, memory_order_relaxed);
+    if (nb < 0) {
+        const char *e = getenv("LARECOMP_NO_CMDBUF_BULK");
+        nb = e && atoi(e) != 0;
+        atomic_store_explicit(&no_bulk, nb, memory_order_relaxed);
+    }
+    if (!nb) {
+        for (size_t offset = 0; offset < used;) {
+            if ((cb->gmem || cb->mem) && cb->size > JUMP_RESERVE && cb->used < cb->size - JUMP_RESERVE) {
+                uint64_t avail = cb->size - cb->used - JUMP_RESERVE;
+                if (cb->gmem) {
+                    uint64_t in_page = (cb->gmem + cb->used) % SHADOW_PAGE;
+                    uint64_t page_avail = SHADOW_PAGE > in_page + JUMP_RESERVE ? SHADOW_PAGE - in_page - JUMP_RESERVE : 0;
+                    if (page_avail < avail) avail = page_avail;
+                }
+                if (avail > 0) {
+                    size_t rem = used - offset;
+                    size_t max_bytes = avail <= SIZE_MAX / SHADOW_K ? (size_t)(avail * SHADOW_K) : SIZE_MAX;
+                    if (rem <= max_bytes) {
+                        memcpy((void *)(uintptr_t)write_at(cb), snapshot + offset, rem);
+                        cb->used += rem / SHADOW_K;
+                        break;
+                    }
+                    size_t chunk = 0;
+                    while (offset + chunk < used) {
+                        uint32_t rsz = ((const CmdRec *)(snapshot + offset + chunk))->size;
+                        if (chunk + rsz > max_bytes) break;
+                        chunk += rsz;
+                    }
+                    if (chunk > 0) {
+                        memcpy((void *)(uintptr_t)write_at(cb), snapshot + offset, chunk);
+                        cb->used += chunk / SHADOW_K;
+                        offset += chunk;
+                        continue;
+                    }
+                }
+            }
+            const CmdRec *r = (const CmdRec *)(snapshot + offset);
+            uint32_t size = r->size;
+            CmdRec *d = rec_reserve(c, cb, size);
+            memcpy(d, r, size);
+            offset += size;
+        }
+    } else {
+        for (size_t offset = 0; offset < used;) {
+            const CmdRec *r = (const CmdRec *)(snapshot + offset);
+            uint32_t size = r->size;
+            CmdRec *d = rec(c, cb, r->op, size - (uint32_t)sizeof(CmdRec));
+            memcpy(d, r, size);
+            offset += size;
+        }
     }
     if (use_tl && sc) {
         if (snapshot != (uint8_t *)local) {
