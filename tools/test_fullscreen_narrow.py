@@ -235,103 +235,334 @@ int main(int argc, char **argv) {
     proj[ai] = base;
     eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)proj)), base * 1.25f);
 
-    /* 16:10 Vert+ (mAngle / proj[fvi] preserved so fovy-derived blends cannot creep) */
+    /* 16:10 Vert+ (mAngle / proj[fvi] updated in sync with sin/cos/tan so getFovy() matches mMatrix) */
     boot(0.9f, ASPECT_UNLOCKED);
     proj[ni] = 1.0f; proj[fi] = 25000.0f; proj[fvi] = orig_fovy; proj[ai] = base;
     rt_persp_update((uint64_t)(uintptr_t)proj);
     float want_tan_09 = tanf(orig_fovy * 0.5f) / 0.9f;
     float want_half_09 = atanf(want_tan_09);
+    float want_fovy_09 = 2.0f * want_half_09;
     eqf(proj[ai], base * 0.9f);
     eqf(proj[ti], want_tan_09);
     eqf(proj[si], sinf(want_half_09));
     eqf(proj[ci], cosf(want_half_09));
-    eqf(proj[fvi], orig_fovy);
+    eqf(proj[fvi], want_fovy_09);
+    eqf(tanf(proj[fvi] * 0.5f), proj[ti]);
     assert(widescreen_narrow_vert_plus());
     assert(atomic_load_explicit(&vert_used, memory_order_acquire));
 
-    /* Idempotency + dynamic near/far update without double-scaling */
+    /* Idempotency + dynamic near/far update (both with & without guest 16:9 reset -> zero double-scaling) */
     proj[ai] = base; proj[ni] = 0.25f; proj[fi] = 5000.0f;
     rt_persp_update((uint64_t)(uintptr_t)proj);
     eqf(proj[ai], base * 0.9f);
     eqf(proj[ti], want_tan_09);
-    eqf(proj[fvi], orig_fovy);
+    eqf(proj[fvi], want_fovy_09);
+    eqf(tanf(proj[fvi] * 0.5f), proj[ti]);
+    proj[ni] = 0.5f; proj[fi] = 12000.0f;  /* keeps want_aspect (is169 == false, scaled_match == true) */
+    rt_persp_update((uint64_t)(uintptr_t)proj);
+    eqf(proj[ai], base * 0.9f);
+    eqf(proj[ti], want_tan_09);
+    eqf(proj[fvi], want_fovy_09);
+    /* Follow-up setFovy with mutated ni=0.5, fi=12000 must succeed via same_nf (proves near_z/far_z updated) */
+    float mid_fovy = 35.0f * 0.0174532925f;
+    float mid_tan_09 = tanf(mid_fovy * 0.5f) / 0.9f;
+    proj[fvi] = mid_fovy;
+    proj[si] = sinf(mid_fovy * 0.5f); proj[ci] = cosf(mid_fovy * 0.5f); proj[ti] = tanf(mid_fovy * 0.5f);
+    rt_persp_update((uint64_t)(uintptr_t)proj);
+    eqf(proj[ti], mid_tan_09);
+    eqf(proj[fvi], 2.0f * atanf(mid_tan_09));
+    proj[ni] = 1.0f; proj[fi] = 25000.0f; proj[fvi] = orig_fovy; proj[ai] = base;
+    proj[si] = sinf(orig_fovy * 0.5f); proj[ci] = cosf(orig_fovy * 0.5f); proj[ti] = tanf(orig_fovy * 0.5f);
+    rt_persp_update((uint64_t)(uintptr_t)proj);
+    eqf(proj[fvi], want_fovy_09);
 
-    /* LRU eviction (> 64 transient cameras) must NOT evict actively rebuilt main camera */
+    /* LRU eviction (> 256 transient cameras): actively rebuilt main camera survives, evicted camera recovers
+       orig_fovy via recent_vert on 16:9 reset without double-scaling, AND direct evicted idx<0 restores at 1.0 */
+    float evict_fovy = 42.0f * 0.0174532925f;
+    float evict_tan_09 = tanf(evict_fovy * 0.5f) / 0.9f;
+    float evict_fovy_09 = 2.0f * atanf(evict_tan_09);
+    float evict_p[64] = {0};
+    evict_p[ni] = 1.0f; evict_p[fi] = 25000.0f; evict_p[fvi] = evict_fovy;
+    evict_p[si] = sinf(evict_fovy * 0.5f); evict_p[ci] = cosf(evict_fovy * 0.5f); evict_p[ti] = tanf(evict_fovy * 0.5f);
+    evict_p[ai] = base;
+    rt_persp_update((uint64_t)(uintptr_t)evict_p);
+    float evict_direct_fovy = 43.0f * 0.0174532925f;
+    float evict_direct[64] = {0};
+    evict_direct[ni] = 1.0f; evict_direct[fi] = 25000.0f; evict_direct[fvi] = evict_direct_fovy;
+    evict_direct[si] = sinf(evict_direct_fovy * 0.5f); evict_direct[ci] = cosf(evict_direct_fovy * 0.5f);
+    evict_direct[ti] = tanf(evict_direct_fovy * 0.5f); evict_direct[ai] = base;
+    rt_persp_update((uint64_t)(uintptr_t)evict_direct);
     float temps[300][64];
     for (int t = 0; t < 300; t++) {
         memset(temps[t], 0, sizeof temps[t]);
         temps[t][ni] = 1.0f; temps[t][fi] = 1000.0f; temps[t][fvi] = orig_fovy; temps[t][ai] = base;
+        temps[t][si] = sinf(orig_fovy * 0.5f); temps[t][ci] = cosf(orig_fovy * 0.5f); temps[t][ti] = tanf(orig_fovy * 0.5f);
         rt_persp_update((uint64_t)(uintptr_t)temps[t]);
         if (t % 50 == 0) {
             proj[ai] = base;
             rt_persp_update((uint64_t)(uintptr_t)proj);
             eqf(proj[ti], want_tan_09);
-            eqf(proj[fvi], orig_fovy);
+            eqf(proj[fvi], want_fovy_09);
         }
     }
     proj[ai] = base;
     rt_persp_update((uint64_t)(uintptr_t)proj);
     eqf(proj[ti], want_tan_09);
-    eqf(proj[fvi], orig_fovy);
+    eqf(proj[fvi], want_fovy_09);
+    evict_p[ai] = base;
+    rt_persp_update((uint64_t)(uintptr_t)evict_p);
+    eqf(evict_p[fvi], evict_fovy_09);
+    eqf(evict_p[ti], evict_tan_09);
+    widescreen_set_shape(1.0f);
+    rt_persp_update((uint64_t)(uintptr_t)evict_direct);
+    eqf(evict_direct[ai], base);
+    eqf(evict_direct[fvi], evict_direct_fovy);
+    eqf(evict_direct[ti], tanf(evict_direct_fovy * 0.5f));
+    rt_persp_update((uint64_t)(uintptr_t)evict_p);
+    eqf(evict_p[ai], base);
+    eqf(evict_p[fvi], evict_fovy);
+    eqf(evict_p[ti], tanf(evict_fovy * 0.5f));
 
     /* Stack address reuse by native 1:1 (90 deg, near 0.1, far 300) camera after 16:9 (near 1.0, far 25000)
-       on 1:1 display (want_aspect == 1.0f), AND unrelated aspect 0.8f reuse: neither mis-scales! */
+       on 1:1 display (want_aspect == 1.0f), AND unrelated aspect 0.8f reuse: neither mis-scales and vert_count drops cleanly! */
     boot(0.5625f, ASPECT_UNLOCKED);
     float reused[64] = {0};
     reused[ni] = 1.0f; reused[fi] = 25000.0f; reused[fvi] = orig_fovy; reused[ai] = base;
     rt_persp_update((uint64_t)(uintptr_t)reused);
+    assert(atomic_load_explicit(&vert_used, memory_order_acquire));
     reused[ni] = 0.1f; reused[fi] = 300.0f; reused[fvi] = 90.0f * 0.0174532925f;
     reused[si] = sinf(reused[fvi] * 0.5f); reused[ci] = cosf(reused[fvi] * 0.5f); reused[ti] = tanf(reused[fvi] * 0.5f);
     reused[ai] = 1.0f;  /* same numeric want_aspect=1.0 on 1:1 display, different near/far & trig */
     rt_persp_update((uint64_t)(uintptr_t)reused);
     eqf(reused[fvi], 90.0f * 0.0174532925f); eqf(reused[ti], 1.0f); eqf(reused[ai], 1.0f);
+    assert(vert_count == 0);
     reused[ni] = 0.1f; reused[fi] = 300.0f; reused[fvi] = orig_fovy; reused[ai] = base;
+    reused[si] = sinf(orig_fovy * 0.5f); reused[ci] = cosf(orig_fovy * 0.5f); reused[ti] = tanf(orig_fovy * 0.5f);
     rt_persp_update((uint64_t)(uintptr_t)reused);
+    assert(atomic_load_explicit(&vert_used, memory_order_acquire));
     reused[fvi] = 90.0f * 0.0174532925f;
     reused[ai] = 0.8f;  /* unrelated aspect invalidates entry */
     rt_persp_update((uint64_t)(uintptr_t)reused);
     eqf(reused[fvi], 90.0f * 0.0174532925f); eqf(reused[ai], 0.8f);
+    assert(vert_count == 0);
 
-    /* Dynamic FOV update while aspect stayed want_aspect -> scales cleanly */
+    /* Multi-slot vert_drop accounting: dropping 1 of 2 keeps vert_count==1; dropping second & out-of-range fovy clears it */
+    {
+        float s1[64] = {0}, s2[64] = {0}, bad_p[64] = {0};
+        boot(0.9f, ASPECT_UNLOCKED);
+        s1[ni] = 1.0f; s1[fi] = 1000.0f; s1[fvi] = orig_fovy; s1[ai] = base;
+        s2[ni] = 1.0f; s2[fi] = 2000.0f; s2[fvi] = orig_fovy; s2[ai] = base;
+        rt_persp_update((uint64_t)(uintptr_t)s1);
+        rt_persp_update((uint64_t)(uintptr_t)s2);
+        assert(atomic_load_explicit(&vert_used, memory_order_acquire));
+        /* Simultaneous fovy + near/far change without 16:9 reset triggers same_nf stack-reuse guard -> drops s1 unscaled */
+        s1[ni] = 2.0f; s1[fvi] = 20.0f * 0.0174532925f;
+        s1[si] = sinf(s1[fvi] * 0.5f); s1[ci] = cosf(s1[fvi] * 0.5f); s1[ti] = tanf(s1[fvi] * 0.5f);
+        rt_persp_update((uint64_t)(uintptr_t)s1);
+        eqf(s1[fvi], 20.0f * 0.0174532925f);
+        assert(vert_count == 1);
+        s2[ai] = 0.5f;
+        rt_persp_update((uint64_t)(uintptr_t)s2);
+        assert(vert_count == 0);
+        bad_p[ni] = 1.0f; bad_p[fi] = 1000.0f; bad_p[fvi] = orig_fovy; bad_p[ai] = base;
+        rt_persp_update((uint64_t)(uintptr_t)bad_p);
+        assert(vert_count == 1);
+        bad_p[fvi] = 3.5f;  /* out-of-range fovy drops tracked slot cleanly */
+        rt_persp_update((uint64_t)(uintptr_t)bad_p);
+        assert(vert_count == 0);
+    }
+
+    /* Dynamic FOV update while aspect stayed want_aspect AND with aspect reset -> scales cleanly */
     boot(0.9f, ASPECT_UNLOCKED);
     proj[ni] = 1.0f; proj[fi] = 25000.0f; proj[fvi] = orig_fovy; proj[ai] = base;
+    proj[si] = sinf(orig_fovy * 0.5f); proj[ci] = cosf(orig_fovy * 0.5f); proj[ti] = tanf(orig_fovy * 0.5f);
     rt_persp_update((uint64_t)(uintptr_t)proj);
     float zoom_fovy = 20.0f * 0.0174532925f;
     proj[fvi] = zoom_fovy;
+    proj[si] = sinf(zoom_fovy * 0.5f); proj[ci] = cosf(zoom_fovy * 0.5f); proj[ti] = tanf(zoom_fovy * 0.5f);
     rt_persp_update((uint64_t)(uintptr_t)proj);
     float want_zoom_tan = tanf(zoom_fovy * 0.5f) / 0.9f;
+    float want_zoom_fovy = 2.0f * atanf(want_zoom_tan);
     eqf(proj[ti], want_zoom_tan);
-    eqf(proj[fvi], zoom_fovy);
+    eqf(proj[fvi], want_zoom_fovy);
     proj[ai] = base;
     rt_persp_update((uint64_t)(uintptr_t)proj);
     eqf(proj[ti], want_zoom_tan);
-    eqf(proj[fvi], zoom_fovy);
+    eqf(proj[fvi], want_zoom_fovy);
+    /* Passthrough setFovy(getFovy()) and re-applying setFovy(zoom_fovy) stay idempotent */
+    float gf = proj[fvi];
+    proj[fvi] = gf; proj[si] = sinf(gf * 0.5f); proj[ci] = cosf(gf * 0.5f); proj[ti] = tanf(gf * 0.5f);
+    proj[ai] = base;
+    rt_persp_update((uint64_t)(uintptr_t)proj);
+    eqf(proj[ti], want_zoom_tan);
+    eqf(proj[fvi], want_zoom_fovy);
+    proj[fvi] = zoom_fovy;
+    proj[si] = sinf(zoom_fovy * 0.5f); proj[ci] = cosf(zoom_fovy * 0.5f); proj[ti] = tanf(zoom_fovy * 0.5f);
+    rt_persp_update((uint64_t)(uintptr_t)proj);
+    eqf(proj[ti], want_zoom_tan);
+    eqf(proj[fvi], want_zoom_fovy);
 
-    /* 60-frame zoom/paraglider/cutscene lerp reading current proj[fvi]: 0.0000 creep with & without aspect reset */
+    /* Independent-camera 60-frame zoom/paraglider setFovy sweep + aspect-only reset loop: consistent fovy/tan, 0 creep */
     for (int reset_asp = 0; reset_asp < 2; reset_asp++) {
         float lerp_p[64] = {0};
         lerp_p[ni] = 1.0f; lerp_p[fi] = 25000.0f; lerp_p[fvi] = orig_fovy; lerp_p[ai] = base;
         float expected = orig_fovy;
         for (int fr = 0; fr < 60; fr++) {
-            float target = fr < 30 ? zoom_fovy : orig_fovy;
-            float cur = lerp_p[fvi];
-            expected = expected + (target - expected) * 0.12f;
-            float next = cur + (target - cur) * 0.12f;
-            lerp_p[fvi] = next;
-            lerp_p[si] = sinf(next * 0.5f); lerp_p[ci] = cosf(next * 0.5f); lerp_p[ti] = tanf(next * 0.5f);
+            float target_fovy = fr < 30 ? zoom_fovy : orig_fovy;
+            expected = expected + (target_fovy - expected) * 0.12f;
+            lerp_p[fvi] = expected;
+            lerp_p[si] = sinf(expected * 0.5f); lerp_p[ci] = cosf(expected * 0.5f); lerp_p[ti] = tanf(expected * 0.5f);
             if (reset_asp || fr == 0) lerp_p[ai] = base;
             rt_persp_update((uint64_t)(uintptr_t)lerp_p);
-            eqf(lerp_p[fvi], expected);
-            eqf(lerp_p[ti], tanf(expected * 0.5f) / 0.9f);
+            float wt = tanf(expected * 0.5f) / 0.9f;
+            eqf(lerp_p[ti], wt);
+            eqf(lerp_p[fvi], 2.0f * atanf(wt));
+            eqf(tanf(lerp_p[fvi] * 0.5f), lerp_p[ti]);
         }
     }
-    /* Copy projection into a fresh stack/object address -> zero double-scaling */
-    float copy_p[64];
-    memcpy(copy_p, proj, sizeof copy_p);
-    copy_p[ai] = base;
-    rt_persp_update((uint64_t)(uintptr_t)copy_p);
-    eqf(copy_p[fvi], zoom_fovy);
-    eqf(copy_p[ti], want_zoom_tan);
+    {
+        float hold_p[64] = {0};
+        hold_p[ni] = 1.0f; hold_p[fi] = 25000.0f; hold_p[fvi] = orig_fovy; hold_p[ai] = base;
+        for (int fr = 0; fr < 60; fr++) {
+            hold_p[ai] = base;
+            rt_persp_update((uint64_t)(uintptr_t)hold_p);
+            eqf(hold_p[fvi], want_fovy_09);
+            eqf(hold_p[ti], want_tan_09);
+            eqf(tanf(hold_p[fvi] * 0.5f), hold_p[ti]);
+        }
+    }
+
+    /* Non-tautological copied projections, tracked-address cross-copies (is169 & !is169 & resize exit),
+       anti-collision (40.916->45 vs 45 deg), and Switch sead::Mathf::sinCosIdx trig rounding */
+    {
+        float copy_p[64];
+        memcpy(copy_p, proj, sizeof copy_p);
+        copy_p[ai] = base;  /* guest resets copied aspect to 16:9 before rebuild */
+        rt_persp_update((uint64_t)(uintptr_t)copy_p);
+        eqf(copy_p[ai], base * 0.9f);
+        eqf(copy_p[fvi], want_zoom_fovy);
+        eqf(copy_p[ti], want_zoom_tan);
+        widescreen_set_shape(1.0f);
+        rt_persp_update((uint64_t)(uintptr_t)copy_p);
+        eqf(copy_p[ai], base);
+        eqf(copy_p[fvi], zoom_fovy);
+
+        boot(0.9f, ASPECT_UNLOCKED);
+        proj[ni] = 1.0f; proj[fi] = 25000.0f; proj[fvi] = zoom_fovy; proj[ai] = base;
+        proj[si] = sinf(zoom_fovy * 0.5f); proj[ci] = cosf(zoom_fovy * 0.5f); proj[ti] = tanf(zoom_fovy * 0.5f);
+        rt_persp_update((uint64_t)(uintptr_t)proj);
+        float copy_p2[64];
+        memcpy(copy_p2, proj, sizeof copy_p2);  /* keeps want_aspect = base * 0.9f */
+        rt_persp_update((uint64_t)(uintptr_t)copy_p2);
+        widescreen_set_shape(0.75f);
+        eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)copy_p2)), base * 0.75f);
+        rt_persp_update((uint64_t)(uintptr_t)copy_p2);
+        float want_zoom_tan_075 = tanf(zoom_fovy * 0.5f) / 0.75f;
+        eqf(copy_p2[ai], base * 0.75f);
+        eqf(copy_p2[ti], want_zoom_tan_075);
+        eqf(copy_p2[fvi], 2.0f * atanf(want_zoom_tan_075));
+        widescreen_set_shape(1.0f);
+        rt_persp_update((uint64_t)(uintptr_t)copy_p2);
+        eqf(copy_p2[ai], base);
+        eqf(copy_p2[fvi], zoom_fovy);
+
+        /* Tracked-address cross-copy (idx >= 0): A (40->44, near=1, far=10000) and B (50->54.78, near=1, far=10000) */
+        boot(0.9f, ASPECT_UNLOCKED);
+        float fovy40 = 40.0f * 0.0174532925f;
+        float tan40_09 = tanf(fovy40 * 0.5f) / 0.9f, fovy40_09 = 2.0f * atanf(tan40_09);
+        float src50[64] = {0}, dst40[64] = {0}, dst40_b[64] = {0}, dst40_exit[64] = {0};
+        src50[ni] = 1.0f; src50[fi] = 10000.0f; src50[fvi] = orig_fovy; src50[ai] = base;
+        src50[si] = sinf(orig_fovy * 0.5f); src50[ci] = cosf(orig_fovy * 0.5f); src50[ti] = tanf(orig_fovy * 0.5f);
+        dst40[ni] = 1.0f; dst40[fi] = 10000.0f; dst40[fvi] = fovy40; dst40[ai] = base;
+        dst40[si] = sinf(fovy40 * 0.5f); dst40[ci] = cosf(fovy40 * 0.5f); dst40[ti] = tanf(fovy40 * 0.5f);
+        memcpy(dst40_b, dst40, sizeof dst40_b);
+        memcpy(dst40_exit, dst40, sizeof dst40_exit);
+        rt_persp_update((uint64_t)(uintptr_t)src50);
+        rt_persp_update((uint64_t)(uintptr_t)dst40);
+        rt_persp_update((uint64_t)(uintptr_t)dst40_b);
+        rt_persp_update((uint64_t)(uintptr_t)dst40_exit);
+        eqf(dst40[fvi], fovy40_09);
+        /* Copy C (is169) and Copy D (!is169 keeping want_aspect) */
+        memcpy(dst40, src50, sizeof dst40);
+        dst40[ai] = base;
+        rt_persp_update((uint64_t)(uintptr_t)dst40);
+        eqf(dst40[fvi], want_fovy_09);
+        eqf(dst40[ti], want_tan_09);
+        memcpy(dst40_b, src50, sizeof dst40_b);
+        rt_persp_update((uint64_t)(uintptr_t)dst40_b);
+        eqf(dst40_b[fvi], want_fovy_09);
+        eqf(dst40_b[ti], want_tan_09);
+        /* Copy E (!shape_vert_plus on resize to 1.0) & dst40/dst40_b restore to 50 deg */
+        memcpy(dst40_exit, src50, sizeof dst40_exit);
+        widescreen_set_shape(1.0f);
+        rt_persp_update((uint64_t)(uintptr_t)dst40);
+        rt_persp_update((uint64_t)(uintptr_t)dst40_b);
+        rt_persp_update((uint64_t)(uintptr_t)dst40_exit);
+        eqf(dst40[fvi], orig_fovy); eqf(dst40[ai], base);
+        eqf(dst40_b[fvi], orig_fovy); eqf(dst40_b[ai], base);
+        eqf(dst40_exit[fvi], orig_fovy); eqf(dst40_exit[ai], base);
+
+        /* Switch sead::Mathf::sinCosIdx ~5e-5f trig perturbation on getFovy()->setFovy_() must remain idempotent */
+        boot(0.9f, ASPECT_UNLOCKED);
+        proj[ni] = 0.1f; proj[fi] = 25000.0f; proj[fvi] = orig_fovy; proj[ai] = base;
+        proj[si] = sinf(orig_fovy * 0.5f); proj[ci] = cosf(orig_fovy * 0.5f); proj[ti] = tanf(orig_fovy * 0.5f);
+        rt_persp_update((uint64_t)(uintptr_t)proj);
+        proj[si] += 5e-5f; proj[ci] -= 5e-5f; proj[ti] = proj[si] / proj[ci]; proj[ai] = base;
+        rt_persp_update((uint64_t)(uintptr_t)proj);
+        eqf(proj[fvi], want_fovy_09);
+        eqf(proj[ai], base * 0.9f);
+
+        /* Wide FOV (90 deg at 0.5625) & clamped half=1.49f under sin/cos -> tan = sin/cos perturbation stay idempotent */
+        {
+            float wide_p[64] = {0}, clamp_p[64] = {0};
+            boot(0.5625f, ASPECT_UNLOCKED);
+            float f90 = 90.0f * 0.0174532925f;
+            float want_f90_05625 = 2.0f * atanf(tanf(f90 * 0.5f) / 0.5625f);
+            wide_p[ni] = 0.5f; wide_p[fi] = 5000.0f; wide_p[fvi] = f90; wide_p[ai] = base;
+            rt_persp_update((uint64_t)(uintptr_t)wide_p);
+            eqf(wide_p[fvi], want_f90_05625);
+            wide_p[si] += 5e-5f; wide_p[ci] -= 5e-5f; wide_p[ti] = wide_p[si] / wide_p[ci]; wide_p[ai] = base;
+            rt_persp_update((uint64_t)(uintptr_t)wide_p);
+            eqf(wide_p[fvi], want_f90_05625);
+            eqf(wide_p[ai], 1.0f);
+
+            clamp_p[ni] = 1.0f; clamp_p[fi] = 2000.0f; clamp_p[fvi] = 2.95f; clamp_p[ai] = base;
+            rt_persp_update((uint64_t)(uintptr_t)clamp_p);
+            eqf(clamp_p[fvi], 2.0f * 1.49f);
+            clamp_p[si] += 5e-5f; clamp_p[ci] -= 5e-5f; clamp_p[ti] = clamp_p[si] / clamp_p[ci]; clamp_p[ai] = base;
+            rt_persp_update((uint64_t)(uintptr_t)clamp_p);
+            eqf(clamp_p[fvi], 2.0f * 1.49f);
+            eqf(clamp_p[ai], 1.0f);
+            widescreen_set_shape(1.0f);
+            rt_persp_update((uint64_t)(uintptr_t)wide_p);
+            rt_persp_update((uint64_t)(uintptr_t)clamp_p);
+            eqf(wide_p[fvi], f90);
+            eqf(clamp_p[fvi], 2.95f);
+        }
+
+        /* Anti-collision: 40.916 deg scaled to 45.0 (near=0.1, far=25000) vs fresh 45.0 (near=0.01, far=10000) */
+        boot(0.9f, ASPECT_UNLOCKED);
+        float f45 = 45.0f * 0.0174532925f;
+        float f_col = 2.0f * atanf(tanf(f45 * 0.5f) * 0.9f);
+        float cam_a[64] = {0}, cam_b[64] = {0}, cam_c[64] = {0};
+        cam_a[ni] = 0.1f; cam_a[fi] = 25000.0f; cam_a[fvi] = f_col; cam_a[ai] = base;
+        cam_a[si] = sinf(f_col * 0.5f); cam_a[ci] = cosf(f_col * 0.5f); cam_a[ti] = tanf(f_col * 0.5f);
+        cam_b[ni] = 0.01f; cam_b[fi] = 10000.0f; cam_b[fvi] = f45; cam_b[ai] = base;
+        cam_b[si] = sinf(f45 * 0.5f); cam_b[ci] = cosf(f45 * 0.5f); cam_b[ti] = tanf(f45 * 0.5f);
+        cam_c[ni] = 0.01f; cam_c[fi] = 10000.0f; cam_c[fvi] = f45; cam_c[ai] = base;
+        cam_c[si] = sinf(f45 * 0.5f); cam_c[ci] = cosf(f45 * 0.5f); cam_c[ti] = tanf(f45 * 0.5f);
+        rt_persp_update((uint64_t)(uintptr_t)cam_a);
+        eqf(cam_a[fvi], f45);
+        rt_persp_update((uint64_t)(uintptr_t)cam_b);
+        eqf(cam_b[ti], tanf(f45 * 0.5f) / 0.9f);
+        eqf(cam_b[fvi], 2.0f * atanf(tanf(f45 * 0.5f) / 0.9f));
+        widescreen_set_shape(1.0f);
+        rt_persp_update((uint64_t)(uintptr_t)cam_c);  /* cam_a keeps vert_used==true; cam_c must stay 45.0! */
+        eqf(cam_c[fvi], f45);
+        eqf(cam_c[ti], tanf(f45 * 0.5f));
+        rt_persp_update((uint64_t)(uintptr_t)cam_a);
+        eqf(cam_a[fvi], f_col);
+    }
 
     /* Portrait shapes (< 9/16 = 0.5625) never reshape cameras; exact 0.5625 accepted */
     for (int pi = 0; pi < 3; pi++) {
@@ -345,29 +576,52 @@ int main(int argc, char **argv) {
     boot(0.5625f, ASPECT_UNLOCKED);
     proj[fvi] = orig_fovy; proj[ai] = base;
     rt_persp_update((uint64_t)(uintptr_t)proj);
+    float want_tan_05625 = tanf(orig_fovy * 0.5f) / 0.5625f;
     eqf(proj[ai], 1.0f);
-    eqf(proj[ti], tanf(orig_fovy * 0.5f) / 0.5625f);
-    eqf(proj[fvi], orig_fovy);
+    eqf(proj[ti], want_tan_05625);
+    eqf(proj[fvi], 2.0f * atanf(want_tan_05625));
+    eqf(tanf(proj[fvi] * 0.5f), proj[ti]);
 
-    /* Extreme fovy near 2.95 rad clamped safely <= 2.98 rad with consistent sin/cos/tan while preserving mAngle */
+    /* Extreme fovy near 2.95 rad clamped safely <= 2.98 rad with consistent fovy/sin/cos/tan, restored cleanly at 1.0 */
+    boot(0.5625f, ASPECT_UNLOCKED);
     float ext_proj[64] = {0};
     ext_proj[ni] = 1.0f; ext_proj[fi] = 1000.0f; ext_proj[fvi] = 2.95f; ext_proj[ai] = base;
     rt_persp_update((uint64_t)(uintptr_t)ext_proj);
-    eqf(ext_proj[fvi], 2.95f);
+    eqf(ext_proj[fvi], 2.0f * 1.49f);
     eqf(ext_proj[ti], tanf(1.49f));
     eqf(ext_proj[si], sinf(1.49f));
     eqf(ext_proj[ci], cosf(1.49f));
+    widescreen_set_shape(1.0f);
+    rt_persp_update((uint64_t)(uintptr_t)ext_proj);
+    eqf(ext_proj[ai], base);
+    eqf(ext_proj[fvi], 2.95f);
+    eqf(ext_proj[ti], tanf(2.95f * 0.5f));
+    eqf(ext_proj[si], sinf(2.95f * 0.5f));
+    eqf(ext_proj[ci], cosf(2.95f * 0.5f));
 
-    /* Dynamic resize 0.90 -> 0.75 -> 1.00 restores trig/tan AND mAspect AND clears vert_used */
+    /* Dynamic resize 0.90 -> 0.75 (both with & without guest 16:9 reset) -> 1.00 restores fovy/trig/aspect & clears vert_count */
     boot(0.9f, ASPECT_UNLOCKED);
     proj[ni] = 1.0f; proj[fi] = 25000.0f; proj[fvi] = orig_fovy; proj[ai] = base;
     rt_persp_update((uint64_t)(uintptr_t)proj);
     widescreen_set_shape(0.75f);
     eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)proj)), base * 0.75f);
     rt_persp_update((uint64_t)(uintptr_t)proj);
+    float want_tan_075 = tanf(orig_fovy * 0.5f) / 0.75f;
+    float want_fovy_075 = 2.0f * atanf(want_tan_075);
     eqf(proj[ai], base * 0.75f);
-    eqf(proj[fvi], orig_fovy);
-    eqf(proj[ti], tanf(orig_fovy * 0.5f) / 0.75f);
+    eqf(proj[fvi], want_fovy_075);
+    eqf(proj[ti], want_tan_075);
+    widescreen_set_shape(0.9f);
+    proj[ai] = base;  /* guest resets aspect to 16:9 simultaneously with resize 0.75 -> 0.90 */
+    rt_persp_update((uint64_t)(uintptr_t)proj);
+    eqf(proj[ai], base * 0.9f);
+    eqf(proj[fvi], want_fovy_09);
+    eqf(proj[ti], want_tan_09);
+    widescreen_set_shape(0.75f);
+    rt_persp_update((uint64_t)(uintptr_t)proj);
+    eqf(proj[ai], base * 0.75f);
+    eqf(proj[fvi], want_fovy_075);
+    eqf(proj[ti], want_tan_075);
     widescreen_set_shape(1.0f);
     eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)proj)), base);
     rt_persp_update((uint64_t)(uintptr_t)proj);
@@ -376,9 +630,176 @@ int main(int argc, char **argv) {
     eqf(proj[ti], tanf(orig_fovy * 0.5f));
     eqf(proj[si], sinf(orig_fovy * 0.5f));
     eqf(proj[ci], cosf(orig_fovy * 0.5f));
-    assert(!atomic_load_explicit(&vert_used, memory_order_acquire));
+    assert(vert_count == 0);
 
-    /* Dynamic resize 0.75 -> 1.25 (ultrawide) restores trig/tan and widens mAspect to 2.2222 without guest 16:9 reset */
+    /* Guest calling setAspect(getAspect()) on resize 0.9->0.75 before doUpdateMatrix() (both tracked & copied idx<0) */
+    {
+        float asp_p[64] = {0}, copy_asp[64] = {0};
+        boot(0.9f, ASPECT_UNLOCKED);
+        asp_p[ni] = 1.0f; asp_p[fi] = 25000.0f; asp_p[fvi] = orig_fovy; asp_p[ai] = base;
+        rt_persp_update((uint64_t)(uintptr_t)asp_p);
+        memcpy(copy_asp, asp_p, sizeof copy_asp);
+        widescreen_set_shape(0.75f);
+        asp_p[ai] = from_bits(rt_persp_aspect((uint64_t)(uintptr_t)asp_p));
+        copy_asp[ai] = base * 0.75f;  /* idx < 0 projection received want_aspect after resize */
+        rt_persp_update((uint64_t)(uintptr_t)asp_p);
+        rt_persp_update((uint64_t)(uintptr_t)copy_asp);
+        eqf(asp_p[ai], base * 0.75f);
+        eqf(asp_p[fvi], want_fovy_075);
+        eqf(asp_p[ti], want_tan_075);
+        eqf(copy_asp[ai], base * 0.75f);
+        eqf(copy_asp[fvi], want_fovy_075);
+        eqf(copy_asp[ti], want_tan_075);
+        widescreen_set_shape(1.0f);
+        rt_persp_update((uint64_t)(uintptr_t)asp_p);
+        rt_persp_update((uint64_t)(uintptr_t)copy_asp);
+        eqf(asp_p[ai], base);
+        eqf(asp_p[fvi], orig_fovy);
+        eqf(copy_asp[ai], base);
+        eqf(copy_asp[fvi], orig_fovy);
+        assert(vert_count == 0);
+
+        /* Two-step resize with getAspect() write skipping intermediate doUpdateMatrix():
+           1) 0.9 -> 0.75 (getAspect) -> 1.0 restores tracked (asp_2a) FIRST (vert_count==0, vert_used stays true for copy_2b!) */
+        float asp_2a[64] = {0}, copy_2b[64] = {0}, asp_2c[64] = {0};
+        boot(0.9f, ASPECT_UNLOCKED);
+        asp_2a[ni] = 1.0f; asp_2a[fi] = 25000.0f; asp_2a[fvi] = orig_fovy; asp_2a[ai] = base;
+        asp_2c[ni] = 1.0f; asp_2c[fi] = 25000.0f; asp_2c[fvi] = orig_fovy; asp_2c[ai] = base;
+        rt_persp_update((uint64_t)(uintptr_t)asp_2a);
+        rt_persp_update((uint64_t)(uintptr_t)asp_2c);
+        memcpy(copy_2b, asp_2a, sizeof copy_2b);
+        widescreen_set_shape(0.75f);
+        asp_2a[ai] = from_bits(rt_persp_aspect((uint64_t)(uintptr_t)asp_2a));
+        asp_2c[ai] = from_bits(rt_persp_aspect((uint64_t)(uintptr_t)asp_2c));
+        copy_2b[ai] = base * 0.75f;  /* idx < 0 received 0.75 aspect without intermediate doUpdateMatrix() */
+        eqf(asp_2a[ai], base * 0.75f);
+        widescreen_set_shape(1.0f);
+        rt_persp_update((uint64_t)(uintptr_t)asp_2a);
+        eqf(asp_2a[ai], base);
+        eqf(asp_2a[fvi], orig_fovy);
+        eqf(asp_2a[ti], tanf(orig_fovy * 0.5f));
+        assert(vert_count == 1);
+        /* Also test tracked count hitting 0 BEFORE idx < 0 queries rt_persp_aspect & restores on 0.9->1.0 */
+        widescreen_set_shape(0.5625f);
+        rt_persp_update((uint64_t)(uintptr_t)asp_2c);
+        eqf(asp_2c[ai], 1.0f);
+        eqf(asp_2c[fvi], 2.0f * atanf(tanf(orig_fovy * 0.5f) / 0.5625f));
+        widescreen_set_shape(1.25f);
+        rt_persp_update((uint64_t)(uintptr_t)asp_2c);  /* drops last seen_vert slot -> vert_count == 0, recent_vert_n > 0 */
+        eqf(asp_2c[ai], base * 1.25f);
+        eqf(asp_2c[fvi], orig_fovy);
+        assert(vert_count == 0);
+        assert(atomic_load_explicit(&vert_used, memory_order_acquire));
+        /* Now idx < 0 copy_2b STILL gets restored cleanly via recent_vert on 1.25f and 1.0f! */
+        eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)copy_2b)), base * 1.25f);
+        widescreen_set_shape(1.0f);
+        eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)copy_2b)), base);
+        rt_persp_update((uint64_t)(uintptr_t)copy_2b);
+        eqf(copy_2b[ai], base);
+        eqf(copy_2b[fvi], orig_fovy);
+        eqf(copy_2b[ti], tanf(orig_fovy * 0.5f));
+        assert(vert_count == 0);
+
+        /* 3) Strictly read-only rt_persp_aspect() invariant across 16:9, tracked match, scaled_match&&is_narrow_aspect,
+              copied idx<0, and cross-copied dst40<-src50 fallback */
+        {
+            float ro_p[64] = {0}, ro_copy[64] = {0}, ro_src50[64] = {0}, ro_dst40[64] = {0};
+            boot(0.9f, ASPECT_UNLOCKED);
+            ro_p[ni] = 1.0f; ro_p[fi] = 25000.0f; ro_p[fvi] = orig_fovy; ro_p[ai] = base;
+            ro_src50[ni] = 0.2f; ro_src50[fi] = 12000.0f; ro_src50[fvi] = 50.0f * 0.0174532925f; ro_src50[ai] = base;
+            ro_dst40[ni] = 0.2f; ro_dst40[fi] = 12000.0f; ro_dst40[fvi] = 40.0f * 0.0174532925f; ro_dst40[ai] = base;
+            rt_persp_update((uint64_t)(uintptr_t)ro_p);
+            rt_persp_update((uint64_t)(uintptr_t)ro_src50);
+            rt_persp_update((uint64_t)(uintptr_t)ro_dst40);
+            memcpy(ro_copy, ro_p, sizeof ro_copy);
+            memcpy(ro_dst40, ro_src50, sizeof ro_dst40);  /* dst40 tracked at 40 deg, buffer now holds 50 deg scaled */
+            widescreen_set_shape(0.75f);
+
+            VertProj snap_seen[VERT_SLOTS];
+            VertSig snap_recent[VERT_RECENT];
+            memcpy(snap_seen, seen_vert, sizeof snap_seen);
+            memcpy(snap_recent, recent_vert, sizeof snap_recent);
+            uint64_t snap_tick = vert_tick;
+            int snap_vc = vert_count, snap_rn = recent_vert_n;
+            unsigned int snap_rnext = recent_vert_next;
+            bool snap_used = atomic_load_explicit(&vert_used, memory_order_acquire);
+
+            /* Repeated rt_persp_aspect() queries must NOT mutate seen_vert, recent_vert, vert_tick, or vert_used */
+            eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)ro_p)), base * 0.75f);
+            eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)ro_copy)), base * 0.75f);
+            ro_dst40[ai] = base * 0.75f;  /* intermediate setAspect(getAspect()) write on cross-copied tracked ptr */
+            eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)ro_dst40)), base * 0.75f);
+            widescreen_set_shape(1.0f);
+            eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)ro_p)), base);
+            eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)ro_copy)), base);
+            eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)ro_dst40)), base);
+            ro_p[ai] = base * 0.75f;  /* hits found_idx>=0 vert_scaled_match() && is_narrow_aspect(a) sub-branch */
+            widescreen_set_shape(0.6f);
+            eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)ro_p)), base * 0.6f);
+            ro_p[ai] = base;
+            eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)ro_p)), base * 0.6f);
+
+            assert(memcmp(snap_seen, seen_vert, sizeof snap_seen) == 0);
+            assert(memcmp(snap_recent, recent_vert, sizeof snap_recent) == 0);
+            assert(snap_tick == vert_tick && snap_vc == vert_count && snap_rn == recent_vert_n &&
+                   snap_rnext == recent_vert_next);
+            assert(snap_used == atomic_load_explicit(&vert_used, memory_order_acquire));
+
+            /* Restore tracked & copied projections after shape resize */
+            ro_p[ai] = base * 0.9f;
+            rt_persp_update((uint64_t)(uintptr_t)ro_copy);
+            rt_persp_update((uint64_t)(uintptr_t)ro_p);
+            eqf(ro_p[ai], base * 0.6f);
+            eqf(ro_copy[ai], base * 0.6f);
+            widescreen_set_shape(1.0f);
+            rt_persp_update((uint64_t)(uintptr_t)ro_copy);
+            rt_persp_update((uint64_t)(uintptr_t)ro_p);
+            rt_persp_update((uint64_t)(uintptr_t)ro_src50);
+            rt_persp_update((uint64_t)(uintptr_t)ro_dst40);
+            eqf(ro_p[fvi], orig_fovy);
+            eqf(ro_copy[fvi], orig_fovy);
+            eqf(ro_dst40[fvi], 50.0f * 0.0174532925f);
+            assert(vert_count == 0);
+        }
+        {
+            /* Tracked anchor_uw drops to vert_count==0 FIRST on resize 0.9 -> 1.25 BEFORE idx < 0 copy_uw restores */
+            float anchor_uw[64] = {0}, copy_uw[64] = {0};
+            boot(0.9f, ASPECT_UNLOCKED);
+            anchor_uw[ni] = 1.0f; anchor_uw[fi] = 25000.0f; anchor_uw[fvi] = orig_fovy; anchor_uw[ai] = base;
+            rt_persp_update((uint64_t)(uintptr_t)anchor_uw);
+            memcpy(copy_uw, anchor_uw, sizeof copy_uw);
+            widescreen_set_shape(1.25f);
+            rt_persp_update((uint64_t)(uintptr_t)anchor_uw);
+            eqf(anchor_uw[ai], base * 1.25f);
+            eqf(anchor_uw[fvi], orig_fovy);
+            assert(vert_count == 0);
+            assert(atomic_load_explicit(&vert_used, memory_order_acquire));
+            copy_uw[ai] = from_bits(rt_persp_aspect((uint64_t)(uintptr_t)copy_uw));
+            eqf(copy_uw[ai], base * 1.25f);
+            rt_persp_update((uint64_t)(uintptr_t)copy_uw);
+            eqf(copy_uw[ai], base * 1.25f);
+            eqf(copy_uw[fvi], orig_fovy);
+            assert(vert_count == 0);
+        }
+        {
+            /* 5) Full 256-slot recent_vert ring wrap-around head-refresh */
+            float ring[256][64], ring_extra[64] = {0};
+            boot(0.9f, ASPECT_UNLOCKED);
+            for (int k = 0; k < 256; k++) {
+                memset(ring[k], 0, sizeof ring[k]);
+                ring[k][ni] = 1.0f + (float)k; ring[k][fi] = 25000.0f; ring[k][fvi] = orig_fovy; ring[k][ai] = base;
+                rt_persp_update((uint64_t)(uintptr_t)ring[k]);
+            }
+            ring_extra[ni] = 500.0f; ring_extra[fi] = 25000.0f; ring_extra[fvi] = orig_fovy; ring_extra[ai] = base;
+            rt_persp_update((uint64_t)(uintptr_t)ring_extra);  /* evicts ring[0], head-refreshes recent_vert[0], writes [1] */
+            ring[0][ai] = base;
+            rt_persp_update((uint64_t)(uintptr_t)ring[0]);
+            eqf(ring[0][fvi], want_fovy_09);
+            eqf(ring[0][ti], want_tan_09);
+        }
+    }
+
+    /* Dynamic resize 0.75 -> 1.25 (ultrawide) restores fovy/trig and widens mAspect to 2.2222 without guest 16:9 reset */
     boot(0.75f, ASPECT_UNLOCKED);
     proj[ni] = 1.0f; proj[fi] = 25000.0f; proj[fvi] = orig_fovy; proj[ai] = base;
     rt_persp_update((uint64_t)(uintptr_t)proj);
@@ -387,7 +808,7 @@ int main(int argc, char **argv) {
     eqf(proj[ai], base * 1.25f);
     eqf(proj[fvi], orig_fovy);
     eqf(proj[ti], tanf(orig_fovy * 0.5f));
-    assert(!atomic_load_explicit(&vert_used, memory_order_acquire));
+    assert(vert_count == 0);
 
     /* widescreen_reset() clears g_wide, menu_last, vert_used, and seen timestamps */
     frame = 500; scene = 400; menu = true;
@@ -399,14 +820,25 @@ int main(int argc, char **argv) {
     assert(!widescreen_in_menu());
     assert(!atomic_load_explicit(&vert_used, memory_order_acquire));
 
-    /* LARECOMP_NARROW_HOR_MINUS=1 disables Vert+ fovy change */
+    /* LARECOMP_NARROW_HOR_MINUS=1 disables Vert+ fovy change, keeps !vert_used, and restores cleanly */
     setenv("LARECOMP_NARROW_HOR_MINUS", "1", 1);
     boot(0.9f, ASPECT_UNLOCKED);
     proj[fvi] = orig_fovy; proj[ai] = base;
+    proj[si] = sinf(orig_fovy * 0.5f); proj[ci] = cosf(orig_fovy * 0.5f); proj[ti] = tanf(orig_fovy * 0.5f);
     rt_persp_update((uint64_t)(uintptr_t)proj);
     assert(!widescreen_narrow_vert_plus());
+    assert(!atomic_load_explicit(&vert_used, memory_order_acquire));
     eqf(proj[ai], base * 0.9f);
     eqf(proj[fvi], orig_fovy);
+    eqf(proj[si], sinf(orig_fovy * 0.5f));
+    eqf(proj[ci], cosf(orig_fovy * 0.5f));
+    eqf(proj[ti], tanf(orig_fovy * 0.5f));
+    eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)proj)), base * 0.9f);
+    widescreen_set_shape(1.0f);
+    proj[ai] = base;
+    rt_persp_update((uint64_t)(uintptr_t)proj);
+    eqf(proj[ai], base);
+    eqf(from_bits(rt_persp_aspect((uint64_t)(uintptr_t)proj)), base);
     unsetenv("LARECOMP_NARROW_HOR_MINUS");
 
     /* 3. widescreen_hud_anchor, minimap_at, present_crop, ultrawide hud_shift */
@@ -671,7 +1103,7 @@ int main(int argc, char **argv) {
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wsl', action='store_true')
-    parser.add_argument('--negative-control', choices=['camera', 'ui', 'anchor', 'map', 'crop', 'band', 'crop_title', 'oob_guard', 'tall_ui', 'backdrop'])
+    parser.add_argument('--negative-control', choices=['camera', 'ui', 'anchor', 'map', 'crop', 'band', 'crop_title', 'oob_guard', 'tall_ui', 'backdrop', 'mangle', 'copy_dedup'])
     args = parser.parse_args()
 
     out_scale_src = (ROOT / 'runtime/nvn/output_scale.c').read_text(encoding='utf-8')
@@ -769,6 +1201,16 @@ def main():
         old = 'g_wide_backdrop = sx > sy * 1.01f || sx < sy * 0.99f;'
         assert old in source
         source = source.replace(old, 'g_wide_backdrop = sx > sy * 1.01f;', 1)
+    elif args.negative_control == 'mangle':
+        old = 'p[2] = fovy_new;'
+        assert old in source
+        source = source.replace(old, '/* negative control */', 1)
+    elif args.negative_control == 'copy_dedup':
+        old = 'if (vert_sig_match(e->near_z, e->far_z, e->scaled_fovy, e->scaled_sin, e->scaled_cos, e->scaled_tan, p))'
+        old2 = 'if (vert_sig_match(s->near_z, s->far_z, s->scaled_fovy, s->scaled_sin, s->scaled_cos, s->scaled_tan, p))'
+        assert old in source and old2 in source
+        source = source.replace(old, 'if (false && vert_sig_match(e->near_z, e->far_z, e->scaled_fovy, e->scaled_sin, e->scaled_cos, e->scaled_tan, p))', 1)
+        source = source.replace(old2, 'if (false && vert_sig_match(s->near_z, s->far_z, s->scaled_fovy, s->scaled_sin, s->scaled_cos, s->scaled_tan, p))', 1)
 
     with tempfile.TemporaryDirectory(prefix='fullscreen-narrow-') as directory:
         binary = Path(directory) / 'test'
