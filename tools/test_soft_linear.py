@@ -45,7 +45,7 @@ def run_wasm_c_checks():
     assert 'static _Atomic int g_any_no_linear;' in textures_src
     assert 'VK_FORMAT_R16G16B16A16_UNORM, VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT' in textures_src
     assert 'if (!vk_format_is_int(f)) atomic_fetch_or_explicit(&g_any_no_linear, 3, memory_order_relaxed);' in textures_src
-    assert 'memo[ms].tfmt = tfmt;' in tex_info_fn and 'vk_sampled_format(te->tex' not in tex_info_fn
+    assert ('dst->tfmt = tfmt;' in tex_info_fn or 'memo[ms].tfmt = tfmt;' in tex_info_fn) and 'vk_sampled_format(te->tex' not in tex_info_fn
     assert 'if (sl_state == 1) { vkey = vk2; fkey = fk2; pr = sl; }' in exec_src
     assert 'if (sl_state == 1) cp = sl;' in exec_src
     assert '(!pr || atomic_load(&pr->state) == 2)' in exec_src
