@@ -27,7 +27,7 @@
 #include "vk.h"
 
 enum { REQ_EXEC, REQ_PRESENT, REQ_FENCE, REQ_CALL };
-typedef struct { int type; uint64_t a; void *p; uint64_t id; } Req;
+typedef struct { int type; uint64_t a; void *p; uint64_t id; size_t cap; } Req;
 
 #define QN 4096  // requests in flight (a frame has a few dozen)
 static Req q[QN];
@@ -77,6 +77,37 @@ static uint64_t render_cpu_ns(void) {
     return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
 
+#define SNAP_POOL_MAX 16
+#define SNAP_POOL_CAP_LIMIT (512u << 10)
+typedef struct { uint8_t *buf; size_t cap; } SnapPoolSlot;
+static SnapPoolSlot snap_pool[SNAP_POOL_MAX];
+static int snap_pool_n;
+static pthread_mutex_t snap_pool_lock = PTHREAD_MUTEX_INITIALIZER;
+static int snap_pool_off = -1;
+
+static bool snap_pool_enabled(void) {
+    int off = __atomic_load_n(&snap_pool_off, __ATOMIC_RELAXED);
+    if (off < 0) {
+        off = getenv("LARECOMP_NO_SNAP_POOL") != NULL ? 1 : 0;
+        __atomic_store_n(&snap_pool_off, off, __ATOMIC_RELAXED);
+    }
+    return !off;
+}
+
+static void snap_pool_recycle(void *p, size_t cap) {
+    if (!p) return;
+    if (snap_pool_enabled() && cap > 0 && cap <= SNAP_POOL_CAP_LIMIT) {
+        pthread_mutex_lock(&snap_pool_lock);
+        if (snap_pool_n < SNAP_POOL_MAX) {
+            snap_pool[snap_pool_n++] = (SnapPoolSlot){(uint8_t *)p, cap};
+            pthread_mutex_unlock(&snap_pool_lock);
+            return;
+        }
+        pthread_mutex_unlock(&snap_pool_lock);
+    }
+    free(p);
+}
+
 static void *render_main(void *arg) {
     (void)arg;
     extern void plat_thread_unpin(void);
@@ -99,7 +130,7 @@ static void *render_main(void *arg) {
         uint64_t t0 = plat_now_ns(), cpu0 = cpu_timing ? render_cpu_ns() : 0;
         extern void vk_tl(const char *what, uint64_t a, uint64_t b);  // (exec.c: LARECOMP_FRAME_TIMELINE)
         vk_tl(r.type == REQ_EXEC ? "render: list start" : r.type == REQ_PRESENT ? "render: present start" : "render: fence", r.id, 0);
-        if (r.type == REQ_EXEC) { vk_execute_now(r.a); free(r.p); }  // (r.p: the list copy, vk_async_execute)
+        if (r.type == REQ_EXEC) { vk_execute_now(r.a); snap_pool_recycle(r.p, r.cap); }  // (r.p: the list copy, vk_async_execute)
         else if (r.type == REQ_PRESENT) vk_present_now((NvnTexture *)r.p, r.a);
         else if (r.type == REQ_CALL) { ((void (*)(void *))(uintptr_t)r.a)(r.p); free(r.p); }
         if (r.type == REQ_EXEC || r.type == REQ_PRESENT) vk_tl(r.type == REQ_EXEC ? "render: list end" : "render: present end", r.id, 0);
@@ -124,7 +155,7 @@ static void *render_main(void *arg) {
     return NULL;
 }
 
-static uint64_t push(int type, uint64_t a, void *p) {
+static uint64_t push(int type, uint64_t a, void *p, size_t cap) {
     pthread_mutex_lock(&q_lock);
     if (!g_vk_render_started) {
         g_vk_render_started = true;
@@ -146,7 +177,7 @@ static uint64_t push(int type, uint64_t a, void *p) {
         extern void vk_tl(const char *what, uint64_t a, uint64_t b);
         vk_tl(type == REQ_EXEC ? "game: list sent" : type == REQ_PRESENT ? "game: present sent" : "game: fence sent", id, 0);
     }
-    q[(id - 1) % QN] = (Req){type, a, p, id};
+    q[(id - 1) % QN] = (Req){type, a, p, id, cap};
     if (type == REQ_PRESENT) q_presents++;
     pthread_cond_signal(&q_more);
     pthread_mutex_unlock(&q_lock);
@@ -254,10 +285,26 @@ static void snap_add(Snap *s, uint64_t p, int depth) {
         p += r->size;
     }
 }
+static void snap_pool_pop(Snap *s) {
+    if (!snap_pool_enabled()) return;
+    pthread_mutex_lock(&snap_pool_lock);
+    if (snap_pool_n > 0) {
+        SnapPoolSlot slot = snap_pool[--snap_pool_n];
+        s->b = slot.buf;
+        s->cap = slot.cap;
+    }
+    pthread_mutex_unlock(&snap_pool_lock);
+}
 static uint8_t *snap_list(uint64_t handle, Snap *s) {
     snap_add(s, handle, 0);
-    s->b = realloc(s->b, s->n + sizeof(CmdRec));
-    if (!s->b) FATAL("vk: out of memory for a command list copy\n");
+    size_t need = s->n + sizeof(CmdRec);
+    if (need > s->cap) {
+        size_t new_cap = need * 2 > 0x10000 ? need * 2 : 0x10000;
+        uint8_t *nb = realloc(s->b, new_cap);
+        if (!nb) FATAL("vk: out of memory for a command list copy\n");
+        s->b = nb;
+        s->cap = new_cap;
+    }
     memset(s->b + s->n, 0, sizeof(CmdRec));  // CMD_END
     ((CmdRec *)(s->b + s->n))->size = sizeof(CmdRec);
     return s->b;
@@ -267,6 +314,7 @@ void vk_async_execute(uint64_t handle) {
     static int no_copy = -1;
     if (no_copy < 0) no_copy = getenv("LARECOMP_NO_LIST_COPY") != NULL;
     Snap s = {0};
+    if (!no_copy) snap_pool_pop(&s);
     uint8_t *copy = no_copy ? NULL : snap_list(handle, &s);
     if (copy) handle = (uint64_t)(uintptr_t)copy;
     pthread_mutex_lock(&p_lock);
@@ -276,7 +324,7 @@ void vk_async_execute(uint64_t handle) {
     if (copy && s.nfence >= 0)
         for (int i = 0; i < s.nfence; i++) mark_fence((const CmdRec *)(copy + s.fence[i]), next);
     else mark_fences(handle, next, 0);
-    push(REQ_EXEC, handle, copy);  // (the render thread frees the copy once run)
+    push(REQ_EXEC, handle, copy, s.cap);  // (the render thread recycles or frees the copy once run)
     pthread_mutex_unlock(&p_lock);
 }
 
@@ -284,7 +332,7 @@ void vk_async_present(NvnTexture *t) {
     pthread_mutex_lock(&p_lock);
     uint64_t asked = plat_now_ns();
     if (g_benchmark) bench_handoff(asked);
-    push(REQ_PRESENT, asked, t);  // (a: when the game handed it over: device.c vsync_update)
+    push(REQ_PRESENT, asked, t, 0);  // (a: when the game handed it over: device.c vsync_update)
     pthread_mutex_unlock(&p_lock);
 }
 
@@ -300,14 +348,14 @@ void vk_async_call(void (*fn)(void *), void *arg) {
         fn(arg);
         free(arg);
     } else {
-        push(REQ_CALL, (uint64_t)(uintptr_t)fn, arg);
+        push(REQ_CALL, (uint64_t)(uintptr_t)fn, arg, 0);
     }
     pthread_mutex_unlock(&p_lock);
 }
 
 uint64_t vk_async_fence(uint64_t guest_sync) {
     pthread_mutex_lock(&p_lock);
-    uint64_t id = push(REQ_FENCE, guest_sync, NULL);
+    uint64_t id = push(REQ_FENCE, guest_sync, NULL, 0);
     pthread_mutex_unlock(&p_lock);
     return id;
 }
