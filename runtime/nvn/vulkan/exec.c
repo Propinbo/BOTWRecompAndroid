@@ -1434,9 +1434,14 @@ static VkSpan copy_dedupe(int slot, const void *data, uint64_t size, uint64_t al
 }
 
 // Guest memory copied once per submission: draws binding the same range share the copy.
-#define GCOPY_TAB 4096
-static struct { uint64_t addr, size, seq; VkSpan span; } gcopy[GCOPY_TAB];
-static uint16_t gcopy_active[GCOPY_TAB];
+// 2-way 64B cache-line-aligned table (2 * 32B = 64B per set, 64 KB total).
+#define GCOPY_SETS 1024
+#define GCOPY_ACTIVE_CAP (GCOPY_SETS * 2)
+typedef struct { uint64_t addr, seq; VkBuffer buf; uint32_t off, size; } GCopyEnt;
+_Static_assert(sizeof(GCopyEnt) == 32, "GCopyEnt fits 2 per 64B cache line");
+_Alignas(64) static GCopyEnt gcopy[GCOPY_SETS][2];
+static uint8_t gcopy_rr[GCOPY_SETS];
+static uint16_t gcopy_active[GCOPY_ACTIVE_CAP];
 static int gcopy_nactive;
 static uint64_t gcopy_active_seq;
 static uint64_t gcopy_gen;  // bumped to drop every shared copy (guest memory written mid-list)
@@ -1445,20 +1450,47 @@ static void guest_copy_flush(void) { gcopy_gen++; gcopy_nactive = 0; cbwin_cache
 static void guest_copy_invalidate(uint64_t lo, uint64_t hi) {
     uint64_t seq = vk_pending_seq() + (gcopy_gen << 40);
     if (gcopy_active_seq != seq) return;
+    if (gcopy_nactive >= GCOPY_ACTIVE_CAP) {
+        for (int set = 0; set < GCOPY_SETS; set++) {
+            for (int w = 0; w < 2; w++) {
+                GCopyEnt *e = &gcopy[set][w];
+                if (e->seq == seq && e->addr < hi && lo < e->addr + e->size) e->seq = 0;
+            }
+        }
+        return;
+    }
     for (int i = 0; i < gcopy_nactive; i++) {
         uint16_t s = gcopy_active[i];
-        if (gcopy[s].seq == seq && gcopy[s].addr < hi && lo < gcopy[s].addr + gcopy[s].size) gcopy[s].seq = 0;
+        GCopyEnt *e = &gcopy[s >> 1][s & 1];
+        if (e->seq == seq && e->addr < hi && lo < e->addr + e->size) e->seq = 0;
     }
 }
 static VkSpan guest_copy(uint64_t addr, uint64_t size) {
+    if (size > UINT32_MAX) {
+        stat_cb_copied += size;
+        return vk_transient_copy((const void *)(uintptr_t)addr, size, 256);
+    }
     uint64_t seq = vk_pending_seq() + (gcopy_gen << 40), h = (addr * 0x9E3779B97F4A7C15ull) ^ (size * 0xC2B2AE3D27D4EB4Full);
     if (gcopy_active_seq != seq) { gcopy_active_seq = seq; gcopy_nactive = 0; }
-    uint32_t slot = (uint32_t)(h ^ (h >> 32)) & (GCOPY_TAB - 1);
-    if (gcopy[slot].seq == seq && gcopy[slot].addr == addr && gcopy[slot].size == size) return gcopy[slot].span;
-    if (gcopy[slot].seq != seq && gcopy_nactive < GCOPY_TAB) gcopy_active[gcopy_nactive++] = (uint16_t)slot;
+    uint32_t set = (uint32_t)(h ^ (h >> 32)) & (GCOPY_SETS - 1);
+    GCopyEnt *w0 = &gcopy[set][0], *w1 = &gcopy[set][1];
+    if (w0->seq == seq && w0->addr == addr && w0->size == (uint32_t)size) return (VkSpan){w0->buf, w0->off, NULL};
+    if (w1->seq == seq && w1->addr == addr && w1->size == (uint32_t)size) return (VkSpan){w1->buf, w1->off, NULL};
     VkSpan s = vk_transient_copy((const void *)(uintptr_t)addr, size, 256);
     stat_cb_copied += size;
-    gcopy[slot].addr = addr; gcopy[slot].size = size; gcopy[slot].seq = seq; gcopy[slot].span = s;
+    if (s.off <= UINT32_MAX) {
+        uint32_t way = (w0->seq != seq) ? 0u : (w1->seq != seq) ? 1u : (uint32_t)(gcopy_rr[set] ^= 1u);
+        GCopyEnt *dst = &gcopy[set][way];
+        if (dst->seq != seq) {
+            if (gcopy_nactive < GCOPY_ACTIVE_CAP) gcopy_active[gcopy_nactive++] = (uint16_t)((set << 1) | way);
+            else gcopy_nactive = GCOPY_ACTIVE_CAP;
+        }
+        dst->addr = addr;
+        dst->seq = seq;
+        dst->buf = s.buf;
+        dst->off = (uint32_t)s.off;
+        dst->size = (uint32_t)size;
+    }
     return s;
 }
 #ifdef __ANDROID__
@@ -6439,10 +6471,24 @@ static void gres_sync(GaRes *e) {
     uint64_t len = e->hi - e->lo;
     VkCommandBuffer barrier_cb = VK_NULL_HANDLE;
     for (uint64_t b = 0; b < len;) {
-        if (!memcmp(g + b, e->shadow + b, 256)) { b += 256; continue; }
+        uint64_t rem = len - b;
+        if (rem >= 512) {
+            uint64_t chunk = rem < 4096 ? (rem & ~255ull) : 4096;
+            if (!memcmp(g + b, e->shadow + b, chunk)) { b += chunk; continue; }
+            uint64_t stop = b + chunk;
+            while (b < stop && !memcmp(g + b, e->shadow + b, 256)) b += 256;
+            if (b == stop) continue;
+        } else if (!memcmp(g + b, e->shadow + b, rem < 256 ? rem : 256)) {
+            b += 256;
+            continue;
+        }
         uint64_t s0 = b;
-        while (b < len && memcmp(g + b, e->shadow + b, 256)) b += 256;
-        uint64_t n = b - s0;
+        while (b < len) {
+            uint64_t bsz = len - b < 256 ? len - b : 256;
+            if (!memcmp(g + b, e->shadow + b, bsz)) break;
+            b += 256;
+        }
+        uint64_t n = (b < len ? b : len) - s0;
         VkSpan sp = vk_transient(n, 256);
         memcpy(sp.ptr, g + s0, n);
         memcpy(e->shadow + s0, g + s0, n);
@@ -7154,6 +7200,8 @@ static void vc_mark_sbufs(int stage) {
     }
 }
 
+static struct { uint64_t lo, hi, seq; uint32_t epoch; VkBuffer buf; } vc_fast[16];
+
 static bool vcache_lookup(uint64_t addr, uint64_t size, VkBuffer *buf, VkDeviceSize *off) {
     if (vc_on < 0) {
         const char *e = getenv("LARECOMP_VK_VCACHE");
@@ -7173,6 +7221,14 @@ static bool vcache_lookup(uint64_t addr, uint64_t size, VkBuffer *buf, VkDeviceS
     if (hi > (gmem_buf ? gmem_size : HEAP_MAX)) return false;
     uint64_t pend = vk_pending_seq(), frame = renderer_present_count();
     uint64_t h = (lo * 0x9E3779B97F4A7C15ull) ^ (hi * 0xC2B2AE3D27D4EB4Full);
+    uint32_t fslot = (uint32_t)(h ^ (h >> 32)) & 15u;
+    if (vc_fast[fslot].seq == pend && vc_fast[fslot].epoch == vc_epoch &&
+        vc_fast[fslot].lo == lo && vc_fast[fslot].hi == hi) {
+        prof_vc_hits++;
+        *buf = vc_fast[fslot].buf;
+        *off = addr - HEAP_BASE - lo;
+        return true;
+    }
     uint32_t slot = (uint32_t)(h ^ (h >> 32)) & (VC_TAB - 1), free_slot = ~0u, old_slot = ~0u;
     VcEnt *e = NULL;
     for (int probe = 0; probe < 16; probe++, slot = (slot + 1) & (VC_TAB - 1)) {
@@ -7215,6 +7271,11 @@ static bool vcache_lookup(uint64_t addr, uint64_t size, VkBuffer *buf, VkDeviceS
         vc_pend[vc_npend++] = (uint32_t)(e - vc_tab);
     }
     e->frame = frame;
+    vc_fast[fslot].lo = lo;
+    vc_fast[fslot].hi = hi;
+    vc_fast[fslot].seq = pend;
+    vc_fast[fslot].epoch = vc_epoch;
+    vc_fast[fslot].buf = e->buf;
     prof_vc_hits++;
     *buf = e->buf;
     *off = addr - HEAP_BASE - lo;
@@ -7371,6 +7432,7 @@ void vk_exec_reset(void) {
     for (int i = 0; i < VC_TAB; i++)  // (the vertex cache: copies of the old pages)
         if (vc_tab[i].buf) vmaDestroyBuffer(g_vk.vma, vc_tab[i].buf, vc_tab[i].mem);
     memset(vc_tab, 0, sizeof vc_tab);
+    memset(vc_fast, 0, sizeof vc_fast);
     vc_npend = 0;
     vc_free_dead(true);
     vc_bytes = 0;
@@ -7416,12 +7478,12 @@ static void stage_fill_soft_linear(int stage, const ShaderInfo *si, uint64_t can
         const NvnTexEntry *te = &((const NvnTexEntry *)st.tpool->entries)[tic];
         if (!te->tex) continue;
         NvnTexture *rt = naliases ? alias_read(te->tex) : te->tex;
-        if (!naliases && (!te->has_view || !(te->view.setmask & 4)) && rt == te->tex && rt->backend) {
+        if ((!te->has_view || !(te->view.setmask & 4) || te->view.format == rt->format) && rt->backend) {
             TexBackend *tb = (TexBackend *)rt->backend;
             uint8_t sl = tb->soft_linear_state;
             if (sl == 2) continue;
             if (!sl) {
-                VkFormat tfmt = vk_sampled_format(rt, &te->view, te->has_view);
+                VkFormat tfmt = vk_sampled_format(rt, NULL, false);
                 sl = (tfmt == VK_FORMAT_UNDEFINED || vk_format_is_int(tfmt) || vk_format_filters_linear(tfmt)) ? 2 : 1;
                 tb->soft_linear_state = sl;
                 if (sl == 2) continue;
@@ -7457,19 +7519,36 @@ static void texture_info(int stage, ShaderInfo *si, int i, VkDescriptorImageInfo
             extern uint64_t vk_frame_counter(void);
             static int nomemo = -1;
             if (nomemo < 0) nomemo = getenv("LARECOMP_VK_NO_TEX_MEMO") != NULL;
-            static struct { NvnTexture *tex; uint64_t vh, frame; uint32_t gen; uint8_t type, has_view; VkFormat tfmt; VkImageView view; } memo[1024];
-            uint64_t vh = e->has_view ? hash_words(0, &e->view, sizeof e->view) : 0, frame = vk_frame_counter();
+            _Static_assert(sizeof e->view == 16, "NvnTextureView must be 16 bytes");
+            typedef struct { NvnTexture *tex; uint64_t vh, frame; uint32_t gen; uint8_t type, has_view; VkFormat tfmt; VkImageView view; } TexMemoEnt;
+            static TexMemoEnt memo_tab[1024][2];
+            static uint8_t memo_rr[1024];
+            uint64_t vh = 0;
+            if (e->has_view) {
+                uint64_t vw[2];
+                memcpy(vw, &e->view, 16);
+                vh = (vw[0] * 0x9E3779B97F4A7C15ull) ^ (vw[1] * 0xC2B2AE3D27D4EB4Full);
+            }
+            uint64_t frame = vk_frame_counter();
             uint32_t ms = (uint32_t)((((uintptr_t)e->tex >> 4) ^ vh ^ (uint64_t)st_->type * 0x9E3779B97F4A7C15ull) & 1023);
-            if (!nomemo && memo[ms].tex == e->tex && memo[ms].vh == vh && memo[ms].frame == frame && memo[ms].gen == vk_view_gen &&
-                memo[ms].type == st_->type && memo[ms].has_view == e->has_view) {
-                view = memo[ms].view;
-                tfmt = memo[ms].tfmt;
+            TexMemoEnt *w0 = &memo_tab[ms][0], *w1 = &memo_tab[ms][1];
+            if (!nomemo && w0->tex == e->tex && w0->vh == vh && w0->frame == frame && w0->gen == vk_view_gen &&
+                w0->type == st_->type && w0->has_view == e->has_view) {
+                view = w0->view;
+                tfmt = w0->tfmt;
+            } else if (!nomemo && w1->tex == e->tex && w1->vh == vh && w1->frame == frame && w1->gen == vk_view_gen &&
+                       w1->type == st_->type && w1->has_view == e->has_view) {
+                view = w1->view;
+                tfmt = w1->tfmt;
             } else {
                 NvnTexture *rt = naliases ? alias_read(e->tex) : e->tex;
                 view = vk_view(rt, &e->view, e->has_view, false, st_->type);
                 tfmt = rt && rt->backend ? vk_sampled_format(rt, &e->view, e->has_view) : VK_FORMAT_UNDEFINED;
-                memo[ms].tex = e->tex; memo[ms].vh = vh; memo[ms].frame = frame; memo[ms].gen = vk_view_gen;
-                memo[ms].type = (uint8_t)st_->type; memo[ms].has_view = e->has_view; memo[ms].tfmt = tfmt; memo[ms].view = view;
+                TexMemoEnt *dst = (w0->frame != frame || w0->gen != vk_view_gen) ? w0
+                                : (w1->frame != frame || w1->gen != vk_view_gen) ? w1
+                                : &memo_tab[ms][(memo_rr[ms] ^= 1u) ^ 1u];
+                dst->tex = e->tex; dst->vh = vh; dst->frame = frame; dst->gen = vk_view_gen;
+                dst->type = (uint8_t)st_->type; dst->has_view = e->has_view; dst->tfmt = tfmt; dst->view = view;
             }
             renderer_texture_scale(e->tex, &sc[0], &sc[1]);
             if (e->tex == scene_up.t && stage == 1) { view = scene_up_view(e); sc[0] = scene_up.sx; sc[1] = scene_up.sy; }
@@ -7716,17 +7795,35 @@ static VkDescriptorSet stage_set(Prog *p, VkDescriptorSetLayout layout, uint32_t
 #define DS_MIX(v) do { uint64_t v_ = (uint64_t)(v); h1 = (h1 ^ v_) * 0x100000001B3ull; h1 ^= h1 >> 29; \
                        h2 = (h2 + v_) * 0xFF51AFD7ED558CCDull; h2 ^= h2 >> 33; } while (0)
         for (int i = 0; i < n; i++) {
-            DS_MIX(w[i].dstBinding | (uint64_t)w[i].descriptorType << 32);
-            if (w[i].pImageInfo) { DS_MIX((uintptr_t)w[i].pImageInfo->sampler); DS_MIX((uintptr_t)w[i].pImageInfo->imageView); DS_MIX(w[i].pImageInfo->imageLayout); }
-            else { DS_MIX((uintptr_t)w[i].pBufferInfo->buffer); DS_MIX(w[i].pBufferInfo->offset); DS_MIX(w[i].pBufferInfo->range); }
+            if (w[i].pImageInfo) {
+                const VkDescriptorImageInfo *im = w[i].pImageInfo;
+                DS_MIX((uint64_t)(uint16_t)w[i].dstBinding | ((uint64_t)(uint16_t)w[i].descriptorType << 16) |
+                       ((uint64_t)(uint32_t)im->imageLayout << 32));
+                DS_MIX((uintptr_t)im->sampler);
+                DS_MIX((uintptr_t)im->imageView);
+            } else {
+                const VkDescriptorBufferInfo *bf = w[i].pBufferInfo;
+                DS_MIX(w[i].dstBinding | ((uint64_t)w[i].descriptorType << 32));
+                DS_MIX((uintptr_t)bf->buffer);
+                if (bf->offset) DS_MIX(bf->offset);
+                DS_MIX(bf->range);
+            }
         }
 #undef DS_MIX
-        static struct { uint64_t seq, h1, h2; VkDescriptorSet ds; } cache[4096];
+        typedef struct { uint64_t seq, h1, h2; VkDescriptorSet ds; } DsCacheEnt;
+        _Static_assert(sizeof(DsCacheEnt) == 32, "DsCacheEnt fits 2 per 64B cache line");
+        _Alignas(64) static DsCacheEnt cache[1024][2];
+        static uint8_t cache_rr[1024];
         uint64_t seq = vk_pending_seq();
-        uint32_t slot = (uint32_t)(h1 ^ (h1 >> 32)) & 4095;
-        if (!off && cache[slot].seq == seq && cache[slot].h1 == h1 && cache[slot].h2 == h2) {
+        uint32_t set = (uint32_t)(h1 ^ (h1 >> 32)) & 1023u;
+        DsCacheEnt *w0 = &cache[set][0], *w1 = &cache[set][1];
+        if (!off && w0->seq == seq && w0->h1 == h1 && w0->h2 == h2) {
             prof_set_hits++;
-            return cache[slot].ds;
+            return w0->ds;
+        }
+        if (!off && w1->seq == seq && w1->h1 == h1 && w1->h2 == h2) {
+            prof_set_hits++;
+            return w1->ds;
         }
         prof_set_miss++;
         uint64_t tw_ = prof > 0 ? plat_now_ns() : 0;
@@ -7734,7 +7831,8 @@ static VkDescriptorSet stage_set(Prog *p, VkDescriptorSetLayout layout, uint32_t
         for (int i = 0; i < n; i++) w[i].dstSet = ds;
         if (n) vkUpdateDescriptorSets(g_vk.dev, (uint32_t)n, w, 0, NULL);
         if (prof > 0) prof_dsw += plat_now_ns() - tw_;
-        cache[slot].seq = seq, cache[slot].h1 = h1, cache[slot].h2 = h2, cache[slot].ds = ds;
+        DsCacheEnt *dst = (w0->seq != seq) ? w0 : (w1->seq != seq) ? w1 : &cache[set][(cache_rr[set] ^= 1u) ^ 1u];
+        dst->seq = seq; dst->h1 = h1; dst->h2 = h2; dst->ds = ds;
         return ds;
     }
 #else

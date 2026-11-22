@@ -142,6 +142,8 @@ typedef struct TexBackend {
     uint8_t soft_linear_state;  // lazy cache: 0 unknown, 1 needs software linear filter, 2 hardware-ok or int
     int tp;              // runtime/nvn/texpatch.c: 0 not checked yet, -1 none, else known UI texture + 1
     uint32_t tp_gen;     // texpatch_generation() it was last uploaded with
+    struct { uint64_t k1, k2; VkImageView view; } fast_view[2];  // inline L1 cache for hot vk_image_view lookups
+    uint8_t fast_view_next;
     int reg;  // slot in textures.c's live list + 1 (a reboot destroys them all)
 } TexBackend;
 

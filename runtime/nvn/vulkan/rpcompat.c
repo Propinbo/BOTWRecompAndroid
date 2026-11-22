@@ -36,7 +36,7 @@ static RpEnt *rps;
 static uint32_t rp_cap;
 static int nrps;
 
-typedef struct { VkRenderPass rp; VkImageView v[FB_VIEWS]; uint32_t w, h; VkFramebuffer fb; uint8_t state; } FbEnt;  // state 1 live, 2 gone
+typedef struct { VkRenderPass rp; VkImageView v[FB_VIEWS]; uint32_t w, h; VkFramebuffer fb; uint8_t state, nv; } FbEnt;  // state 1 live, 2 gone
 static FbEnt fbs[FB_MAX];
 static int fb_live, fb_used;  // (used: live and gone - the probes' length)
 static struct { VkImageView v; uint32_t n; } vset[VSET_MAX];
@@ -95,7 +95,13 @@ static uint32_t rp_hash(const RpKey *k) {
                    "RpKey must have no implicit tail padding");
     uint64_t h = 0xcbf29ce484222325ull;
     const uint8_t *p = (const uint8_t *)k;
-    for (size_t i = 0; i < sizeof *k; i += 4) {
+    size_t i = 0;
+    for (; i + 8 <= sizeof *k; i += 8) {
+        uint64_t w;
+        memcpy(&w, p + i, 8);
+        h = mix(h, w);
+    }
+    if (i + 4 <= sizeof *k) {
         uint32_t w;
         memcpy(&w, p + i, 4);
         h = mix(h, w);
@@ -202,18 +208,16 @@ static void drop_all(void) {  // (lock held) the table full: every framebuffer g
 }
 
 static VkFramebuffer get_fb(VkRenderPass rp, const VkImageView *v, uint32_t nv, uint32_t w, uint32_t h) {  // (lock held)
-    FbEnt want;
-    memset(&want, 0, sizeof want);
-    want.rp = rp, want.w = w, want.h = h;
-    memcpy(want.v, v, nv * sizeof *v);
-    uint64_t hh = mix(mix(0xcbf29ce484222325ull, (uint64_t)(uintptr_t)rp), ((uint64_t)w << 32) | h);
+    if (nv > FB_VIEWS) return VK_NULL_HANDLE;
+    uint64_t hh = mix(mix(mix(0xcbf29ce484222325ull, (uint64_t)(uintptr_t)rp), ((uint64_t)w << 32) | h), nv);
     for (uint32_t i = 0; i < nv; i++) hh = mix(hh, (uint64_t)(uintptr_t)v[i]);
     uint32_t s0 = (uint32_t)(hh >> 20), free_slot = ~0u;
     for (uint32_t i = 0; i < FB_MAX; i++) {
         FbEnt *e = &fbs[(s0 + i) & (FB_MAX - 1)];
         if (!e->state) { if (free_slot == ~0u) free_slot = (s0 + i) & (FB_MAX - 1); break; }
         if (e->state == 2) { if (free_slot == ~0u) free_slot = (s0 + i) & (FB_MAX - 1); continue; }
-        if (e->rp == rp && e->w == w && e->h == h && !memcmp(e->v, want.v, sizeof want.v)) return e->fb;
+        if (e->rp == rp && e->w == w && e->h == h && e->nv == nv && (!nv || !memcmp(e->v, v, nv * sizeof *v)))
+            return e->fb;
     }
     if (fb_used >= FB_MAX * 3 / 4) { drop_all(); free_slot = s0 & (FB_MAX - 1); }
     VkFramebufferCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, .renderPass = rp, .attachmentCount = nv,
@@ -226,8 +230,14 @@ static VkFramebuffer get_fb(VkRenderPass rp, const VkImageView *v, uint32_t nv, 
     }
     FbEnt *e = &fbs[free_slot];
     if (!e->state) fb_used++;
-    *e = want;
-    e->fb = fb, e->state = 1;
+    memset(e, 0, sizeof *e);
+    e->rp = rp;
+    e->w = w;
+    e->h = h;
+    e->nv = (uint8_t)nv;
+    if (nv) memcpy(e->v, v, nv * sizeof *v);
+    e->fb = fb;
+    e->state = 1;
     fb_live++;
     for (uint32_t i = 0; i < nv; i++) {
         uint32_t s = vset_slot(v[i]);

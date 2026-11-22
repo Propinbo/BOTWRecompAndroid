@@ -1533,6 +1533,8 @@ void vk_views_forget(TexBackend *b) { views_forget(b); }
 uint32_t vk_view_gen;  // bumped whenever a cached view may be destroyed (exec.c's per-frame texture memo)
 void vk_texture_views_drop(TexBackend *b);  // (lsfg/lsfg_present.c: its outputs, before they go)
 static void views_forget(TexBackend *b) {
+    b->fast_view[0].view = VK_NULL_HANDLE;
+    b->fast_view[1].view = VK_NULL_HANDLE;
     vk_view_gen++;
     for (int i = 0; i < VIEW_TAB; i++)
         if (view_tab[i].b == b) { defer((Dead){.view = view_tab[i].view}); view_tab[i].b = NULL; view_tab[i].view = VK_NULL_HANDLE; }
@@ -1542,11 +1544,22 @@ VkImageView vk_image_view(TexBackend *b, VkImageViewType type, VkFormat fmt, uin
                           uint32_t nly, VkComponentMapping sw, VkImageAspectFlags aspect) {
     uint64_t k1 = (uint64_t)type | (uint64_t)fmt << 8 | (uint64_t)lv0 << 40 | (uint64_t)nlv << 48 | (uint64_t)aspect << 56;
     uint64_t k2 = (uint64_t)ly0 | (uint64_t)nly << 16 | (uint64_t)sw.r << 32 | (uint64_t)sw.g << 40 | (uint64_t)sw.b << 48 | (uint64_t)sw.a << 56;
+    if (b->fast_view[0].view != VK_NULL_HANDLE && b->fast_view[0].k1 == k1 && b->fast_view[0].k2 == k2)
+        return b->fast_view[0].view;
+    if (b->fast_view[1].view != VK_NULL_HANDLE && b->fast_view[1].k1 == k1 && b->fast_view[1].k2 == k2)
+        return b->fast_view[1].view;
     uint64_t h = ((uint64_t)(uintptr_t)b * 0x9E3779B97F4A7C15ull) ^ (k1 * 0xC2B2AE3D27D4EB4Full) ^ (k2 * 0x165667B19E3779F9ull);
     uint32_t slot = (uint32_t)(h ^ (h >> 32)) & (VIEW_TAB - 1);
     for (int probe = 0; probe < 16; probe++, slot = (slot + 1) & (VIEW_TAB - 1)) {
         ViewEnt *e = &view_tab[slot];
-        if (e->b == b && e->k1 == k1 && e->k2 == k2) return e->view;
+        if (e->b == b && e->k1 == k1 && e->k2 == k2) {
+            uint8_t s = b->fast_view_next;
+            b->fast_view[s].k1 = k1;
+            b->fast_view[s].k2 = k2;
+            b->fast_view[s].view = e->view;
+            b->fast_view_next = s ^ 1u;
+            return e->view;
+        }
         if (!e->b) break;
     }
     extern uint64_t prof_views_created;
@@ -1561,8 +1574,18 @@ VkImageView vk_image_view(TexBackend *b, VkImageViewType type, VkFormat fmt, uin
     }
     dv_set(v, false);  // (#176: a handle the driver hands out again is alive)
     ViewEnt *e = &view_tab[slot];
-    if (e->b) { defer((Dead){.view = e->view}); vk_view_gen++; }  // evict (16 probes taken)
+    if (e->b) {
+        if (e->b->fast_view[0].view == e->view) e->b->fast_view[0].view = VK_NULL_HANDLE;
+        if (e->b->fast_view[1].view == e->view) e->b->fast_view[1].view = VK_NULL_HANDLE;
+        defer((Dead){.view = e->view});
+        vk_view_gen++;
+    }  // evict (16 probes taken)
     *e = (ViewEnt){b, k1, k2, v};
+    uint8_t s = b->fast_view_next;
+    b->fast_view[s].k1 = k1;
+    b->fast_view[s].k2 = k2;
+    b->fast_view[s].view = v;
+    b->fast_view_next = s ^ 1u;
     return v;
 }
 
