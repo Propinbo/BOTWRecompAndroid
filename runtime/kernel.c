@@ -541,6 +541,7 @@ static void *thread_main(void *arg) {
     t_cur = t;
 #ifdef __ANDROID__
     plat_thread_unpin();  // (not the presenting thread's fast cores: platform.h)
+    plat_guest_thread_affinity();
 #endif
     crash_handler_install();
     rt_set_fpcr(0);

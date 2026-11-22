@@ -503,6 +503,11 @@ static _Atomic int pace_on = -1;
 static double g_work_ms;
 double vk_frame_work_ms(void) { return g_work_ms > 0 ? g_work_ms : -1; }
 
+#ifdef __ANDROID__
+static _Atomic uint64_t g_adpf_budget_ns = 16666667ull;
+uint64_t vk_adpf_budget_ns(void) { return atomic_load_explicit(&g_adpf_budget_ns, memory_order_relaxed); }
+#endif
+
 // The last presented frame's GPU busy time in ms, -1 unknown (Video > Internal resolution > Dynamic: output_scale.c)
 double vk_frame_gpu_ms(void) {
 #ifdef __ANDROID__
@@ -585,12 +590,29 @@ void vk_pace_frame(void) {
         // Three quarters of the frame, not all of it: the governor lowers the clocks until the work just fits its
         // target, and a phone whose frames weigh near 33 ms then went over it every few frames - each a vsync late, 50
         // ms: 17-20 fps at any quality where 0.2.6 held 30 (Mali-G925, #89; 0.2.9 brought the 33 ms budget)
-        bool fixed30 = fps_mode_now() == 1 && AB("adpf30") != 1;
-        uint64_t budget = fps_mode_now() == 3 ? 37500000ull  // (Frame rate 20: 20 fps's, three quarters)
+        int mode = fps_mode_now();
+        bool fixed30 = mode == 1 && AB("adpf30") != 1;
+        static int adpf_budget_fix = -1;
+        if (adpf_budget_fix < 0) {
+            const char *fe = getenv("LARECOMP_ADPF_BUDGET_FIX");
+            adpf_budget_fix = !fe || atoi(fe) != 0;
+        }
+        uint64_t budget = mode == 3 ? 37500000ull  // (Frame rate 20: 20 fps's, three quarters)
                           : (follow && pace_slow) || fixed30 ? 25000000ull : 16666667ull;
-        static double budget30 = -1;  // (LARECOMP_ADPF30_MS=<ms>, a test: the 30 fps budget instead of 25 ms)
+        if (mode == 4 && adpf_budget_fix) {
+            extern uint64_t framepace_period_ns(void);
+            uint64_t period = framepace_period_ns();
+            uint64_t b40 = (period * 3ull) / 4ull;
+            if (b40 < 16666667ull) b40 = 16666667ull;
+            if (b40 > 25000000ull) b40 = 25000000ull;
+            budget = b40;
+        }
+        static double budget30 = -1, budget40 = -1;  // (LARECOMP_ADPF30_MS / LARECOMP_ADPF40_MS=<ms>: override budget)
         if (budget30 < 0) budget30 = getenv("LARECOMP_ADPF30_MS") ? atof(getenv("LARECOMP_ADPF30_MS")) : 0;
+        if (budget40 < 0) budget40 = getenv("LARECOMP_ADPF40_MS") ? atof(getenv("LARECOMP_ADPF40_MS")) : 0;
         if (budget30 > 0 && budget == 25000000ull) budget = (uint64_t)(budget30 * 1e6);
+        if (budget40 > 0 && mode == 4) budget = (uint64_t)(budget40 * 1e6);
+        atomic_store_explicit(&g_adpf_budget_ns, budget, memory_order_relaxed);
         plat_frame_work_gpu((uint64_t)(hint_busy * 1e6), no_gpu ? 0 : gpu, budget, (uint64_t)(game_busy * 1e6));
     }
 #endif

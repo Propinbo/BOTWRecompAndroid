@@ -66,6 +66,7 @@ uint64_t vk_frame_counter(void) { return s_frame_counter; }
 uint64_t renderer_present_count(void) { return s_frame_counter; }
 int vk_between_fps(void) { return 30; }
 int fps_mode_now(void) { return 0; }
+uint64_t framepace_period_ns(void) { return 16666667ull; }
 void benchmark_frame(double a, double b, double c, double d, double e) { (void)a, (void)b, (void)c, (void)d, (void)e; }
 void vk_save_png(const char *p, const uint8_t *r, uint32_t w, uint32_t h) { (void)p, (void)r, (void)w, (void)h; }
 void vk_memfd_probe(void) {}

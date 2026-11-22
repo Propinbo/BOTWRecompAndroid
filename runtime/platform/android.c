@@ -902,6 +902,79 @@ typedef struct APerformanceHintSession APerformanceHintSession;
 // core runs at the same clock).
 static cpu_set_t g_all_cores;
 static _Atomic bool g_pinned;
+static pthread_once_t g_all_cores_once = PTHREAD_ONCE_INIT;
+static bool g_all_cores_ok;
+
+static void init_all_cores(void) {
+    CPU_ZERO(&g_all_cores);
+    g_all_cores_ok = sched_getaffinity(0, sizeof g_all_cores, &g_all_cores) == 0;
+}
+
+static bool cpu_is_online(int cpu) {
+    char path[96];
+    snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/online", cpu);
+    FILE *f = fopen(path, "re");
+    if (!f) return true;  // (cpu0 on ARM Linux commonly has no online sysfs node)
+    int on = 1;
+    if (fscanf(f, "%d", &on) != 1) on = 1;
+    fclose(f);
+    return on != 0;
+}
+
+static bool parse_cpu_mask(const char *env_name, cpu_set_t *out, uint64_t *used_mask) {
+    const char *e = getenv(env_name);
+    if (!e || !*e) return false;
+    char *end = NULL;
+    unsigned long long req = strtoull(e, &end, 0);
+    if (end == e || *end || !req) return false;
+    pthread_once(&g_all_cores_once, init_all_cores);
+    CPU_ZERO(out);
+    uint64_t used = 0;
+    for (int c = 0; c < 64 && c < CPU_SETSIZE; c++) {
+        if (!(req & (1ULL << c))) continue;
+        if (g_all_cores_ok && !CPU_ISSET(c, &g_all_cores)) continue;
+        if (!cpu_is_online(c)) continue;
+        CPU_SET(c, out);
+        used |= 1ULL << c;
+    }
+    if (!used || CPU_COUNT(out) <= 0) return false;
+    if (used_mask) *used_mask = used;
+    return true;
+}
+
+static bool apply_thread_cpu_set(const cpu_set_t *set, int *err_out) {
+    pthread_once(&g_all_cores_once, init_all_cores);
+    if (g_all_cores_ok && !atomic_load_explicit(&g_pinned, memory_order_acquire))
+        atomic_store_explicit(&g_pinned, true, memory_order_release);
+    int r = sched_setaffinity(0, sizeof *set, set);
+    if (err_out) *err_out = r ? errno : 0;
+    return r == 0;
+}
+
+static int find_fastest_cores(cpu_set_t *set, int *ncores, long *best_khz) {
+    long best = 0, mhz[CPU_SETSIZE] = {0};
+    int n = 0;
+    for (int c = 0; c < CPU_SETSIZE && c < 64; c++) {
+        char path[96];
+        snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", c);
+        FILE *f = fopen(path, "re");
+        if (!f) continue;
+        if (fscanf(f, "%ld", &mhz[c]) != 1) mhz[c] = 0;
+        fclose(f);
+        if (mhz[c] > best) best = mhz[c];
+        n = c + 1;
+    }
+    CPU_ZERO(set);
+    int k = 0;
+    for (int c = 0; c < n; c++)
+        if (mhz[c] == best) {
+            CPU_SET(c, set);
+            k++;
+        }
+    *ncores = k;
+    *best_khz = best;
+    return n;
+}
 
 // LARECOMP_UCLAMP_MIN=<1-1024> (a test, issue #41): a utilization floor for every thread that starts here (the game's,
 // the render thread, audio), so the governor runs their cores at least at that share of their top clock, however
@@ -935,71 +1008,67 @@ static void uclamp_min_thread(void) {
 // The render thread (vulkan/async.c, ours: no part of the game's job system that LARECOMP_PIN broke) on the fastest
 // cores. Left to the scheduler on a Galaxy Tab A9+ (Snapdragon 695: 2 x A78, 6 x A55) it sat on a little core,
 // 90 ms a frame translating the world, while the game's thread had a big one (2026-11-08). Default: on low RAM
-// (vulkan/exec.c vk_low_ram - the weak phones); LARECOMP_RENDER_BIG=1 / 0.
+// (vulkan/exec.c vk_low_ram - the weak phones); LARECOMP_RENDER_BIG=1 / 0; LARECOMP_RENDER_CPU_MASK=<hex mask>.
 void plat_render_thread_pin(void) {
+    cpu_set_t set;
+    uint64_t mask = 0;
+    if (parse_cpu_mask("LARECOMP_RENDER_CPU_MASK", &set, &mask)) {
+        int err = 0;
+        bool ok = apply_thread_cpu_set(&set, &err);
+        LOG("[android] render thread affinity mask %#llx: %s\n", (unsigned long long)mask, ok ? "ok" : strerror(err));
+        return;
+    }
     const char *e = getenv("LARECOMP_RENDER_BIG");
     extern bool vk_low_ram(void);
     if (e ? !atoi(e) : !vk_low_ram()) return;
-    long best = 0, mhz[64] = {0};
-    int n = 0;
-    for (int c = 0; c < 64; c++) {
-        char path[96];
-        snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", c);
-        FILE *f = fopen(path, "re");
-        if (!f) continue;
-        if (fscanf(f, "%ld", &mhz[c]) != 1) mhz[c] = 0;
-        fclose(f);
-        if (mhz[c] > best) best = mhz[c];
-        n = c + 1;
-    }
-    cpu_set_t set;
-    CPU_ZERO(&set);
-    int k = 0;
-    for (int c = 0; c < n; c++)
-        if (mhz[c] == best) {
-            CPU_SET(c, &set);
-            k++;
-        }
+    long best = 0;
+    int k = 0, n = find_fastest_cores(&set, &k, &best);
     if (!best || k == 0 || k == n) return;
-    if (!atomic_load_explicit(&g_pinned, memory_order_acquire) &&
-        sched_getaffinity(0, sizeof g_all_cores, &g_all_cores) == 0)
-        atomic_store_explicit(&g_pinned, true, memory_order_release);
-    int r = sched_setaffinity(0, sizeof set, &set);
-    LOG("[android] render thread on the %d fastest cores (%ld MHz): %s\n", k, best / 1000, r ? strerror(errno) : "ok");
+    int err = 0;
+    bool ok = apply_thread_cpu_set(&set, &err);
+    LOG("[android] render thread on the %d fastest cores (%ld MHz): %s\n", k, best / 1000, ok ? "ok" : strerror(err));
 }
 
 void plat_thread_unpin(void) {
-    if (atomic_load_explicit(&g_pinned, memory_order_acquire)) sched_setaffinity(0, sizeof g_all_cores, &g_all_cores);
+    if (atomic_load_explicit(&g_pinned, memory_order_acquire) && g_all_cores_ok)
+        sched_setaffinity(0, sizeof g_all_cores, &g_all_cores);
     uclamp_min_thread();
+}
+
+static pthread_once_t g_guest_aff_once = PTHREAD_ONCE_INIT;
+static cpu_set_t g_guest_aff_set;
+static uint64_t g_guest_aff_mask;
+static bool g_guest_aff_ok;
+static void init_guest_affinity(void) {
+    if (parse_cpu_mask("LARECOMP_GUEST_CPU_MASK", &g_guest_aff_set, &g_guest_aff_mask)) {
+        pthread_once(&g_all_cores_once, init_all_cores);
+        if (g_all_cores_ok) atomic_store_explicit(&g_pinned, true, memory_order_release);
+        g_guest_aff_ok = true;
+    }
+}
+
+void plat_guest_thread_affinity(void) {
+    pthread_once(&g_guest_aff_once, init_guest_affinity);
+    if (!g_guest_aff_ok) return;
+    int r = sched_setaffinity(0, sizeof g_guest_aff_set, &g_guest_aff_set);
+    int err = r ? errno : 0;
+    static atomic_int logged;
+    if (!atomic_exchange(&logged, 1))
+        LOG("[android] guest threads affinity mask %#llx: %s\n", (unsigned long long)g_guest_aff_mask,
+            r == 0 ? "ok" : strerror(err));
 }
 
 static void pin_to_fastest_cores(void) {
     if (!getenv("LARECOMP_PIN")) return;
-    long best = 0, mhz[CPU_SETSIZE] = {0};
-    int n = 0;
-    for (int c = 0; c < CPU_SETSIZE && c < 64; c++) {
-        char path[96];
-        snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", c);
-        FILE *f = fopen(path, "re");
-        if (!f) continue;
-        if (fscanf(f, "%ld", &mhz[c]) != 1) mhz[c] = 0;
-        fclose(f);
-        if (mhz[c] > best) best = mhz[c];
-        n = c + 1;
-    }
     cpu_set_t set;
-    CPU_ZERO(&set);
-    int k = 0;
-    for (int c = 0; c < n; c++)
-        if (mhz[c] == best) {
-            CPU_SET(c, &set);
-            k++;
-        }
+    long best = 0;
+    int k = 0, n = find_fastest_cores(&set, &k, &best);
     if (!best || k == 0 || k == n) return;  // (one cluster: nothing to pick)
-    if (sched_getaffinity(0, sizeof g_all_cores, &g_all_cores)) return;
-    atomic_store_explicit(&g_pinned, true, memory_order_release);  // (before: a thread started from here from now on goes back to g_all_cores)
-    int r = sched_setaffinity(0, sizeof set, &set);
-    LOG("[android] presenting thread on the %d fastest cores (%ld MHz): %s\n", k, best / 1000, r ? strerror(errno) : "ok");
+    pthread_once(&g_all_cores_once, init_all_cores);
+    if (!g_all_cores_ok) return;
+    int err = 0;
+    bool ok = apply_thread_cpu_set(&set, &err);
+    LOG("[android] presenting thread on the %d fastest cores (%ld MHz): %s\n", k, best / 1000, ok ? "ok" : strerror(err));
 }
 
 // One session for both threads by default (the presenting thread and the render thread; LARECOMP_ADPF_SPLIT=1 for
