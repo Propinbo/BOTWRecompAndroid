@@ -28,6 +28,7 @@
 //   LARECOMP_LOG_FRAMEPACE=<n>   every n clock updates: target, frame length, VFR ratio and interval
 //   LARECOMP_NO_CONTROLLER_STEP=1  the controllers count presented frames (as the game does)
 #include <math.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,10 +83,19 @@ bool framepace_on_title(void) {
     uint64_t mgr = holder ? *(uint64_t *)(uintptr_t)holder : 0;
     bool on = mgr && !*(uint32_t *)(uintptr_t)PAUSE_STATE && VF(uint32_t, mgr, 0x28) > 1 && VF(uint64_t, mgr, 0x30) &&
               *(uint64_t *)(uintptr_t)(VF(uint64_t, mgr, 0x30) + 8);
-    static int last = -1;
-    if (getenv("LARECOMP_LOG_TITLE") && on != last) {
-        last = on;
-        LOG("[framepace] title screen %d (screens %u, menu %d)\n", on, mgr ? VF(uint32_t, mgr, 0x28) : 0, in_menu());
+    static _Atomic int last = -1;
+    static _Atomic int log_title = -1;
+    int lt = atomic_load_explicit(&log_title, memory_order_relaxed);
+    if (lt < 0) {
+        lt = getenv("LARECOMP_LOG_TITLE") != NULL;
+        atomic_store_explicit(&log_title, lt, memory_order_relaxed);
+    }
+    if (lt) {
+        int prev = atomic_load_explicit(&last, memory_order_relaxed);
+        if (on != prev) {
+            atomic_store_explicit(&last, on, memory_order_relaxed);
+            LOG("[framepace] title screen %d (screens %u, menu %d)\n", on, mgr ? VF(uint32_t, mgr, 0x28) : 0, in_menu());
+        }
     }
     return on;
 }
