@@ -31,7 +31,7 @@ Last updated: `2026-11-22` (`Europe/Moscow`)
 
 | Device | GPU / Driver | Installed App | Verified Backup & Caches |
 |---|---|---|---|
-| **Tab S11 (SM-X730)** *(connected)* | Mali-G925 (`r49p1`) | **`v0.4.11-beta-mali`** (`9d2aaed2...`, `60fa2a5f...`) | `2026-11-22-gyro-pr`: `68/68` saves, `15802` `.spv`, `1fefc662caaa`; stopped |
+| **Tab S11 (SM-X730)** *(connected)* | Mali-G925 (`r49p1`) | **`cpu-therm-p2`** (`196c94c6`, `60fa2a5f`, `@0a89336`) | `2026-11-22-gyro-pr`: `68/68` saves, `15802` `.spv`, `1fefc662caaa`; stopped |
 | **OP13 (CPH2653)** *(unplugged)* | Adreno 830 (**Turnip V38**) | **`v0.4.10-beta-op13`** (`63a4195f...`, `60fa2a5f...`) | `2026-11-21`: `83/84` saves, `2707` `.spv`, `725a99243c7f`; stopped |
 
 Rollback APKs (`.mali/apk/`): `v0.4.11-beta-mali` (`9d2aaed2`, prev `aa13a014`/`881201b0`), `v0.4.10-op13` (`63a4195f`), `v0.4.10-mali` (`a6899a76`), `v0.4.10` (`9ae5c77a`), `v0.4.8`..`0.4.5`.
