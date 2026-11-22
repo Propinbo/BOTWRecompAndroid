@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-18 to 2026-11-22). Query sele
 
 ## Table of Contents
 
+- [2026-11-22] android-nintendo-gyro-pr545 — Android `hid-nintendo` Gyroscope Fix & Upstream PR #545 (`OPEN`)
 - [2026-11-22] pr518-rebase-and-review-fixes — PR #518 Rebase onto `v0.4.11-beta` (`75bfc64c`), ROAA & Review Fixes, and SM-X730 FX Verification (COMPLETE)
 - [2026-11-22] pr529-rebase-and-pr518-review-triage — PR #529 Rebase onto `v0.4.11-beta` (`75bfc64c`) & PR #518 Review Triage (COMPLETE)
 - [2026-11-22] v0411-beta-mali-rollout — Consolidated `v0.4.11-beta-mali` Build, Isolated SM-X730 3-Pass Verification & Device Rollout (COMPLETE)
@@ -23,6 +24,19 @@ Active indexed English engineering ledger (2026-11-18 to 2026-11-22). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-17)
 
 ---
+
+## [2026-11-22] android-nintendo-gyro-pr545 — Android `hid-nintendo` Gyroscope Fix & Upstream PR #545 (`OPEN`)
+
+- **Root Cause Proven on Hardware (`SM-X730` + 8BitDo Pro 2 `S`-mode `057e:2009`):** Direct kernel `/dev/input/event13` capture (`Linux 6.6.102-android15-8`) and SDL3 source audit established three interacting defects: (1) Android `Vendor_057e_Product_{2006,2007,2009}.kl` + `SDL3` `Android_OnJoySensor` (`path == NULL`) pass Nintendo-frame IMU axes verbatim without `(-y, z, -x)`, which the 4 unsigned UI swaps in `f72bf98` cannot express; (2) `hid-nintendo` `MSC_TIMESTAMP` runs `1.92x–1.96x` real wall time (`22.0 ms` hw per `11.45 ms` BT packet), causing ~2x tilt overshoot followed by Mahony gravity rebound (`KP=0.5f`); (3) resting bias calibration used the accelerated `sensor_timestamp` (`~0.78 s` real), accepted `0.06 rad/s` without checking accel stability (corrupting bias during slow bow panning), and shared state with the phone/tablet gyro.
+- **Implementation (`.mali/worktrees/fix-android-nintendo-gyro`, `fix/android-nintendo-gyro` @ `08963d5` atop `75bfc64c`, 4 files, PR `#545`):**
+  - `runtime/hle/motion.c`: Per-pad `MotionPad` isolation + single-active-pad arbitration (`m_active_pad_id`); Switch 1 PID-gated (`0x2006..0x200e`) `(-y, z, -x)` normalization on `__ANDROID__` before `g_settings.pad_gyro_axes` (direct `LARECOMP_PAD_GYRO` override preserved); `PadClock` (`hw_ts / host_ts` over 0.25 s/0.50 s windows, `±0.08` deadband, USB burst `dt > 0`, 32-bit `MSC_TIMESTAMP` wrap recovery, `LARECOMP_NO_CLOCK_SCALE=1` rollback); raw-frame `m_phone_bias` before `to_screen_turns()` (180-deg display-flip invariant) + host-timed `GyroBias` with running-mean gyro/accel checks, 250 ms gap guard, 4 mrad/s hysteresis, and 6 s recovery; explicit `have_accel` in `add_sample()`, `vec3_finite()` `NaN`/`Inf` guards, capped Auto-mode `changing` counters (`19`/`20`) + orphan-accel expiry, `hid_sixaxis_states()` `now > m_live_ns` underflow fix, and complete `motion_reset()`.
+  - `runtime/hle/input.c`: Disables sensors before `SDL_CloseGamepad()` and calls `motion_pad_closed(id)` afterward.
+  - `tools/test_motion.c`, `tools/test_android_runtime.ps1`: Added 15-case isolated `test_motion` binary with `$haveSdlHeaders` skip guard.
+- **2-Round Multi-Agent Review & Verification (`.mali/android-nintendo-gyro/upstream-pr/CODE_REVIEW.md`):**
+  - Round 1 (`91c64b8`) + Round 2 (`e05d1bd` -> `08963d5`) across 3 parallel `independent-verifier` agents (`caa6913c`, `0c20fc0c`, `9fd3a6c5`) concluded **`0 CRITICAL, 0 MAJOR`** remaining on final commit `08963d5`.
+  - Strict NDK clang checks (Android `aarch64` + non-Android `-U__ANDROID__`, `-Wall -Wextra -Werror`): `0` warnings; `tools/test_android_runtime.ps1`: `9/9` (`08963d5`) & `13/13` (`072fc5c`) PASS (`15/15` `test_motion` cases PASS); `workspace_check.py pr`: `PASS` (`mergeable=YES`).
+  - Isolated exact-PR-commit (`08963d5`) `SM-X730` release APK (`b01eee98dfbc...`, `cert 60fa2a5f...`): Arm A (`motion_source=2`, 8BitDo Pro 2, empty `driver_env`) auto-applied `(-y,z,-x)`, measured `1.96x` clock scaling (`dt 11.2–11.5 ms`), locked bias `-0.0092 0.0058 -0.0186 rad/s`, `0.000` turns drift across `4,694` samples (`0` errors); Arm B (`motion_source=1`, `LSM6DSVTR`) locked bias `-0.0005 0.0006 -0.0010 rad/s`, `0.000` turns drift across `~52 s`; owner confirmed in-hand bow/rune aim, axes, rebound, and drift all clean.
+- **Upstream PR & Consolidated Mali Redeploy:** Pushed `origin/fix/android-nintendo-gyro` (`08963d5`) & `origin/release/mali-0.4.11-beta` (`072fc5c`), opened **`https://github.com/mamcjr/BOTWRecompAndroid/pull/545`** (`MERGEABLE / CLEAN`), rebuilt & deployed `BOTWRecompAndroid-0.4.11-beta-mali-release.apk` (`9d2aaed2a8f8...`, `cert 60fa2a5f...`) onto `SM-X730`, verified clean stop & `0` diffs against `.mali/user-backup/2026-11-22-gyro-pr/mali` (`68/68` saves, `15802` `.spv`, `1fefc662caaa` `vk_pipelines.bin`).
 
 ## [2026-11-22] pr518-rebase-and-review-fixes — PR #518 Rebase onto `v0.4.11-beta` (`75bfc64c`), ROAA & Review Fixes, and SM-X730 FX Verification (COMPLETE)
 
