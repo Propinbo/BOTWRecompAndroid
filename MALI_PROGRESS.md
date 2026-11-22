@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-18 to 2026-11-22). Query sele
 
 ## Table of Contents
 
+- [2026-11-22] mali-cpu-thermals-phase1-phase2 — SM-X730 CPU & Thermals Optimization Phase 0–2 & 300s Thermal Soak (COMPLETE)
 - [2026-11-22] android-nintendo-gyro-pr545 — Android `hid-nintendo` Gyroscope Fix & Upstream PR #545 (`OPEN`)
 - [2026-11-22] pr518-rebase-and-review-fixes — PR #518 Rebase onto `v0.4.11-beta` (`75bfc64c`), ROAA & Review Fixes, and SM-X730 FX Verification (COMPLETE)
 - [2026-11-22] pr529-rebase-and-pr518-review-triage — PR #529 Rebase onto `v0.4.11-beta` (`75bfc64c`) & PR #518 Review Triage (COMPLETE)
@@ -24,6 +25,21 @@ Active indexed English engineering ledger (2026-11-18 to 2026-11-22). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-17)
 
 ---
+
+## [2026-11-22] mali-cpu-thermals-phase1-phase2 — SM-X730 CPU & Thermals Optimization Phase 0–2 & 300s Thermal Soak (COMPLETE)
+
+- **Branch, Baseline & Commit Stack (`feat/mali-cpu-thermals` @ `0a89336` atop `072fc5c` / `release/mali-0.4.11-beta`):**
+  - **Phase 1 (`072fc5c..7be43cd`):** Ported `289f147` (`descriptor_plan` / `rscale` UBO cache / `soft_linear`), `6daeb55` (`copy_lists` scratch reuse), `6705dc2` (`LARECOMP_LOG_TITLE` cache), `6ac9268` (latched frame counter); `b425618` (opt-in CPU affinity masks + `LARECOMP_ADPF*`); `4f5b254` (uncontended `core0_acquire`/`release`, conditional `c0_cv` signal, `SleepThread(0)` fast path, targeted `kernel_signal` via `KThread::sync_objs[8]`, HLE TLS elimination via `KThread` fields); `94862cc` (`async.c` command-list snapshot pool `<=512 KB`); `7be43cd` (`test_kernel_fastpath.c`, `test_async_snap_pool.c`).
+  - **Phase 2 (`7be43cd..0a89336`, 12 files, `+736`/`-81`):** `c0652d4` (`SNAP_POOL_CAP_LIMIT` `16 MB`, `32 MB` byte cap, largest-first pop, unlock-before-free eviction, `RT_ON_RESET`); `8722c54` + `0a89336` (`cmdbuf.c` `copy_snapshot_to_cb()` contiguous `memcpy` + `rec_reserve()` without `raw_rec` zeroing + `LARECOMP_NO_CMDBUF_BULK=1` + `test_cmdbuf_copy.c`); `34ffd92` (cached hot `getenv` lookups in `textures.c`, `exec.c`, `input.c`); `75037e7` (made 40/45 fps ADPF override opt-in, restoring `13.33 ms` default); `aa13057` (Thread-5 hot caches: `stage_fill_soft_linear`, `texture_info` 2-way `memo_tab`, 64 KB 2-way `guest_copy` & `stage_set` caches, `vcache_lookup` `vc_fast[16]`, `gres_sync` 4 KB `memcmp` pre-check, `TexBackend.fast_view[2]`, `rp_hash` 8B loop & `FbEnt.nv`).
+- **Verification & Build (`0a89336`, `SM-X730` Mali-G925 `r49p1`, BOTW `1.9.0`):**
+  - Host Python suites: **`8 / 8 PASS`** (`test_descriptor_plan` `31,040`, `test_soft_linear` `35+3+203`, `test_workspace160_guard`, `test_vulkan_startup` `33`, `test_vulkan_compat` `16`, `test_pipeline_cache_save`, `test_gpu_timing_trace` `8`, `test_command_snapshot`).
+  - Native Android Bionic binaries on `SM-X730`: **`18 / 18 PASS`** (`rc=0`, `test_command_snapshot` + `17/17` in `tools/test_android_runtime.ps1`); `workspace_check.py status`: `PASS`.
+  - Release APK built & signed matching stock cert (`60fa2a5f...`): `.mali/cpu-thermals-20261122/BOTWRecompAndroid-cpu-therm-p2-signed.apk` (`SHA-256: 196c94c6ae3587df9685660d09646a3a042d14366ce3438d7d8422f392f31f82`).
+- **Stage A Matrix, `simpleperf` & Stage B `300s` Sustained Soak (`.mali/cpu-thermals-20261122/PHASE1_AB_REPORT.md`, `PHASE2_AB_REPORT.md`):**
+  - **Stage A (`40 FPS` open Hyrule Field grass, `75% SGSR1`, `shadows=1`):** `P2_1_opt_default` (`180 s`, `SKIN 35.7->43.0 °C`) achieved `game_ms_med 0.80 ms` (`-64.1%` vs `P1_0_stock_matched` `2.23 ms`), `render 13.95 ms`, `gpu 19.62 ms`, `total_sched_pct 148.7% -> 146.8%` (vs `157.8% -> 157.6%`), `watts_med 3.77 W` (vs `4.12 W`), clean `P2_1_opt_default_verify.png`. `P2_2_chunk6000` (`gpu 21.36 ms`) and `P2_3_noprime` (`min2s 38.9`, `gpu 21.17 ms`) regressed and were rejected.
+  - **`simpleperf` (`P1_1p` `32,665` samples / `45.00B` cycles -> `P2_1p` `29,849` samples / `45.12B` cycles):** Async/Submit threads dropped `4.97%+3.66%` (`2,207` samples) -> `3.44%+2.13%` (`1,214` samples, `-45.0%`); `clear_page`, `unmap_page_range`, `snap_pool_recycle`, `vk_sampled_format`, and `vk_image_view` dropped off top hotspots.
+  - **Stage B `300s` Head-to-Head Soak (`P2_4_soak300_opt` start `SKIN 38.0 °C` / `AP 44.9 °C` / `SoC 63.16 °C` vs `P2_0_soak300_stock` `37.9 °C` / `45.0 °C` / `63.43 °C`, `errors=[]`):** Stock entered thermal collapse at `t=265–301 s` (`TS=3` at `~228 s`, `min_cpu_cap_p4 1400` / `p7 1700 MHz`, `gpu_out 1325 MHz` `ppm=32`, `t265s total_sched 181.9%`, late `render 18.03 -> 20.95 ms`, late `gpu 25.00 -> 25.10 ms`, `fps 39.9 -> 39.0`). **`P2_4_soak300_opt`** held **`40.0 FPS` uninterruptedly from `68–301 s`** (`min 40.0`, `0` dips across `120–305 s`, late `max_ms 27/27`, `game 0.78 ms`, `render 13.92 ms` / `13.99 ms` end, `gpu 20.34 ms` / `21.77 ms` end unthrottled at `1423 MHz` `ppm=23`, `min_cpu_cap_p4 1700 MHz` `+300 MHz`, `t265s total_sched 150.8%` **`-31.1 pts`**, `watts_med 4.06 vs 4.34 W`, `TS=3` delayed `+53 s` to `~281 s`).
+  - **Post-Flight:** Pushed `origin/feat/mali-cpu-thermals` (`0a89336`), restored stock `9d2aaed2a8f8` cleanly (`pid=''`, scratch removed, `68/68` saves, `15802` `.spv`, `1fefc662caaa` intact).
 
 ## [2026-11-22] android-nintendo-gyro-pr545 — Android `hid-nintendo` Gyroscope Fix & Upstream PR #545 (`OPEN`)
 
