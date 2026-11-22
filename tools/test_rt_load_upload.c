@@ -1492,6 +1492,7 @@ int main(void) {
         uint64_t up1 = stat_upload_bytes;
         stage_set(&rs_pr, VK_NULL_HANDLE, 0, 0, &rs_vs, NULL, NULL, 0, 0, 0, row0, dyn2, &nd2);
         uint64_t up2 = stat_upload_bytes;
+        (void)vk_cmd();
         renderer_flush();
         stage_set(&rs_pr, VK_NULL_HANDLE, 0, 0, &rs_vs, NULL, NULL, 0, 0, 0, row0, dyn3, &nd3);
         uint64_t up3 = stat_upload_bytes;
@@ -1499,6 +1500,17 @@ int main(void) {
                          up1 > up0 && up2 == up1 && dyn2[0] == dyn1[0] && up3 > up2;
         vk_exec_reset();
         check("stage_set RscaleDedupe hit/miss across submissions", ok_rscale);
+    }
+
+    {
+        // Runtime integration check for exec_frame_now() latch and reset clearing.
+        s_frame_counter = 7;
+        g_exec_frame = 42;
+        g_in_exec = true;
+        bool ok_latch = exec_frame_now() == 42;
+        vk_exec_reset();
+        bool ok_reset_exec = !g_in_exec && exec_frame_now() == 7;
+        check("exec_frame_now latch and vk_exec_reset clearing", ok_latch && ok_reset_exec);
     }
 
     check("Vulkan mock synchronization validator recorded 0 hazards", !mock_hazards);
