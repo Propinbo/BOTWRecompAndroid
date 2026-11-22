@@ -1,45 +1,46 @@
 # MALI Status
 
-Last updated: `2026-11-21` (`Europe/Moscow`)
+Last updated: `2026-11-22` (`Europe/Moscow`)
 
 ## Upstream & Repository Baseline
 
-- **Newest upstream release:** `mamcjr/BOTWRecompAndroid` **`v0.4.10-beta`** (`2026-11-21T15:06:56Z`, `1c02adf9`, `versionCode 49`).
-- **Fork `main`:** `1c02adf994194055f7d517fc99dc5686269e11ed` (`main == origin/main == upstream/main`).
+- **Newest upstream release:** `mamcjr/BOTWRecompAndroid` **`v0.4.11-beta`** (`2026-11-21T23:30:59Z`, `afd7b842`, `versionCode 50`).
+- **Fork `main`:** `afd7b84299fd3492bbfd8f9ee35065dd60f950d9` (`main == origin/main`; `upstream/main` `75bfc64c`).
 
 ## Active Worktrees
 
 | Worktree | Branch | HEAD | Purpose |
 |---|---|---|---|
-| Root `.` | `main` | `1c02adf` | Clean `v0.4.10-beta` baseline & docs |
+| Root `.` | `main` | `afd7b84` | Clean `v0.4.11-beta` baseline & docs |
+| `.mali/worktrees/fix-narrow-shadow-539` | `fix/narrow-shadow-539` | `213c521` | **OPEN PR #543** (`Fixes #539` narrow Vert+ shadows) |
+| `.mali/worktrees/op13-turnip-opt` | `feat/op13-turnip-opt` | `7f4cc9a` | **Installed `v0.4.10-beta-op13`** (Turnip cache-ctrl, `CopyScratch`, hotpath) |
 | `.mali/worktrees/mali-release-0410` | `release/mali-0.4.10-beta` | `7451bb8` | **Installed `v0.4.10-beta-mali`** (`#534+#531+#529+#507+#518+#537`) |
-| `.mali/worktrees/fix-descriptor-plan-dyn-ubo` | `fix/vk-descriptor-plan-dynamic-ubo` | `c27c1b7` | **OPEN PR #537** (`MERGEABLE`, `descriptor_plan` UBO_DYNAMIC) |
-| `.mali/worktrees/mali-renderpass-default` | `feat/vk-mali-renderpass-default` | `9d5e732` | **OPEN PR #534** (`MERGEABLE`, Mali `r49+` classic RP + `rpcompat` hash) |
-| `.mali/worktrees/bc-parallel-decode` | `feat/vk-bc-parallel-decode` | `122e11e` | **OPEN PR #531** (`MERGEABLE`, 4T parallel CPU BC/ASTC decode) |
-| `.mali/worktrees/warm-cache-pipe-fastpath` | `feat/vk-warm-cache-fastpath` | `edeb35e` | **OPEN PR #529** (`MERGEABLE`, inline warm cache + cache control) |
-| `.mali/worktrees/render-cpu-hotpath` | `feat/vk-render-cpu-hotpath` | `e54d6a8` | **HELD locally** (verified `9/9`, held for `<0.5ms` isolated `DR=on` gain) |
-| `.mali/worktrees/tile-local-read` | `feat/vk-local-read` | `9e75f99` | **OPEN PR #518** (`MERGEABLE`, `VK_KHR_dynamic_rendering_local_read`) |
-| `.mali/worktrees/mali-inplace-feedback` | `feat/mali-inplace-feedback` | `2e36682` | **OPEN PR #507** (`7f5afab` rebase + 11-locale Mali UI note) |
+| `.mali/worktrees/fix-descriptor-plan-dyn-ubo` | `fix/vk-descriptor-plan-dynamic-ubo` | `c27c1b7` | **OPEN PR #537** (`descriptor_plan` UBO_DYNAMIC) |
+| `.mali/worktrees/mali-renderpass-default` | `feat/vk-mali-renderpass-default` | `9d5e732` | **OPEN PR #534** (Mali `r49+` classic RP + hash) |
+| `.mali/worktrees/bc-parallel-decode` | `feat/vk-bc-parallel-decode` | `122e11e` | **OPEN PR #531** (4T parallel BC/ASTC decode) |
+| `.mali/worktrees/warm-cache-pipe-fastpath` | `feat/vk-warm-cache-fastpath` | `edeb35e` | **OPEN PR #529** (inline warm cache + ctrl) |
+| `.mali/worktrees/render-cpu-hotpath` | `feat/vk-render-cpu-hotpath` | `e54d6a8` | **HELD** (folded into `7f4cc9a` Turnip validation) |
+| `.mali/worktrees/tile-local-read` | `feat/vk-local-read` | `9e75f99` | **OPEN PR #518** (`dynamic_rendering_local_read`) |
+| `.mali/worktrees/mali-inplace-feedback` | `feat/mali-inplace-feedback` | `2e36682` | **MERGED PR #507** (`2e36682`) |
 | `.mali/worktrees/benchmark-scenes-v2` | `benchmark-scenes-v2` | `c48d1b1` | **OPEN PR #480** (`3/3` starter heights) |
-| `.mali/worktrees/mali-release-048` | `release/mali-0.4.8-beta` | `5d93424` | Historical `v0.4.8-beta-mali` build |
+| `.mali/worktrees/mali-release-048` | `release/mali-0.4.8-beta` | `5d93424` | Historical `v0.4.8-beta-mali` |
 
 ## Physical Devices & Backup Guards
 
 | Device | GPU / Driver | Installed App | Verified Backup & Caches |
 |---|---|---|---|
-| **Galaxy Tab S11 (SM-X730)** *(connected)* | Mali-G925 MC12 (`r49p1` stock Mali) | **`v0.4.10-beta-mali` (`7451bb8`)** (`a6899a76...6b6`, cert `60fa2a5f...`) | `2026-11-21-b`: `68/68` saves (`diffs=0`), `3/4` prefs (`ActivityThread.IDS.xml`), `10401` `.spv`, `vk_pipelines.bin=c2a8d11fdc66`; stopped |
-| **OnePlus 13 (CPH2653)** *(unplugged)* | Adreno 830 (**Turnip V38** only) | `v0.4.5-beta` Mali (`2229426f...7b23a`) | `2026-11-17`: `83/84` (`0` save/INI diffs); `#518/#529/#531/#534/#537` untested on Turnip |
+| **Galaxy Tab S11 (SM-X730)** *(connected)* | Mali-G925 (`r49p1`) | **`v0.4.10-beta-mali`** (`a6899a76...`, `60fa2a5f...`) | `2026-11-22`: `68/68` saves (`diffs=0`), `12973` `.spv`, `c008b3285d18`; stopped |
+| **OnePlus 13 (CPH2653)** *(unplugged)* | Adreno 830 (**Turnip V38**) | **`v0.4.10-beta-op13`** (`63a4195f...`, `60fa2a5f...`) | `2026-11-21`: `83/84` (`0` save/INI diffs), `2707` `.spv`, `725a99243c7f`; stopped |
 
-Rollback APKs under `.mali/apk/`: `v0.4.10-beta-mali` (`a6899a76...`), `v0.4.10-beta` (`9ae5c77a...`), `v0.4.8-beta-mali`, `v0.4.7-beta-mali`, `v0.4.6-beta-mali`, `v0.4.5-beta-mali`. Evidence branches (`origin`): `evidence/pr-descriptor-plan-dyn-ubo-20261121` (`a1c84ac`), `evidence/pr-mali-renderpass-default-20261121` (`2a2354b`), `evidence/pr-bc-parallel-decode-20261121` (`6df6519`), `6b5d66c7`, `abf2ec4`.
+Rollback APKs (`.mali/apk/`): `v0.4.10-beta-op13` (`63a4195f...`), `v0.4.10-beta-mali` (`a6899a76...`), `v0.4.10-beta` (`9ae5c77a...`), `v0.4.8`..`0.4.5`. Evidence (`origin`): `12a76bd`, `a1c84ac`, `2a2354b`, `6df6519`, `6b5d66c7`.
 
 ## Open PRs & Active Priorities
 
-- **Merged:** `#504` (`5df9dd9`), `#506` (`c02beea`), `#508` (`3d28f80`), `#481`–`#485`.
-- **Open:** **`#537`** (`c27c1b7`), **`#534`** (`9d5e732`), **`#531`** (`122e11e`), **`#529`** (`edeb35e`), **`#518`** (`9e75f99`), **`#507`** (`2e36682`), **`#480`** (`c48d1b1`).
-- **Immediate Queue:** Await `mamcjr` review on `#507`/`#518`/`#529`/`#531`/`#534`/`#537`; cross-test on `CPH2653` Turnip when attached.
+- **Merged:** `#507`, `#504`, `#506`, `#508`, `#481`–`#485`. **Open:** `#543`, `#537`, `#534`, `#531`, `#529`, `#518`, `#480`.
+- **Queue:** Await `mamcjr` review on open PRs; optionally build updated `v0.4.11-beta-mali` APK including PR `#543` (`#539` shadow fix).
 
 ## Recent Milestones
 
-- `[2026-11-21]` **PR #537 (`c27c1b7`) & `v0.4.10-beta-mali` Rollout (`7451bb8`):** Fixed `descriptor_plan()` `UNIFORM_BUFFER_DYNAMIC` drop/crash (`31,040` equiv, `SM-X730` black-screen/SIGSEGV -> `30.00 fps` `0` errors); built, verified (`15/15` Bionic, `40.00 fps` across all 3 scenes at `75% SGSR1` + `shadows=1` + `inplace_reads=1`), and installed `v0.4.10-beta-mali` (`a6899a76...`, `68/68` saves intact).
-- `[2026-11-21]` **PR #534 Classic RP (`9d5e732`) & PR #531/#529 (`122e11e`/`edeb35e`):** `-1.87..-2.40 ms` render CPU (`kakariko 60p +3.46 fps`), `2.59x` faster BC decode, `-93.8%` warm teleport skips.
-- `[2026-11-21]` **PR #518 Local Read (`9e75f99`) & PR #507 Rebase (`2e36682`):** Added Mali local-read path & 11-locale `#507` UI note. See `MALI_PROGRESS.md`.
+- `[2026-11-22]` **PR #543 (`213c521`, Fixes #539) & Owner Triage:** Fixed narrow Vert+ `mAngle` (`+0xA0`) mismatch causing downward-pitch dark terrain shadows (`SM-X730` `16:10` `top_10_30` `103.11 -> 131.33`, `4:3` `134.24`, `0` FOV creep, `8/8` Bionic, `12/12` neg ctrl); checked Nov 21 crash (`0` tombstones, OS bg CPU kill at `7.1 GB` RSS, `log_file=1`) & inventory (`frame_01160` clean).
+- `[2026-11-22]` **OnePlus 13 Turnip V38 Opt (`7f4cc9a`):** `3168x1440` modes, `+1.01 fps` / `+3.85 low1` (`-73.2%` skips, `63a4195f...`).
+- `[2026-11-21]` **PR #537 (`c27c1b7`) & `v0.4.10-beta-mali` (`7451bb8`):** Fixed dynamic-UBO crash; `40.00 fps` across `3/3` scenes (`a6899a76...`). See `MALI_PROGRESS.md`.

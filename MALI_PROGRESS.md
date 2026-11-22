@@ -1,9 +1,11 @@
 # MALI Contribution Execution Progress
 
-Active indexed English engineering ledger (2026-11-18 to 2026-11-21). Query selectively by heading or line range rather than loading the entire file. Historical entries (2026-10-30 to 2026-11-17) are summarized in the bottom digest and archived under `.mali/archive/`.
+Active indexed English engineering ledger (2026-11-18 to 2026-11-22). Query selectively by heading or line range rather than loading the entire file. Historical entries (2026-10-30 to 2026-11-17) are summarized in the bottom digest and archived under `.mali/archive/`.
 
 ## Table of Contents
 
+- [2026-11-22] narrow-shadow-539 — Narrow-Landscape Vert+ Shadow Fix (#539) & Upstream PR #543 (OPEN)
+- [2026-11-22] op13-turnip-opt-and-release-0410-op13 — OnePlus 13 (`CPH2653` / Turnip V38) Fullscreen Display Tuning, Mali Parity Audit, CPU Hotpath Opts & `v0.4.10-beta-op13` Rollout (COMPLETE)
 - [2026-11-21] pr537-descriptor-plan-and-release-0410 — PR #537 Dynamic UBO Plan Fix & Consolidated `v0.4.10-beta-mali` Rollout (COMPLETE)
 - [2026-11-21] v0410-mali-40fps-and-prs-529-531-534 — Upstream `v0.4.10-beta` Sync, PRs #529/#531/#534, Held 2B-2 & 40 FPS `SM-X730` Validation (COMPLETE)
 - [2026-11-21] v049-sync-and-pr507-rebase — Upstream `v0.4.9-beta` Sync, Worktree Cleanup & PR #507 UI Note Rebase (OPEN)
@@ -18,6 +20,38 @@ Active indexed English engineering ledger (2026-11-18 to 2026-11-21). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-17)
 
 ---
+
+## [2026-11-22] narrow-shadow-539 — Narrow-Landscape Vert+ Shadow Fix (#539) & Upstream PR #543 (OPEN)
+
+- **Baseline Sync & Owner Triage (`SM-X730`, `Mali-G925 MC12 r49p1`, `2560x1600`, BOTW `1.9.0`):**
+  - Fast-forwarded local/origin `main` to verified **`v0.4.11-beta`** (`afd7b84299fd3492bbfd8f9ee35065dd60f950d9`, `versionCode 50`); `upstream/main` at `75bfc64c` (`#507` merged); created isolated backup under `.mali/user-backup/2026-11-22/mali/` (`68/68` saves, `5` prefs, `12973` `.spv`, `vk_pipelines.bin` `c008b3285d18...`, stock APK `a6899a768986...`).
+  - **1.5 h Crash (`2026-11-21` `14:15`–`17:14`):** Checked `/data/tombstones/` (`0` entries Nov 21–22), `/data/anr/` (empty), `dumpsys dropbox` (`0` game hits), and `dumpsys activity exit-info` (earlier slot evicted; `#0` `2026-11-22 00:23:22` was OS background CPU limit kill `reason=9/subreason=7` at `~7.1 GB` RSS); confirmed `log_file = 1` active in `v190/botwrecompandroid.ini`.
+  - **Inventory weapon-damage text:** Unreproduced in live checks and clean in captured inventory frame (`frame_01160.png`: legible `20, 15, 20, 36, 16, 24 > 20`).
+- **Root Cause & Fix (`fix/narrow-shadow-539` @ `213c521f` atop `upstream/main` `75bfc64c`, PR `#543` `Fixes #539`):**
+  - NSO disassembly showed `sead::PerspectiveProjection::mAngle` (`+0xA0`, read by `getFovy()`) stayed at unscaled `16:9` (`50.0°`) while `mFovySin/Cos/Tan` (`+0xA4..+0xAC`) and `mAspect` (`+0xB0`) were scaled to `16:10` (`54.78°`), misaligning deferred shadow ray reconstruction (`DepthShadow::update`), `ViewFrustumCulling`, and cascade FOV scale on downward camera pitches (`repro_539.py` `c1_vertplus` `frame_01260.png` `top_10_30 = 103.11` vs `c2_horminus` `128.06`, `c3_16x9` `127.36`, `c4_shadows_off` `131.88`).
+  - Updated `runtime/hle/widescreen.c` (`2caef6d9`) to sync `p[2] = fovy_new` (`mAngle`), track `(near_z, far_z, orig_fovy, scaled_fovy, scaled_sin/cos/tan, scaled_aspect, reported_aspect, prev_aspect)` in `seen_vert[256]` + `recent_vert[256]`, handle `rt_persp_aspect()` copies/evictions (`idx < 0`) and multi-step read/write resizes cleanly while preserving zero-mutex overhead on Original/`16:9`/`20:9`/`Hor-`. Extended `tools/test_fullscreen_narrow.py` with full non-tautological assertions and `mangle`/`copy_dedup` negative controls.
+- **Verification & Evidence (`evidence/pr-539-20261122` @ `12a76bd`, 6-round multi-agent review `7f88b653`/`b0f308f6` PASS `0C/0M`):**
+  - Host (`test_fullscreen_narrow.py --wsl`, `-Wall -Wextra -Werror`) + `12/12` negative controls PASS; NDK `16`/`33`/`23+3+203` + `aarch64-linux-android30-clang` (`0` warnings) PASS; `workspace_check.py pr` PASS (`commits=1 files=2 mergeable=YES`).
+  - Physical `SM-X730` (`runtime/hle/widescreen.c` `2caef6d9`, debug APK `b33911dca4e2`): `8/8` Bionic PASS; `verify_539.py` `5/5` clean — `v1 16:10` `131.33`/`129.94`, `v2 4:3` `134.24`/`132.00`, `v3 zoom/menu` `118.53 -> 123.36 -> 132.04` (`0` creep), `v4 Hor-` `130.43`/`129.10`, `v5 16:9` `128.70`/`128.92`, `0` errors; `[post] CLEAN` (`a6899a768986`, `68/68` saves, `12973` `.spv`, `c008b3285d18`).
+
+## [2026-11-22] op13-turnip-opt-and-release-0410-op13 — OnePlus 13 (`CPH2653` / Turnip V38) Fullscreen Display Tuning, Mali Parity Audit, CPU Hotpath Opts & `v0.4.10-beta-op13` Rollout (COMPLETE)
+
+- **Device Prep & Turnip-Only Isolation (`CPH2653`, Adreno 830 max 1.10 GHz, Android 17 API 37, BOTW `1.9.0`):**
+  - Disabled screen sleep timeout as requested (`screen_off_timeout=2147483647`, `stay_on_while_plugged_in=2`); captured SHA-256 backup under `.mali/user-backup/2026-11-21/adreno/` (`84/84`, `2707` `.spv`, `vk_pipelines=725a99243c7f`). Enforced strict `Turnip_Gen8_V38_Patched` (`driver-id 18`) loading throughout.
+  - Thermal scaling audit revealed HAL `skin` reaches `52–58 °C` normally (`TS=0`), while actual CPU throttling triggers at `battery >= 40.0 °C` (`cpu0_max 2400 -> 1996/1785 MHz`). Cooled runs via `cool.py` (`batt <= 38.0 °C`, `skin <= 40.5 °C`, `cpu0_max >= 2227200`).
+- **Stage 1 Baseline, `3168x1440` (`aspect=unlocked`) Display Matrix & Mali Parity (`STAGE1_FINDINGS.md`):**
+  - Upgrading `v0.4.5-beta-mali` -> `v0.4.10-beta-mali` lifted `60p` `plateau`/`zora-plaza`/`kakariko-day` from `53.8/55.2/44.2` to `59.68/59.18/52.60 fps` (`1% low 40.50/40.01/30.26`).
+  - **Display & scaling (`3168x1440`, `2.20:1`, `touch_controls=1`, `touch_minimap_top=1`, PNGs + 400px crops):** `P1 (auto/1x/sgsr1/fxaa)` double-scales `1980x900->2376x1080->fxaa 3168x1440` (`56.49/59.92/53.05`); `P9 (screen/1x/fsr1/off)` gives crispest `1x` (`55.47/55.55/52.00`); `P5 (screen/1x/sgsr1/off)` hits `58.48/57.50/51.51`; `P3 (auto/75%/sgsr1/off)` renders native `2376x1080` (`49.25–54.61 fps` uncapped; rock-solid `40.00 fps` `low1 39.71–39.85` at `40p` and `45.00 fps` `low1 43.17–44.70` at `45p`), with HUD cleanly clearing the left cutout and rounded corners.
+  - **Mali vs Turnip divergence:** `PR #518` `LOCAL_READ=1` + `PR #506` `CB_WINDOW=1` (`arm9b_full_mali`) cut upload 90% with `0` breaks and clean PNGs, **but lost `-6.1 fps` (`50.84` mean, `45.08` Kakariko, `+1.93 ms` GPU / `+1.56 ms` CPU)** and must stay off by default on Turnip. `LARECOMP_RENDER_BIG=1` hurt (`54.21/53.68/50.18`).
+- **Stage 2 / 2B / 3 Implementation, Rejections & Verified Gains (`.mali/worktrees/op13-turnip-opt`, `feat/op13-turnip-opt` @ `7f4cc9a`):**
+  - **Implemented & kept (`ac01f30..7f4cc9a` atop `7451bb8`):**
+    1. Enabled `VK_EXT_pipeline_creation_cache_control` default on `VK_DRIVER_ID_MESA_TURNIP` (`warm_cache_fastpath.h`, `LARECOMP_VK_CACHE_CTRL=0` / `LARECOMP_VK_NO_CACHE_CTRL=1`).
+    2. Reused per-thread `CopyScratch` (`pthread_key_t` lazy-on-overflow + `copy_scratch_dtor`, `8 MiB` cap, `LARECOMP_NO_CMDBUF_SCRATCH` rollback) in `cmdbuf.c` and cached `_Atomic` `LARECOMP_LOG_TITLE` + `last` in `framepace.c`.
+    3. Integrated `render_cpu_hotpath` (`descriptor_plan`, 16-slot `RscaleDedupe`, `soft_linear` mask/cache, plus `lr_pr` `INPUT_ATTACHMENT` plan fix in `test_rt_load_upload.c`).
+    4. Added `exec_frame_now()` latching `renderer_present_count()` once per `exec_list()` and guarded `LARECOMP_LOG_PANES`, `LARECOMP_SKIPVS`, and `LARECOMP_LOG_RT` checks (`exec.c`).
+  - **Empirically rejected & reverted:** `LARECOMP_VK_RING_CACHED=1` (`memory type 1 cached` lost `-0.79 fps` / `-3.98 low1`), `LARECOMP_UBO_DIRECT=1` (moving `ubo_direct` after HUD fixed minimap clipping but caused bright magenta world corruption in `plateau`), and `LARECOMP_FORCE_120HZ=1` (OxygenOS accepted `120` request `rc=0` but still delivered `16.574 ms` ~60 Hz choreographer vsyncs).
+  - **Cooled A/B (`STAGE2_AB_RESULTS.md`, `P1`, `batt 34.5–35.9 °C`, `ts=0`):** `S2B_0_base` (`56.99` mean, `low1 35.61`, `skip 24,899`, `kakariko 52.65/29.14`) -> **`S2B_1_opt` (`58.00 fps` `+1.01`, `low1 39.46` `+3.85`, `disp_low1 30.13` `+1.66`, `skip 6,668` `-73.2%`, `kakariko 54.62/33.82` `+1.97 fps` / `+4.68 low1`)**, all 3 PNGs verified clean. `S2B_2_opt_prof` `simpleperf` confirmed `renderer_present_count` (`2.96%`), `framepace_on_title->getenv` (`1.54%`), and `je_realloc/madvise` (`11.06%`) hotspots reduced to `0%`.
+  - **Reviews & Final `v0.4.10-beta-op13` Rollout:** 3 parallel `independent-verifier` reviews (`CODE_REVIEW.md`) resolved 1 CRITICAL (`test_fullscreen_narrow.py` `cb_block` `exec_frame_now`), 3 MAJOR, and valid MINORs; `7/7` host Python + `test_fullscreen_narrow.py --wsl` + `test_command_snapshot` + `13/13` Bionic + `workspace_check.py pr` PASS. Archived `.mali/apk/v0.4.10-beta-op13/BOTWRecompAndroid-0.4.10-beta-op13-release.apk` (`63a4195fe9c8...4e3`, cert `60fa2a5f...`), installed via `adb install -r`, passed `P1` smoke (`58.23` mean fps, `plateau 59.78/42.13`, `zora 59.66/40.92`, `kakariko 55.26/35.39`, crisp `smoke_op13_kakariko-day.png`), stopped (`pid=''`), cleaned scratch, `bri=80/1`, `tout=2147483647`, `save_ini_diffs=[]`, `spirv=2707` (`install-verification.txt`).
 
 ## [2026-11-21] pr537-descriptor-plan-and-release-0410 — PR #537 Dynamic UBO Plan Fix & Consolidated `v0.4.10-beta-mali` Rollout (COMPLETE)
 
