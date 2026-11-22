@@ -101,15 +101,21 @@ uint32_t rt_aspect_bits(int site) {
 static _Atomic bool g_widened;  // (rt_persp_update has reshaped a camera)
 static bool is_16_9(float a) { return a > 1.7767f && a < 1.7789f; }
 
-enum { VERT_SLOTS = 256 };
+enum { VERT_SLOTS = 256, VERT_RECENT = 256 };
 typedef struct {
     uint64_t proj, last_use;
-    float near_z, far_z, orig_fovy, scaled_sin, scaled_cos, scaled_tan, scaled_aspect;
+    float near_z, far_z, orig_fovy, scaled_fovy, scaled_sin, scaled_cos, scaled_tan, scaled_aspect, reported_aspect,
+        prev_aspect;
 } VertProj;
+typedef struct {
+    float near_z, far_z, orig_fovy, scaled_fovy, scaled_sin, scaled_cos, scaled_tan, scaled_aspect;
+} VertSig;
 static pthread_mutex_t vert_mu = PTHREAD_MUTEX_INITIALIZER;
 static VertProj seen_vert[VERT_SLOTS];
+static VertSig recent_vert[VERT_RECENT];
 static uint64_t vert_tick;
-static int vert_count;
+static int vert_count, recent_vert_n;
+static unsigned int recent_vert_next;
 static _Atomic bool vert_used;
 static uint64_t log_seen[256];
 static int log_nseen, log_vert_n, log_wide_n;
@@ -128,17 +134,130 @@ RT_ON_RESET(widescreen_reset) {
     atomic_store_explicit(&menu_last, 0, memory_order_release);
     pthread_mutex_lock(&vert_mu);
     memset(seen_vert, 0, sizeof seen_vert);
+    memset(recent_vert, 0, sizeof recent_vert);
     vert_tick = 0;
-    vert_count = 0;
+    vert_count = recent_vert_n = 0;
+    recent_vert_next = 0;
     memset(log_seen, 0, sizeof log_seen);
     log_nseen = log_vert_n = log_wide_n = 0;
     atomic_store_explicit(&vert_used, false, memory_order_release);
     pthread_mutex_unlock(&vert_mu);
 }
 
-static bool trig_scaled_match(const VertProj *e, const float *p) {
-    return fabsf(p[3] - e->scaled_sin) < 1e-4f && fabsf(p[4] - e->scaled_cos) < 1e-4f &&
-           fabsf(p[5] - e->scaled_tan) < 1e-4f;
+static bool is_narrow_aspect(float a) {
+    return a >= NARROW_MIN * (16.0f / 9.0f) - 0.002f && a < 1.7767f;
+}
+
+static bool vert_proj_aspect_match(const VertProj *e, float a) {
+    return fabsf(a - e->scaled_aspect) < 0.002f || fabsf(a - e->reported_aspect) < 0.002f ||
+           fabsf(a - e->prev_aspect) < 0.002f;
+}
+
+static bool vert_trig_match(float ss, float sc, float st, const float *p) {
+    return fabsf(p[3] - ss) < 1e-4f && fabsf(p[4] - sc) < 1e-4f &&
+           fabsf(p[5] - st) < 1e-4f * (1.0f + fabsf(st));
+}
+
+static bool vert_scaled_match(const VertProj *e, const float *p) {
+    return fabsf(p[2] - e->scaled_fovy) < 1e-6f &&
+           vert_trig_match(e->scaled_sin, e->scaled_cos, e->scaled_tan, p);
+}
+
+static bool vert_sig_match(float nz, float fz, float sf, float ss, float sc, float st, const float *p) {
+    return p[0] == nz && p[1] == fz && p[2] == sf && vert_trig_match(ss, sc, st, p);
+}
+
+static bool vert_sig_find(const float *p, float prefer_aspect, VertSig *out) {
+    bool found = false;
+    for (int i = 0; i < VERT_SLOTS; i++) {
+        const VertProj *e = &seen_vert[i];
+        if (!e->proj) continue;
+        if (vert_sig_match(e->near_z, e->far_z, e->scaled_fovy, e->scaled_sin, e->scaled_cos, e->scaled_tan, p)) {
+            *out = (VertSig){e->near_z,   e->far_z,     e->orig_fovy,  e->scaled_fovy,
+                             e->scaled_sin, e->scaled_cos, e->scaled_tan, e->scaled_aspect};
+            found = true;
+            if (fabsf(e->scaled_aspect - prefer_aspect) < 0.002f) return true;
+        }
+    }
+    for (int i = 0; i < recent_vert_n; i++) {
+        const VertSig *s = &recent_vert[i];
+        if (vert_sig_match(s->near_z, s->far_z, s->scaled_fovy, s->scaled_sin, s->scaled_cos, s->scaled_tan, p)) {
+            if (!found || fabsf(s->scaled_aspect - prefer_aspect) < 0.002f) *out = *s;
+            found = true;
+            if (fabsf(s->scaled_aspect - prefer_aspect) < 0.002f) return true;
+        }
+    }
+    return found;
+}
+
+static void vert_recent_record(float nz, float fz, float orig_fovy, float fovy_new, float sin_new, float cos_new,
+                               float tan_new, float want_aspect) {
+    for (int i = 0; i < recent_vert_n; i++) {
+        if (recent_vert[i].near_z == nz && recent_vert[i].far_z == fz && recent_vert[i].scaled_fovy == fovy_new &&
+            fabsf(recent_vert[i].scaled_aspect - want_aspect) < 0.002f) {
+            recent_vert[i].orig_fovy = orig_fovy;
+            recent_vert[i].scaled_fovy = fovy_new;
+            recent_vert[i].scaled_sin = sin_new;
+            recent_vert[i].scaled_cos = cos_new;
+            recent_vert[i].scaled_tan = tan_new;
+            if (recent_vert_n == VERT_RECENT && i == (int)(recent_vert_next % VERT_RECENT)) recent_vert_next++;
+            return;
+        }
+    }
+    int slot = recent_vert_n < VERT_RECENT ? recent_vert_n++ : (int)(recent_vert_next++ % VERT_RECENT);
+    recent_vert[slot] = (VertSig){nz, fz, orig_fovy, fovy_new, sin_new, cos_new, tan_new, want_aspect};
+}
+
+static void vert_refresh_nf(int idx, const float *p) {
+    bool nf_changed = seen_vert[idx].near_z != p[0] || seen_vert[idx].far_z != p[1];
+    seen_vert[idx].near_z = p[0];
+    seen_vert[idx].far_z = p[1];
+    seen_vert[idx].reported_aspect = seen_vert[idx].scaled_aspect;
+    seen_vert[idx].prev_aspect = seen_vert[idx].scaled_aspect;
+    seen_vert[idx].last_use = ++vert_tick;
+    if (nf_changed)
+        vert_recent_record(p[0], p[1], seen_vert[idx].orig_fovy, seen_vert[idx].scaled_fovy,
+                           seen_vert[idx].scaled_sin, seen_vert[idx].scaled_cos, seen_vert[idx].scaled_tan,
+                           seen_vert[idx].scaled_aspect);
+}
+
+static int vert_alloc_slot(void) {
+    int free_idx = -1, lru_idx = 0;
+    uint64_t lru_tick = UINT64_MAX;
+    for (int i = 0; i < VERT_SLOTS; i++) {
+        if (!seen_vert[i].proj) { free_idx = i; break; }
+        if (seen_vert[i].last_use < lru_tick) lru_tick = seen_vert[i].last_use, lru_idx = i;
+    }
+    if (free_idx >= 0) { vert_count++; return free_idx; }
+    const VertProj *ev = &seen_vert[lru_idx];
+    vert_recent_record(ev->near_z, ev->far_z, ev->orig_fovy, ev->scaled_fovy,
+                       ev->scaled_sin, ev->scaled_cos, ev->scaled_tan, ev->scaled_aspect);
+    return lru_idx;
+}
+
+static void vert_restore_trig(float *p, float orig) {
+    float half = orig * 0.5f;
+    p[2] = orig;
+    p[3] = sinf(half);
+    p[4] = cosf(half);
+    p[5] = tanf(half);
+}
+
+static int vert_adopt_sig(int idx, uint64_t proj, const float *p, const VertSig *sig, float want_aspect) {
+    if (idx < 0) idx = vert_alloc_slot();
+    seen_vert[idx] = (VertProj){proj,           ++vert_tick,      p[0],          p[1],
+                                sig->orig_fovy, sig->scaled_fovy, sig->scaled_sin,
+                                sig->scaled_cos, sig->scaled_tan, want_aspect,   want_aspect,
+                                want_aspect};
+    atomic_store_explicit(&g_widened, true, memory_order_release);
+    atomic_store_explicit(&vert_used, true, memory_order_release);
+    return idx;
+}
+
+static void vert_drop(int idx) {
+    seen_vert[idx].proj = 0;
+    if (vert_count > 0) vert_count--;
+    if (vert_count == 0) atomic_store_explicit(&vert_used, false, memory_order_release);
 }
 
 void rt_persp_update(uint64_t proj) {
@@ -148,24 +267,26 @@ void rt_persp_update(uint64_t proj) {
     float *p = (float *)(uintptr_t)(proj + 0x98);  // near, far, fovy, sin, cos, tan, aspect (+0xB0)
     if (!shape_vert_plus(shape) && atomic_load_explicit(&vert_used, memory_order_acquire)) {
         pthread_mutex_lock(&vert_mu);
+        int found_idx = -1;
         for (int i = 0; i < VERT_SLOTS; i++) {
-            if (seen_vert[i].proj == proj) {
-                bool trig_match = trig_scaled_match(&seen_vert[i], p);
-                bool nf_match = seen_vert[i].near_z == p[0] && seen_vert[i].far_z == p[1];
-                if (trig_match) {
-                    float orig = (isfinite(p[2]) && p[2] > 0.01f && p[2] < 3.0f) ? p[2] : seen_vert[i].orig_fovy;
-                    float half = orig * 0.5f;
-                    p[3] = sinf(half);
-                    p[4] = cosf(half);
-                    p[5] = tanf(half);
-                }
-                if ((nf_match || trig_match) && fabsf(p[6] - seen_vert[i].scaled_aspect) < 0.002f) p[6] = 16.0f / 9.0f;
-                seen_vert[i].proj = 0;
-                if (vert_count > 0) vert_count--;
-                if (vert_count == 0) atomic_store_explicit(&vert_used, false, memory_order_release);
-                break;
+            if (seen_vert[i].proj == proj) { found_idx = i; break; }
+        }
+        if (found_idx >= 0 && vert_scaled_match(&seen_vert[found_idx], p)) {
+            vert_restore_trig(p, seen_vert[found_idx].orig_fovy);
+            if (vert_proj_aspect_match(&seen_vert[found_idx], p[6])) p[6] = 16.0f / 9.0f;
+        } else {
+            VertSig sig;
+            if (vert_sig_find(p, p[6], &sig) &&
+                (is_16_9(p[6]) || fabsf(p[6] - sig.scaled_aspect) < 0.002f || is_narrow_aspect(p[6]) ||
+                 (shape_reshaped(shape) && fabsf(p[6] - 16.0f / 9.0f * shape) < 0.002f))) {
+                vert_restore_trig(p, sig.orig_fovy);
+                if (!is_16_9(p[6])) p[6] = 16.0f / 9.0f;
+            } else if (found_idx >= 0 && seen_vert[found_idx].near_z == p[0] && seen_vert[found_idx].far_z == p[1] &&
+                       vert_proj_aspect_match(&seen_vert[found_idx], p[6])) {
+                p[6] = 16.0f / 9.0f;
             }
         }
+        if (found_idx >= 0) vert_drop(found_idx);
         pthread_mutex_unlock(&vert_mu);
     }
     if (!shape_reshaped(shape)) return;
@@ -195,36 +316,87 @@ void rt_persp_update(uint64_t proj) {
         for (int i = 0; i < VERT_SLOTS; i++) {
             if (seen_vert[i].proj == proj) { idx = i; break; }
         }
+        bool scaled_match = idx >= 0 && vert_scaled_match(&seen_vert[idx], p);
         float orig_fovy = p[2];
         bool apply = false;
         if (is169) {
+            if (scaled_match) {
+                if (fabsf(want_aspect - seen_vert[idx].scaled_aspect) < 0.002f) {
+                    p[6] = want_aspect;
+                    vert_refresh_nf(idx, p);
+                    atomic_store_explicit(&g_widened, true, memory_order_release);
+                    pthread_mutex_unlock(&vert_mu);
+                    return;
+                }
+                orig_fovy = seen_vert[idx].orig_fovy;
+            } else {
+                VertSig sig;
+                if (vert_sig_find(p, want_aspect, &sig)) {
+                    if (fabsf(want_aspect - sig.scaled_aspect) < 0.002f) {
+                        p[6] = want_aspect;
+                        vert_adopt_sig(idx, proj, p, &sig, want_aspect);
+                        pthread_mutex_unlock(&vert_mu);
+                        return;
+                    }
+                    orig_fovy = sig.orig_fovy;
+                }
+            }
             apply = true;
         } else if (idx >= 0) {
-            if (fabsf(p[6] - want_aspect) < 0.002f) {
-                bool same_nf = seen_vert[idx].near_z == p[0] && seen_vert[idx].far_z == p[1];
-                bool trig_ok = trig_scaled_match(&seen_vert[idx], p) && fabsf(p[2] - seen_vert[idx].orig_fovy) <= 1e-4f;
-                if (same_nf && !trig_ok) {
+            bool same_nf = seen_vert[idx].near_z == p[0] && seen_vert[idx].far_z == p[1];
+            if (scaled_match) {
+                if (fabsf(p[6] - want_aspect) < 0.002f &&
+                    fabsf(seen_vert[idx].scaled_aspect - want_aspect) < 0.002f) {
+                    vert_refresh_nf(idx, p);
+                } else if (fabsf(p[6] - want_aspect) < 0.002f || vert_proj_aspect_match(&seen_vert[idx], p[6])) {
+                    orig_fovy = seen_vert[idx].orig_fovy;
                     apply = true;
-                } else if (trig_ok) {
-                    seen_vert[idx].near_z = p[0];
-                    seen_vert[idx].far_z = p[1];
-                    seen_vert[idx].last_use = ++vert_tick;
                 } else {
-                    // Unscaled stack camera (e.g. native 1:1 / 4:3 matching screen aspect) reused slot with different near/far.
-                    seen_vert[idx].proj = 0;
-                    if (vert_count > 0) vert_count--;
-                    if (vert_count == 0) atomic_store_explicit(&vert_used, false, memory_order_release);
+                    vert_drop(idx);
                 }
-            } else if (fabsf(p[6] - seen_vert[idx].scaled_aspect) < 0.002f) {
-                apply = true;
             } else {
-                // Address reused by a projection with an unrelated aspect (e.g. native 1:1 / 4:3); drop stale entry.
-                seen_vert[idx].proj = 0;
-                if (vert_count > 0) vert_count--;
-                if (vert_count == 0) atomic_store_explicit(&vert_used, false, memory_order_release);
+                VertSig sig;
+                if (vert_sig_find(p, p[6], &sig)) {
+                    if (fabsf(p[6] - want_aspect) < 0.002f && fabsf(sig.scaled_aspect - want_aspect) < 0.002f) {
+                        vert_adopt_sig(idx, proj, p, &sig, want_aspect);
+                        pthread_mutex_unlock(&vert_mu);
+                        return;
+                    } else if (fabsf(p[6] - want_aspect) < 0.002f ||
+                               fabsf(p[6] - sig.scaled_aspect) < 0.002f || is_narrow_aspect(p[6])) {
+                        orig_fovy = sig.orig_fovy;
+                        apply = true;
+                    } else {
+                        vert_drop(idx);
+                    }
+                } else if ((fabsf(p[6] - want_aspect) < 0.002f || vert_proj_aspect_match(&seen_vert[idx], p[6])) &&
+                           same_nf) {
+                    apply = true;
+                } else {
+                    // Unscaled stack camera (e.g. native 1:1 / 4:3 matching screen aspect) reused slot with different near/far or aspect.
+                    vert_drop(idx);
+                }
+            }
+        } else {
+            VertSig sig;
+            if (vert_sig_find(p, p[6], &sig)) {
+                if (fabsf(p[6] - want_aspect) < 0.002f && fabsf(sig.scaled_aspect - want_aspect) < 0.002f) {
+                    // Track copied/evicted projection keeping want_aspect so dynamic resizes and rt_persp_aspect stay consistent.
+                    vert_adopt_sig(-1, proj, p, &sig, want_aspect);
+                    pthread_mutex_unlock(&vert_mu);
+                    return;
+                } else if (fabsf(p[6] - want_aspect) < 0.002f ||
+                           fabsf(p[6] - sig.scaled_aspect) < 0.002f || is_narrow_aspect(p[6])) {
+                    orig_fovy = sig.orig_fovy;
+                    apply = true;
+                }
             }
         }
-        if (!apply || !isfinite(orig_fovy) || orig_fovy <= 0.01f || orig_fovy >= 3.0f) {
+        if (!apply) {
+            pthread_mutex_unlock(&vert_mu);
+            return;
+        }
+        if (!isfinite(orig_fovy) || orig_fovy <= 0.01f || orig_fovy >= 3.0f) {
+            if (idx >= 0) vert_drop(idx);
             pthread_mutex_unlock(&vert_mu);
             return;
         }
@@ -238,28 +410,24 @@ void rt_persp_update(uint64_t proj) {
         float cos_new = cosf(half_new);
         float fovy_new = 2.0f * half_new;
         float nz = p[0], fz = p[1];
-        // Leave stored fovy/mAngle (p[2]) untouched so game zoom/paraglider/cutscene blends reading fovy cannot creep.
+        // Update stored mAngle (p[2]) alongside sin/cos/tan: BOTW's deferred lighting/shadow ray reconstruction
+        // and ViewFrustumCulling read getFovy() (+0xA0) right after doUpdateMatrix(), so leaving mAngle at the
+        // 16:9 value misaligns screen-space shadow lookups with the projection matrix (#539).
+        p[2] = fovy_new;
         p[3] = sin_new;
         p[4] = cos_new;
         p[5] = tan_new;
         p[6] = want_aspect;
         atomic_store_explicit(&g_widened, true, memory_order_release);
-        if (idx < 0) {
-            int free_idx = -1, lru_idx = 0;
-            uint64_t lru_tick = UINT64_MAX;
-            for (int i = 0; i < VERT_SLOTS; i++) {
-                if (!seen_vert[i].proj) { free_idx = i; break; }
-                if (seen_vert[i].last_use < lru_tick) lru_tick = seen_vert[i].last_use, lru_idx = i;
-            }
-            if (free_idx >= 0) { idx = free_idx; vert_count++; }
-            else idx = lru_idx;
-        }
-        seen_vert[idx] = (VertProj){proj, ++vert_tick, nz, fz, orig_fovy, sin_new, cos_new, tan_new, want_aspect};
+        if (idx < 0) idx = vert_alloc_slot();
+        seen_vert[idx] = (VertProj){proj,    ++vert_tick, nz,          fz,          orig_fovy, fovy_new, sin_new,
+                                    cos_new, tan_new,     want_aspect, want_aspect, want_aspect};
+        vert_recent_record(nz, fz, orig_fovy, fovy_new, sin_new, cos_new, tan_new, want_aspect);
         atomic_store_explicit(&vert_used, true, memory_order_release);
         bool do_log = ENV("LARECOMP_LOG_ASPECT") && log_vert_n < 20 && (++log_vert_n, true);
         pthread_mutex_unlock(&vert_mu);
         if (do_log)
-            LOG("[widescreen] projection %llx: aspect %.4f fovy %.1f -> %.1f deg (mAngle preserved)\n",
+            LOG("[widescreen] projection %llx: aspect %.4f fovy %.1f -> %.1f deg\n",
                 (unsigned long long)proj, want_aspect, orig_fovy * 57.29578f, fovy_new * 57.29578f);
         return;
     }
@@ -288,10 +456,26 @@ uint32_t rt_persp_aspect(uint64_t proj) {
             if (shape_reshaped(shape)) a = want;
         } else if (fabsf(a - want) >= 0.002f && atomic_load_explicit(&vert_used, memory_order_acquire)) {
             pthread_mutex_lock(&vert_mu);
+            int found_idx = -1;
             for (int i = 0; i < VERT_SLOTS; i++) {
-                if (seen_vert[i].proj == proj && fabsf(a - seen_vert[i].scaled_aspect) < 0.002f) {
+                if (seen_vert[i].proj == proj) { found_idx = i; break; }
+            }
+            if (found_idx >= 0) {
+                if (vert_proj_aspect_match(&seen_vert[found_idx], a)) {
+                    seen_vert[found_idx].prev_aspect = a;
+                    seen_vert[found_idx].reported_aspect = want;
                     a = want;
-                    break;
+                }
+            } else {
+                const float *p = (const float *)(uintptr_t)(proj + 0x98);
+                VertSig sig;
+                if (vert_sig_find(p, a, &sig) && (fabsf(a - sig.scaled_aspect) < 0.002f || is_narrow_aspect(a))) {
+                    if (shape_vert_plus(shape)) {
+                        int slot = vert_adopt_sig(-1, proj, p, &sig, sig.scaled_aspect);
+                        seen_vert[slot].prev_aspect = a;
+                        seen_vert[slot].reported_aspect = want;
+                    }
+                    a = want;
                 }
             }
             pthread_mutex_unlock(&vert_mu);
