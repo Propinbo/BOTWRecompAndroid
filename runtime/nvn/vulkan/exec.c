@@ -420,11 +420,17 @@ static int64_t cq_offset;  // host ns - GPU ns (the smallest seen)
 static uint64_t ns_to_gpu_ticks(uint64_t ns) { return (uint64_t)((unsigned __int128)ns * 384 / 625); }
 static bool cq_calibrated;
 
+// Avoid per-draw cross-TU pthread_equal(pthread_self(), g_vk_render_thread) calls in renderer_present_count()
+// during exec_list; total_frames cannot advance until vk_present_now() runs after exec_list returns.
+uint64_t renderer_present_count(void);
+static uint64_t g_exec_frame;
+static bool g_in_exec;
+static inline uint64_t exec_frame_now(void) { return g_in_exec ? g_exec_frame : renderer_present_count(); }
+
 #ifdef __ANDROID__
 // ---- LARECOMP_FRAME_TIMELINE=<frame>: four frames from that one, every step in time order - the game's lists, fences,
 // waits and presents, the render thread's translation and submissions, the GPU's start and end of each submission (its
 // clock moved onto the CPU's: cq_offset) - in ms from the first. Where a frame's time goes between the three.
-uint64_t renderer_present_count(void);
 typedef struct { int64_t t; const char *what; uint64_t a, b; } TlEv;
 static TlEv tl_ev[8192];
 static int tl_n;
@@ -1305,7 +1311,7 @@ VkSpan vk_transient(uint64_t size, uint64_t align) {
     // Chunks idle for 10 s go back to the driver: a burst of copies (hundreds of MB a frame after a load on a Mali, #89)
     // grew the ring for good, and the app's memory with it - 256 MB steps up to the crash in #131. The first free one
     // is always picked, so after a burst the extra chunks stay unpicked.
-    uint64_t now = renderer_present_count();
+    uint64_t now = exec_frame_now();
     for (int i = nchunks - 1; i >= 0 && nchunks > RING_KEEP; i--) {
         if (i == active || chunks[i].seq > done || now - chunks[i].frame < 300) continue;
         vmaDestroyBuffer(g_vk.vma, chunks[i].buf, chunks[i].mem);
@@ -2087,7 +2093,6 @@ bool renderer_texture_first_write(NvnTexture *t);
 bool renderer_texture_level_fresh(NvnTexture *t);
 bool renderer_texture_frame_fresh(NvnTexture *t);
 void renderer_texture_mark_presented(NvnTexture *t);
-uint64_t renderer_present_count(void);
 void renderer_save_texture_tex(TexBackend *b, const char *path);
 static float pass_sx = 1, pass_sy = 1;
 static float vp_sx = 1, vp_sy = 1, vp_ox = 0, vp_oy = 0;
@@ -5327,12 +5332,14 @@ static VkDescriptorBufferInfo cbuf_info(int stage, ShaderInfo *si, int k, uint32
                 const char *e = getenv("LARECOMP_LOG_PANES");
                 lp = e ? atoi(e) > 1 ? atoi(e) : 600 : 0;
             }
-            uint64_t pf = renderer_present_count();
-            if (lp && pf % lp == 0 && t0 && f[12] == 0 && f[13] == 0 && f[14] == -1.0f && f[1] == 0 && f[2] == 0)
-                LOG("[panes] frame %llu fs %016llx size %#llx %s x %.1f y %.1f sx %.3f sy %.3f proj %.4f %.4f row0 %.3f %.3f %.3f %.3f row1 %.3f %.3f %.3f %.3f w %.3f\n",
-                    (unsigned long long)pf, (unsigned long long)g_cur_fs_hash, (unsigned long long)size, f[15] == 0 ? "pane" : "text",
-                    size >= 0x230 ? f[19] : 0, size >= 0x230 ? f[23] : 0, size >= 0x230 ? f[16] : 0, size >= 0x230 ? f[21] : 0, f[0], f[5],
-                    f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[15]);
+            if (lp) {
+                uint64_t pf = exec_frame_now();
+                if (pf % lp == 0 && t0 && f[12] == 0 && f[13] == 0 && f[14] == -1.0f && f[1] == 0 && f[2] == 0)
+                    LOG("[panes] frame %llu fs %016llx size %#llx %s x %.1f y %.1f sx %.3f sy %.3f proj %.4f %.4f row0 %.3f %.3f %.3f %.3f row1 %.3f %.3f %.3f %.3f w %.3f\n",
+                        (unsigned long long)pf, (unsigned long long)g_cur_fs_hash, (unsigned long long)size, f[15] == 0 ? "pane" : "text",
+                        size >= 0x230 ? f[19] : 0, size >= 0x230 ? f[23] : 0, size >= 0x230 ? f[16] : 0, size >= 0x230 ? f[21] : 0, f[0], f[5],
+                        f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[15]);
+            }
         }
         if (t0 && vk_texture_scale_group(t0) == RS_OUT && f[12] == 0 && f[13] == 0 && f[14] == -1.0f && f[1] == 0 && f[2] == 0 &&
             f[0] > 0) {
@@ -7283,6 +7290,7 @@ static int compute_reset(void);  // (below compute_program)
 // heap import.
 void vk_exec_reset(void) {
     jobs_drain();
+    g_in_exec = false;
 #ifdef __ANDROID__
     prewarm_reset();
     vk_warm_budget_reset(&warm_budget);
@@ -8118,7 +8126,7 @@ static void draw_(CmdRec *r, bool indexed) {
         static int kn = -1;
         static bool kkeep;
         static uint64_t kframe = ~0ull;
-        uint64_t frame = renderer_present_count();
+        uint64_t frame = exec_frame_now();
         if (kn != st.rt.ncolor || memcmp(kc, st.rt.color, sizeof kc) || kd != st.rt.depth || kframe != frame) {
             kn = st.rt.ncolor;
             memcpy(kc, st.rt.color, sizeof kc);
@@ -8217,23 +8225,25 @@ static void draw_(CmdRec *r, bool indexed) {
             static uint64_t vskip[32], vskip_frame = ~0ull;
             static int nvskip, vskip_on = -1;
             if (vskip_on < 0) vskip_on = getenv("LARECOMP_SKIPVS") != NULL;
-            uint64_t now = renderer_present_count();
-            if (vskip_on && now / 15 != vskip_frame) {
-                vskip_frame = now / 15;
-                char buf[512] = "";
-                FILE *f = fopen("build/skipvs.txt", "rb");
-                if (f) { buf[fread(buf, 1, sizeof buf - 1, f)] = 0; fclose(f); }
-                int n = 0;
-                for (const char *p = buf; *p && n < 32;) {
-                    while (*p && !isxdigit((unsigned char)*p)) p++;
-                    if (!*p) break;
-                    vskip[n++] = strtoull(p, (char **)&p, 16);
+            if (vskip_on) {
+                uint64_t now = exec_frame_now();
+                if (now / 15 != vskip_frame) {
+                    vskip_frame = now / 15;
+                    char buf[512] = "";
+                    FILE *f = fopen("build/skipvs.txt", "rb");
+                    if (f) { buf[fread(buf, 1, sizeof buf - 1, f)] = 0; fclose(f); }
+                    int n = 0;
+                    for (const char *p = buf; *p && n < 32;) {
+                        while (*p && !isxdigit((unsigned char)*p)) p++;
+                        if (!*p) break;
+                        vskip[n++] = strtoull(p, (char **)&p, 16);
+                    }
+                    if (n != nvskip) LOG("[vk] skipvs: %d vertex shaders skipped\n", n);
+                    nvskip = n;
                 }
-                if (n != nvskip) LOG("[vk] skipvs: %d vertex shaders skipped\n", n);
-                nvskip = n;
+                for (int i = 0; i < nvskip; i++)
+                    if (st.program->stages[0].code_addr == vskip[i]) { stat_skipped++; return; }
             }
-            for (int i = 0; i < nvskip; i++)
-                if (st.program->stages[0].code_addr == vskip[i]) { stat_skipped++; return; }
         }
         {   // LARECOMP_LOG_FS_VB=<fs hash>:<stream> (diagnosis): that vertex stream's first 4 floats for the first draw of
             // that fragment shader each frame, as the draw reads them (beside LARECOMP_LOG_FS_CB: a per-instance
@@ -8394,10 +8404,12 @@ static void draw_(CmdRec *r, bool indexed) {
             if (left <= 0) left = 40;
         }
         bool match = false;
-        for (int k = 0; k < nsz && st.rt.ncolor == 1 && st.rt.color[0]; k++)
-            match |= (int)st.rt.color[0]->width == lw[k] && (int)st.rt.color[0]->height == lh[k] &&
-                     (lf[k] < 0 || (int)st.rt.color[0]->format == lf[k]);
-        match &= (long)renderer_present_count() >= from;
+        if (nsz) {
+            for (int k = 0; k < nsz && st.rt.ncolor == 1 && st.rt.color[0]; k++)
+                match |= (int)st.rt.color[0]->width == lw[k] && (int)st.rt.color[0]->height == lh[k] &&
+                         (lf[k] < 0 || (int)st.rt.color[0]->format == lf[k]);
+            if (match) match = (long)exec_frame_now() >= from;
+        }
         static int rt3d = -1;  // (LARECOMP_LOG_RT3D=1: draws into 3D targets too - colour LUTs rendered slice by slice)
         if (rt3d < 0) rt3d = getenv("LARECOMP_LOG_RT3D") != NULL;
         if (rt3d && st.rt.ncolor >= 1 && st.rt.color[0] && st.rt.color[0]->target == 2) match = true;
@@ -8824,14 +8836,14 @@ static void draw_(CmdRec *r, bool indexed) {
         bool fullscreen_fill = pr->fi->ntex == 0 && fullscreen_quad;
         if (fullscreen_quad && !reads_scene && pr->fi->ntex == 1 && (tex_sc[1][0][0] != 1 || tex_sc[1][0][1] != 1)) reads_scene = true;
         static uint64_t wide_frame = ~0ull;
-        if (reads_scene) wide_frame = renderer_present_count();
+        if (reads_scene) wide_frame = exec_frame_now();
         bool fade_fill = false;
         if (fullscreen_fill && st.ubuf[1][0].addr && st.ubuf[1][0].size >= 12) {
             const float *c = (const float *)(uintptr_t)st.ubuf[1][0].addr;
             bool black = c[0] < 0.01f && c[1] < 0.01f && c[2] < 0.01f, white = c[0] > 0.99f && c[1] > 0.99f && c[2] > 0.99f;
             fade_fill = black || white;
         }
-        bool composite = reads_scene || fade_fill || (fullscreen_fill && wide_frame == renderer_present_count());
+        bool composite = reads_scene || fade_fill || (fullscreen_fill && wide_frame == exec_frame_now());
         if (!composite) wide_frame = ~0ull;
         extern bool widescreen_ui_centred(void);
         extern float widescreen_factor(void);
@@ -10327,7 +10339,11 @@ void backend_execute(uint64_t handle) {
     static int log_lists = -1;  // LARECOMP_LOG_LISTS=1: the command lists of one frame in 120 (draws, passes, time)
     if (log_lists < 0) log_lists = getenv("LARECOMP_LOG_LISTS") != NULL;
     uint64_t ll_d = stat_draws, ll_p = stat_passes, ll_t = log_lists ? plat_now_ns() : 0;
+    bool prev_in_exec = g_in_exec;
+    if (!prev_in_exec) g_exec_frame = renderer_present_count();
+    g_in_exec = true;
     exec_list(handle, 0);
+    g_in_exec = prev_in_exec;
     if (log_lists && renderer_present_count() % 120 == 0)
         LOG("[lists] frame %llu: list %llx %llu draws %llu passes %.2f ms\n", (unsigned long long)renderer_present_count(),
             (unsigned long long)handle, (unsigned long long)(stat_draws - ll_d), (unsigned long long)(stat_passes - ll_p),
