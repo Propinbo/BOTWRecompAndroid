@@ -88,14 +88,22 @@ void native_call(Cpu *c, uint64_t addr) {
 // ---- the gates' C side (on the host stack; c holds the guest's registers)
 void native_svc_c(Cpu *c, uint32_t imm) { rt_svc(c, imm, c->x[30]); }
 
-HostFn hle_slot_fn(uint64_t pc);  // dispatch.c
-void kernel_hle_enter(void), kernel_hle_leave(void);  // kernel.c (a core's turn owed by a wait in the call)
+HostFn hle_slot_fn_index(uint32_t i);  // dispatch.c
 void native_hle_c(Cpu *c, uint32_t i) {
-    rt_unwind_point();
-    HostFn f = hle_slot_fn(HLE_BASE + 16ull * i);
-    kernel_hle_enter();
+    if (__builtin_expect(g_rt_unwind, 0)) rt_unwind_point();
+    HostFn f = hle_slot_fn_index(i);
+#ifdef __ANDROID__
+    if (__builtin_expect(!__atomic_load_n(&g_core_turns_past0, __ATOMIC_RELAXED), 1)) {
+        f(c);
+        return;
+    }
+    KThread *t = c ? (KThread *)c->thread : NULL;
+    kernel_hle_enter_t(t);
     f(c);
-    kernel_hle_leave();
+    kernel_hle_leave_t(t);
+#else
+    f(c);
+#endif
 }
 
 // ---- the rewriter

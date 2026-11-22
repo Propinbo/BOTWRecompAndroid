@@ -32,6 +32,7 @@ uint32_t g_tex_active_gen = 0;
 uint64_t g_tex_drain_ns = 0, g_tex_drains = 0, g_guest_lo = 0, g_guest_limit = 0, maxwell_gmem_base = 0;
 uint64_t g_tex_stat_init = 0, g_tex_stat_reinit = 0, g_tex_stat_reused = 0, g_tex_stat_fin_owner = 0, g_tex_stat_fin_copy = 0, g_tex_stat_reg = 0;
 __thread uint64_t g_blocked_ns = 0;
+uint64_t kernel_blocked_ns(void) { return g_blocked_ns; }
 void *g_guest_base = NULL;
 NvnTexture *g_pass_t0 = NULL;
 TexBackend *g_dump_sampled = NULL;

@@ -485,7 +485,7 @@ static int vk_counter_mode(void) {
 // at most 2 of the last 60 frames over). The game itself also tries 60 again now and then.
 // LARECOMP_PACE=0: off.
 #define PACE_SLOW_NS 20000000ull
-extern __thread uint64_t g_blocked_ns;  // kernel.c: this thread's time blocked in waits / sleeps
+extern uint64_t kernel_blocked_ns(void);  // kernel.c: this thread's time blocked in waits / sleeps
 // Written by the game's presenting thread, read while resolving GPU counters on the render thread.
 static _Atomic bool pace_slow;
 static uint64_t stat_pace_over;
@@ -498,6 +498,8 @@ double vk_frame_work_ms(void) { return g_work_ms > 0 ? g_work_ms : -1; }
 #ifdef __ANDROID__
 static _Atomic uint64_t g_adpf_budget_ns = 16666667ull;
 uint64_t vk_adpf_budget_ns(void) { return atomic_load_explicit(&g_adpf_budget_ns, memory_order_relaxed); }
+#else
+uint64_t vk_adpf_budget_ns(void) { return 16666667ull; }
 #endif
 
 // The last presented frame's GPU busy time in ms, -1 unknown (Video > Internal resolution > Dynamic: output_scale.c)
@@ -539,7 +541,7 @@ void vk_pace_frame(void) {
         LOG("[pace] settings changed: fresh %s pacing history\n", fps_mode_now() ? "fixed" : "auto");
     }
 #endif
-    uint64_t now = plat_now_ns(), w = g_blocked_ns;
+    uint64_t now = plat_now_ns(), w = kernel_blocked_ns();
     uint64_t p = now - last, wt = w - last_wait;
     bool first = !last;
     last = now, last_wait = w;

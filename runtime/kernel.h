@@ -38,6 +38,9 @@ struct KThread {
     uint32_t wait_tag, wait_result;
     KThread *wnext;
     KThread *snext;        // in WaitSynchronization (g_syncwaiters)
+    KObject *sync_objs[8]; // handles this thread waits on (g_klock; avoids wake-all thundering herd)
+    int sync_nobjs;
+    bool sync_overflow;
     pthread_cond_t cond;   // each thread sleeps on its own condition; wakers signal it directly
     // in-place reboot (kernel_stop_threads): thread_main's setjmp point, where the thread unwinds to and ends
     jmp_buf unwind;
@@ -46,12 +49,17 @@ struct KThread {
     // the svc in progress (LARECOMP_WATCHDOG, kernel.c): number + 1 (0: none), since when, its arguments and caller
     volatile uint32_t svc_now;
     volatile uint64_t svc_since, svc_args[4], svc_lr;
+    uint64_t blocked_ns;   // accumulated blocked time on this thread (avoids TLS lookup on hot path)
 #ifdef __ANDROID__
     void *dcache;          // dispatch.c: this thread's guest -> host function cache (TLS is slow in a dlopened library)
     bool core0_held;       // kernel.c: this thread has its core's turn (core lock_core: the others of that core wait)
     bool core0_evicted;    // atomic request to reconcile core ownership at the next guest safe point
     int lock_core;         // (core0_held) whose turn it holds: 0, or 1-3 with LARECOMP_CORE_LOCKS
     KThread *core0_next;   // a core's runnable queue (c0_m)
+    int hle_depth;
+    bool turn_owed;
+    int blocking_depth;
+    uint64_t blocking_t0;
 #endif
 };
 
@@ -78,3 +86,9 @@ void kernel_signal(KObject *o);  // caller holds g_klock
 KEvent *kernel_create_event_pair(uint32_t *writable, uint32_t *readable);
 KThread *kernel_current_thread(void);
 uint64_t kernel_heap_size(void);  // bytes from HEAP_BASE set by SetHeapSize
+uint64_t kernel_blocked_ns(void);
+#ifdef __ANDROID__
+extern bool g_core_turns_past0;
+void kernel_hle_enter_t(KThread *t);
+void kernel_hle_leave_t(KThread *t);
+#endif
