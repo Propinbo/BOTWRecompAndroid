@@ -127,7 +127,15 @@ static VkFmt fmt_of(uint32_t f) {
     case 0x4A: return (VkFmt){VK_FORMAT_BC4_SNORM_BLOCK};
     case 0x4B: return (VkFmt){VK_FORMAT_BC5_UNORM_BLOCK};
     // 0x4C = signed RGTC2; LARECOMP_BC5_UNORM=1 decodes it unsigned (see metal.m / notes/PLAN.md)
-    case 0x4C: return (VkFmt){getenv("LARECOMP_BC5_UNORM") ? VK_FORMAT_BC5_UNORM_BLOCK : VK_FORMAT_BC5_SNORM_BLOCK};
+    case 0x4C: {
+        static _Atomic int bc5_unorm = -1;
+        int u = atomic_load_explicit(&bc5_unorm, memory_order_relaxed);
+        if (u < 0) {
+            u = getenv("LARECOMP_BC5_UNORM") != NULL;
+            atomic_store_explicit(&bc5_unorm, u, memory_order_relaxed);
+        }
+        return (VkFmt){u ? VK_FORMAT_BC5_UNORM_BLOCK : VK_FORMAT_BC5_SNORM_BLOCK};
+    }
     case 0x4D: return (VkFmt){VK_FORMAT_BC7_UNORM_BLOCK};
     case 0x4E: return (VkFmt){VK_FORMAT_BC7_SRGB_BLOCK};
     case 0x4F: return (VkFmt){VK_FORMAT_BC6H_SFLOAT_BLOCK};

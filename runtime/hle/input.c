@@ -486,11 +486,34 @@ static void host_test_frame(uint64_t frame) {
     }
 }
 
+static const char *g_input_env, *g_watch_pad_env;
+static void init_input_env(void) { g_input_env = getenv("LARECOMP_INPUT"); }
+static void init_watch_pad_env(void) { g_watch_pad_env = getenv("LARECOMP_WATCH_PAD"); }
+static const char *cached_input_env(void) {
+    static pthread_once_t once = PTHREAD_ONCE_INIT;
+    pthread_once(&once, init_input_env);
+    return g_input_env;
+}
+static bool cached_dump_pad_env(void) {
+    static _Atomic int v = -1;
+    int c = atomic_load_explicit(&v, memory_order_relaxed);
+    if (c < 0) {
+        c = getenv("LARECOMP_DUMP_PAD") != NULL;
+        atomic_store_explicit(&v, c, memory_order_relaxed);
+    }
+    return c != 0;
+}
+static const char *cached_watch_pad_env(void) {
+    static pthread_once_t once = PTHREAD_ONCE_INIT;
+    pthread_once(&once, init_watch_pad_env);
+    return g_watch_pad_env;
+}
+
 static uint64_t g_pad_obj;
 volatile int g_inject_plus;  // frames to hold Plus for the game (movie.c: A/B skip a skippable movie)
 RT_ON_RESET(input_reboot_reset) { g_pad_obj = 0; g_inject_plus = 0; }  // (reboot: the controller object was guest memory)
 void input_frame(uint64_t frame) {
-    if (g_pad_obj && getenv("LARECOMP_DUMP_PAD") && frame % 600 == 0) {
+    if (g_pad_obj && cached_dump_pad_env() && frame % 600 == 0) {
         const uint8_t *m = (const uint8_t *)(uintptr_t)(g_pad_obj - 0x98);
         LOG("[pad] mgr %llx 4e0=%u 4e4=%u 4e8=%u 548=%#x 54c..=%02x %02x %02x 56c=%02x\n", g_pad_obj - 0x98,
             *(uint32_t *)(m + 0x4e0), *(uint32_t *)(m + 0x4e4), *(uint32_t *)(m + 0x4e8), *(uint32_t *)(m + 0x548),
@@ -515,7 +538,7 @@ void input_frame(uint64_t frame) {
         script_buttons = b, script_lx = lx, script_ly = ly, script_rx = rx, script_ry = ry;
         return;
     }
-    const char *spec = getenv("LARECOMP_INPUT");
+    const char *spec = cached_input_env();
     if (!spec) return;
     static const char *const names[] = {"A", "B", "X", "Y", "LSTICK", "RSTICK", "L", "R", "ZL", "ZR", "PLUS",
                                         "MINUS", "LEFT", "UP", "RIGHT", "DOWN"};
@@ -583,9 +606,10 @@ static void fill_state(Cpu *c) {
     if (id != 0) return;  // docked: only player 1 (FullKey); Handheld stays disconnected
     extern uint64_t g_watch_lo, g_watch_hi;
     if (id == 0 && !g_pad_obj) g_pad_obj = c->x[1] - 8;
-    if (id == 0 && !g_watch_lo && getenv("LARECOMP_WATCH_PAD")) {
+    const char *watch_pad = id == 0 && !g_watch_lo ? cached_watch_pad_env() : NULL;
+    if (watch_pad) {
         unsigned lo = 0x98 + 0x10, hi = 0x98 + 0x48;  // offsets from the controller manager
-        sscanf(getenv("LARECOMP_WATCH_PAD"), "%x,%x", &lo, &hi);
+        sscanf(watch_pad, "%x,%x", &lo, &hi);
         g_watch_lo = c->x[1] - 8 - 0x98 + lo;
         g_watch_hi = c->x[1] - 8 - 0x98 + hi;
         LOG("[input] watching controller object %llx\n", c->x[1] - 8);
@@ -611,7 +635,7 @@ static void fill_state(Cpu *c) {
     if (ry < -16000) b |= 1ull << 23;
     *(uint64_t *)(s + 8) = b;
     static uint64_t last_b;
-    if (b != last_b && getenv("LARECOMP_INPUT")) LOG("[input] id %#x buttons %#llx (sampling %lld, lr %llx)\n", id, (unsigned long long)b, (long long)sampling, c->x[30]);
+    if (b != last_b && cached_input_env()) LOG("[input] id %#x buttons %#llx (sampling %lld, lr %llx)\n", id, (unsigned long long)b, (long long)sampling, c->x[30]);
     last_b = b;
     *(int32_t *)(s + 16) = lx;
     *(int32_t *)(s + 20) = ly;

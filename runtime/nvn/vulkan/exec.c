@@ -5752,7 +5752,9 @@ static uint64_t cbwin_rows(uint64_t addr, uint64_t size) {
     lo &= ~15ull, hi = (hi + 15) & ~15ull;
     uint64_t rows = ok && hi > lo && hi - lo <= 1024 && lo >= addr && hi <= addr + size ? lo | ((hi - lo) / 16 - 1) << 48 : 0;
     static int nlog;
-    if (getenv("LARECOMP_LOG_CBWIN") && nlog < 30 && hi)
+    static int log_cbwin_rows = -1;
+    if (log_cbwin_rows < 0) log_cbwin_rows = getenv("LARECOMP_LOG_CBWIN") != NULL;
+    if (log_cbwin_rows && nlog < 30 && hi)
         nlog++, LOG("[cbwin] %llx+%llx: updated %llx..%llx%s\n", (unsigned long long)addr, (unsigned long long)size,
                     (unsigned long long)lo, (unsigned long long)hi, rows ? "" : " - copied");
     memo[h].addr = addr, memo[h].size = size, memo[h].rows = rows, memo[h].gen = gen;
@@ -6663,7 +6665,9 @@ static bool gres_prepare(const GcRange *r, int m, bool store) {
     if (!gres_init()) return false;
     {   // LARECOMP_GMISS: the arena's state every ~5 s
         static uint64_t last;
-        if (getenv("LARECOMP_GMISS") && renderer_present_count() - last >= 300) {
+        static int log_gmiss = -1;
+        if (log_gmiss < 0) log_gmiss = getenv("LARECOMP_GMISS") != NULL;
+        if (log_gmiss && renderer_present_count() - last >= 300) {
             last = renderer_present_count();
             int live = 0;
             for (int i = 0; i < ga_nres; i++) live += ga_res[i].live;
@@ -8450,7 +8454,9 @@ static void draw_(CmdRec *r, bool indexed) {
         const Range *u = &st.ubuf[0][0];
         if (at >= 0 && (long)renderer_present_count() == at && u->addr && u->size >= 80) {
             const float *f = (const float *)(uintptr_t)u->addr;
-            if (getenv("LARECOMP_LOG_UI_ALL") && st.rt.ncolor && st.rt.color[0] && st.rt.color[0]->width == 1920)
+            static int ui_all = -1;
+            if (ui_all < 0) ui_all = getenv("LARECOMP_LOG_UI_ALL") != NULL;
+            if (ui_all && st.rt.ncolor && st.rt.color[0] && st.rt.color[0]->width == 1920)
                 LOG("[ui-all] fs %016llx vs %llx cb3 size %#llx: %.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f\n",
                     (unsigned long long)g_cur_fs_hash, (unsigned long long)st.program->stages[0].code_addr, (unsigned long long)u->size,
                     f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11], f[12], f[13], f[14], f[15], f[16], f[17],
