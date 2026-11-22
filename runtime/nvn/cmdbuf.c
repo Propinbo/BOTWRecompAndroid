@@ -12,6 +12,7 @@
 // the shadow of that piece is reused too. A list never crosses a shadow page in one piece: a jump continues it.
 // A command handle is the (host) address of a list's first record.
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -728,12 +729,44 @@ void nvn_check_list(uint64_t h, int depth) {
 
 // CopyCommands copies the lists' commands into this one: the game may reuse their memory right away (BOTW does).
 // (CallCommands above only refers to them.) The lists' leading barrier (nvnCommandBufferBeginRecording) is left out.
+typedef struct {
+    uint8_t *buf;
+    size_t cap;
+    bool busy;
+} CopyScratch;
+static pthread_key_t g_copy_scratch_key;
+static pthread_once_t g_copy_scratch_once = PTHREAD_ONCE_INIT;
+static bool g_copy_scratch_ready;
+static void copy_scratch_dtor(void *p) {
+    CopyScratch *s = (CopyScratch *)p;
+    if (s) {
+        free(s->buf);
+        free(s);
+    }
+}
+static void copy_scratch_init(void) { g_copy_scratch_ready = pthread_key_create(&g_copy_scratch_key, copy_scratch_dtor) == 0; }
 static void copy_lists(Cpu *c, NvnCmdBuf *cb, int n, const uint64_t *handles) {
     // rec() may invoke guest allocation callbacks. Snapshot ALL input lists before
     // the first callback can recycle their control memory, including later handles.
+    enum { CMDBUF_SNAP_REUSE_MAX = 8 * 1024 * 1024 };
+    static _Atomic int no_scratch = -1;
+    int ns = atomic_load_explicit(&no_scratch, memory_order_relaxed);
+    if (ns < 0) {
+        const char *e = getenv("LARECOMP_NO_CMDBUF_SCRATCH");
+        ns = e && atoi(e) != 0;
+        atomic_store_explicit(&no_scratch, ns, memory_order_relaxed);
+    }
+    CopyScratch *sc = NULL;
+    if (!ns) {
+        pthread_once(&g_copy_scratch_once, copy_scratch_init);
+        if (g_copy_scratch_ready) sc = (CopyScratch *)pthread_getspecific(g_copy_scratch_key);
+    }
     uint64_t local[128];
-    uint8_t *snapshot = (uint8_t *)local;
-    size_t used = 0, capacity = sizeof local;
+    // rec() callbacks happen in loop 2 while reading snapshot, so sc->busy guards both loops.
+    bool use_tl = !ns && g_copy_scratch_ready && (!sc || !sc->busy);
+    if (use_tl && sc) sc->busy = true;
+    uint8_t *snapshot = (use_tl && sc && sc->buf) ? sc->buf : (uint8_t *)local;
+    size_t used = 0, capacity = (use_tl && sc && sc->buf) ? sc->cap : sizeof local;
     for (int list = 0; list < n; list++) {
         uint64_t p = handles[list];
         struct { uint64_t at; uint32_t op, size; } previous[8] = {0};
@@ -765,12 +798,23 @@ static void copy_lists(Cpu *c, NvnCmdBuf *cb, int n, const uint64_t *handles) {
                 if (used > SIZE_MAX - size) FATAL("nvn: copied command size overflow\n");
                 size_t needed = used + size;
                 if (needed > capacity) {
+                    if (use_tl && !sc) {
+                        sc = calloc(1, sizeof *sc);
+                        if (!sc || pthread_setspecific(g_copy_scratch_key, sc) != 0) {
+                            free(sc);
+                            sc = NULL;
+                            use_tl = false;
+                        } else {
+                            sc->busy = true;
+                        }
+                    }
                     size_t next = capacity <= SIZE_MAX / 2 ? capacity * 2 : needed;
                     if (next < needed) next = needed;
                     uint8_t *mem = snapshot == (uint8_t *)local ? malloc(next) : realloc(snapshot, next);
                     if (!mem) FATAL("nvn: no memory for copied commands (%zu bytes)\n", next);
                     if (snapshot == (uint8_t *)local) memcpy(mem, local, used);
                     snapshot = mem; capacity = next;
+                    if (use_tl) { sc->buf = mem; sc->cap = next; }
                 }
                 memcpy(snapshot + used, r, size);
                 used = needed;
@@ -787,7 +831,21 @@ static void copy_lists(Cpu *c, NvnCmdBuf *cb, int n, const uint64_t *handles) {
         memcpy(d, r, size);
         offset += size;
     }
-    if (snapshot != (uint8_t *)local) free(snapshot);
+    if (use_tl && sc) {
+        if (snapshot != (uint8_t *)local) {
+            if (capacity <= CMDBUF_SNAP_REUSE_MAX) {
+                sc->buf = snapshot;
+                sc->cap = capacity;
+            } else {
+                free(snapshot);
+                sc->buf = NULL;
+                sc->cap = 0;
+            }
+        }
+        sc->busy = false;
+    } else if (snapshot != (uint8_t *)local) {
+        free(snapshot);
+    }
 }
 // CallCommands too: the lists it calls live in control memory, which NVN reads as this is recorded; BOTW records
 // over them before this list is submitted. (LARECOMP_CALL_REFS=1: refer to them, as before)
