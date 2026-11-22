@@ -733,6 +733,62 @@ void nvn_check_list(uint64_t h, int depth) {
     }
 }
 
+static void copy_snapshot_to_cb(Cpu *c, NvnCmdBuf *cb, const uint8_t *snapshot, size_t used) {
+    static _Atomic int no_bulk = -1;
+    int nb = atomic_load_explicit(&no_bulk, memory_order_relaxed);
+    if (nb < 0) {
+        const char *e = getenv("LARECOMP_NO_CMDBUF_BULK");
+        nb = e && atoi(e) != 0;
+        atomic_store_explicit(&no_bulk, nb, memory_order_relaxed);
+    }
+    if (!nb) {
+        for (size_t offset = 0; offset < used;) {
+            if ((cb->gmem || cb->mem) && cb->size > JUMP_RESERVE && cb->used < cb->size - JUMP_RESERVE) {
+                uint64_t avail = cb->size - cb->used - JUMP_RESERVE;
+                if (cb->gmem) {
+                    uint64_t in_page = (cb->gmem + cb->used) % SHADOW_PAGE;
+                    uint64_t page_avail = SHADOW_PAGE > in_page + JUMP_RESERVE ? SHADOW_PAGE - in_page - JUMP_RESERVE : 0;
+                    if (page_avail < avail) avail = page_avail;
+                }
+                if (avail > 0) {
+                    size_t rem = used - offset;
+                    size_t max_bytes = avail <= SIZE_MAX / SHADOW_K ? (size_t)(avail * SHADOW_K) : SIZE_MAX;
+                    if (rem <= max_bytes) {
+                        memcpy((void *)(uintptr_t)write_at(cb), snapshot + offset, rem);
+                        cb->used += rem / SHADOW_K;
+                        break;
+                    }
+                    size_t chunk = 0;
+                    while (offset + chunk < used) {
+                        uint32_t rsz = ((const CmdRec *)(snapshot + offset + chunk))->size;
+                        if (chunk + rsz > max_bytes) break;
+                        chunk += rsz;
+                    }
+                    if (chunk > 0) {
+                        memcpy((void *)(uintptr_t)write_at(cb), snapshot + offset, chunk);
+                        cb->used += chunk / SHADOW_K;
+                        offset += chunk;
+                        continue;
+                    }
+                }
+            }
+            const CmdRec *r = (const CmdRec *)(snapshot + offset);
+            uint32_t size = r->size;
+            CmdRec *d = rec_reserve(c, cb, size);
+            memcpy(d, r, size);
+            offset += size;
+        }
+    } else {
+        for (size_t offset = 0; offset < used;) {
+            const CmdRec *r = (const CmdRec *)(snapshot + offset);
+            uint32_t size = r->size;
+            CmdRec *d = rec(c, cb, r->op, size - (uint32_t)sizeof(CmdRec));
+            memcpy(d, r, size);
+            offset += size;
+        }
+    }
+}
+
 // CopyCommands copies the lists' commands into this one: the game may reuse their memory right away (BOTW does).
 // (CallCommands above only refers to them.) The lists' leading barrier (nvnCommandBufferBeginRecording) is left out.
 typedef struct {
@@ -830,59 +886,7 @@ static void copy_lists(Cpu *c, NvnCmdBuf *cb, int n, const uint64_t *handles) {
         }
         if (guard == 10000000) FATAL("nvn: copied command list contains a cycle\n");
     }
-    static _Atomic int no_bulk = -1;
-    int nb = atomic_load_explicit(&no_bulk, memory_order_relaxed);
-    if (nb < 0) {
-        const char *e = getenv("LARECOMP_NO_CMDBUF_BULK");
-        nb = e && atoi(e) != 0;
-        atomic_store_explicit(&no_bulk, nb, memory_order_relaxed);
-    }
-    if (!nb) {
-        for (size_t offset = 0; offset < used;) {
-            if ((cb->gmem || cb->mem) && cb->size > JUMP_RESERVE && cb->used < cb->size - JUMP_RESERVE) {
-                uint64_t avail = cb->size - cb->used - JUMP_RESERVE;
-                if (cb->gmem) {
-                    uint64_t in_page = (cb->gmem + cb->used) % SHADOW_PAGE;
-                    uint64_t page_avail = SHADOW_PAGE > in_page + JUMP_RESERVE ? SHADOW_PAGE - in_page - JUMP_RESERVE : 0;
-                    if (page_avail < avail) avail = page_avail;
-                }
-                if (avail > 0) {
-                    size_t rem = used - offset;
-                    size_t max_bytes = avail <= SIZE_MAX / SHADOW_K ? (size_t)(avail * SHADOW_K) : SIZE_MAX;
-                    if (rem <= max_bytes) {
-                        memcpy((void *)(uintptr_t)write_at(cb), snapshot + offset, rem);
-                        cb->used += rem / SHADOW_K;
-                        break;
-                    }
-                    size_t chunk = 0;
-                    while (offset + chunk < used) {
-                        uint32_t rsz = ((const CmdRec *)(snapshot + offset + chunk))->size;
-                        if (chunk + rsz > max_bytes) break;
-                        chunk += rsz;
-                    }
-                    if (chunk > 0) {
-                        memcpy((void *)(uintptr_t)write_at(cb), snapshot + offset, chunk);
-                        cb->used += chunk / SHADOW_K;
-                        offset += chunk;
-                        continue;
-                    }
-                }
-            }
-            const CmdRec *r = (const CmdRec *)(snapshot + offset);
-            uint32_t size = r->size;
-            CmdRec *d = rec_reserve(c, cb, size);
-            memcpy(d, r, size);
-            offset += size;
-        }
-    } else {
-        for (size_t offset = 0; offset < used;) {
-            const CmdRec *r = (const CmdRec *)(snapshot + offset);
-            uint32_t size = r->size;
-            CmdRec *d = rec(c, cb, r->op, size - (uint32_t)sizeof(CmdRec));
-            memcpy(d, r, size);
-            offset += size;
-        }
-    }
+    copy_snapshot_to_cb(c, cb, snapshot, used);
     if (use_tl && sc) {
         if (snapshot != (uint8_t *)local) {
             if (capacity <= CMDBUF_SNAP_REUSE_MAX) {
