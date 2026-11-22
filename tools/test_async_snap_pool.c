@@ -142,35 +142,144 @@ static void case_snap_pool_reuse_and_limits(void) {
     for (int i = 0; i < snap_pool_n; i++) assert(snap_pool[i].buf != (uint8_t *)call_arg);
     pthread_mutex_unlock(&snap_pool_lock);
 
-    // Large command list (>512 KB) must NOT be retained in snap_pool even when pool is completely empty.
+    // Large command list (>512 KB, e.g. ~2 MB -> 4 MB cap) IS pooled and reused by the next large list.
     pthread_mutex_lock(&snap_pool_lock);
     while (snap_pool_n > 0) free(snap_pool[--snap_pool_n].buf);
+    snap_pool_bytes = 0;
     pthread_mutex_unlock(&snap_pool_lock);
 
-    size_t chunk_sz = 64u << 10;  // 9 * 64 KB = 576 KB > 512 KB limit
-    uint8_t *big = calloc(10, chunk_sz);
+    size_t chunk_sz = 64u << 10;
+    int nchunks = 32;  // 2 MB -> snap_add grows cap to 4 MB
+    uint8_t *big = calloc((size_t)(nchunks + 1), chunk_sz);
     assert(big != NULL);
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i < nchunks; i++) {
         CmdRec *r = (CmdRec *)(big + (size_t)i * chunk_sz);
         r->op = CMD_BARRIER;
         r->size = (uint32_t)chunk_sz;
     }
-    CmdRec *end_r = (CmdRec *)(big + 9 * chunk_sz);
+    CmdRec *end_r = (CmdRec *)(big + (size_t)nchunks * chunk_sz);
     end_r->op = CMD_END;
     end_r->size = sizeof(CmdRec);
 
     atomic_store(&g_exec_count, 0);
     vk_async_execute((uint64_t)(uintptr_t)big);
     vk_async_drain();
-    free(big);
     assert(atomic_load(&g_exec_count) == 1);
-    assert(g_exec_handles[0] != 0);
+    uint64_t big_ptr1 = g_exec_handles[0];
+    assert(big_ptr1 != 0);
+    size_t big_cap = 0;
     pthread_mutex_lock(&snap_pool_lock);
-    assert(snap_pool_n == 0);
+    assert(snap_pool_n == 1 && snap_pool[0].buf == (uint8_t *)(uintptr_t)big_ptr1);
+    big_cap = snap_pool[0].cap;
+    assert(big_cap >= (2u << 20) && snap_pool_bytes == big_cap);
+    pthread_mutex_unlock(&snap_pool_lock);
+
+    // Push a small 64 KB buffer BEFORE big executes again so [big, 64KB] or [64KB, big] order tests largest-first pop.
+    void *small_extra = malloc(0x10000);
+    assert(small_extra != NULL);
+    snap_pool_recycle(small_extra, 0x10000);
+    pthread_mutex_lock(&snap_pool_lock);
+    assert(snap_pool_n == 2 && snap_pool_bytes == big_cap + 0x10000);
+    pthread_mutex_unlock(&snap_pool_lock);
+
+    // Next large execute must pop the largest (big_ptr1), not small_extra!
+    vk_async_execute((uint64_t)(uintptr_t)big);
+    vk_async_drain();
+    assert(atomic_load(&g_exec_count) == 2);
+    assert(g_exec_handles[1] == big_ptr1);
+    free(big);
+
+    // Reset clears pool completely.
+    vk_async_pool_reset();
+    pthread_mutex_lock(&snap_pool_lock);
+    assert(snap_pool_n == 0 && snap_pool_bytes == 0);
     pthread_mutex_unlock(&snap_pool_lock);
 }
 
-// 2. LARECOMP_NO_SNAP_POOL=1 disables pooling cleanly
+// 2. Eviction of smaller slots at 16-slot limit, 32 MB total byte cap, >16 MB free, and reset
+static void case_large_caps_and_eviction(void) {
+    unsetenv("LARECOMP_NO_SNAP_POOL");
+    vk_async_pool_reset();
+
+    // Fill all 16 slots with 64 KB buffers (1 MB total).
+    for (int i = 0; i < SNAP_POOL_MAX; i++) {
+        void *p = malloc(0x10000);
+        assert(p != NULL);
+        snap_pool_recycle(p, 0x10000);
+    }
+    pthread_mutex_lock(&snap_pool_lock);
+    assert(snap_pool_n == SNAP_POOL_MAX && snap_pool_bytes == (size_t)SNAP_POOL_MAX * 0x10000);
+    pthread_mutex_unlock(&snap_pool_lock);
+
+    // Recycling a 2 MB buffer when 16 slots are full must evict one smaller (64 KB) slot and retain the 2 MB buffer.
+    void *p2m = malloc(2u << 20);
+    assert(p2m != NULL);
+    snap_pool_recycle(p2m, 2u << 20);
+    pthread_mutex_lock(&snap_pool_lock);
+    assert(snap_pool_n == SNAP_POOL_MAX);
+    assert(snap_pool_bytes == ((size_t)(SNAP_POOL_MAX - 1) * 0x10000) + (2u << 20));
+    bool found_2m = false;
+    for (int i = 0; i < snap_pool_n; i++) {
+        if (snap_pool[i].buf == (uint8_t *)p2m && snap_pool[i].cap == (2u << 20)) found_2m = true;
+    }
+    assert(found_2m);
+    pthread_mutex_unlock(&snap_pool_lock);
+
+    // Hard 32 MB byte cap: reset, add four 8 MB buffers (= 32 MB), then a fifth 8 MB buffer (same size -> no smaller slots) must be freed not stored.
+    vk_async_pool_reset();
+    for (int i = 0; i < 4; i++) {
+        void *p8m = malloc(8u << 20);
+        assert(p8m != NULL);
+        snap_pool_recycle(p8m, 8u << 20);
+    }
+    pthread_mutex_lock(&snap_pool_lock);
+    assert(snap_pool_n == 4 && snap_pool_bytes == SNAP_POOL_BYTES_MAX);
+    pthread_mutex_unlock(&snap_pool_lock);
+
+    void *p8m_over = malloc(8u << 20);
+    assert(p8m_over != NULL);
+    snap_pool_recycle(p8m_over, 8u << 20);
+    pthread_mutex_lock(&snap_pool_lock);
+    assert(snap_pool_n == 4 && snap_pool_bytes == SNAP_POOL_BYTES_MAX);
+    for (int i = 0; i < snap_pool_n; i++) assert(snap_pool[i].buf != (uint8_t *)p8m_over);
+    pthread_mutex_unlock(&snap_pool_lock);
+
+    // Recycling a 12 MB buffer with two 64 KB + two 12 MB etc.: evict smaller slots to fit within 32 MB.
+    vk_async_pool_reset();
+    for (int i = 0; i < 3; i++) {
+        void *p = malloc(8u << 20);
+        assert(p != NULL);
+        snap_pool_recycle(p, 8u << 20);
+    }
+    for (int i = 0; i < 4; i++) {
+        void *p = malloc(2u << 20);
+        assert(p != NULL);
+        snap_pool_recycle(p, 2u << 20);
+    }
+    // Pool has 3*8MB + 4*2MB = 32 MB. Recycling a 4 MB buffer evicts two 2 MB slots -> 3*8 + 2*2 + 4 = 32 MB.
+    void *p4m = malloc(4u << 20);
+    assert(p4m != NULL);
+    snap_pool_recycle(p4m, 4u << 20);
+    pthread_mutex_lock(&snap_pool_lock);
+    assert(snap_pool_bytes <= SNAP_POOL_BYTES_MAX);
+    bool found_4m = false;
+    for (int i = 0; i < snap_pool_n; i++) {
+        if (snap_pool[i].buf == (uint8_t *)p4m) found_4m = true;
+    }
+    assert(found_4m);
+    pthread_mutex_unlock(&snap_pool_lock);
+
+    // Buffer >16 MB single-buffer cap must be freed immediately even when pool is empty.
+    vk_async_pool_reset();
+    void *too_big = malloc(17u << 20);
+    assert(too_big != NULL);
+    snap_pool_recycle(too_big, 17u << 20);
+    pthread_mutex_lock(&snap_pool_lock);
+    assert(snap_pool_n == 0 && snap_pool_bytes == 0);
+    pthread_mutex_unlock(&snap_pool_lock);
+}
+
+// 3. LARECOMP_NO_SNAP_POOL=1 disables pooling cleanly
 static void case_no_snap_pool_env(void) {
     setenv("LARECOMP_NO_SNAP_POOL", "1", 1);
     unsetenv("LARECOMP_NO_LIST_COPY");
@@ -182,13 +291,14 @@ static void case_no_snap_pool_env(void) {
     vk_async_drain();
     assert(atomic_load(&g_exec_count) == 2);
     pthread_mutex_lock(&snap_pool_lock);
-    assert(snap_pool_n == 0);
+    assert(snap_pool_n == 0 && snap_pool_bytes == 0);
     pthread_mutex_unlock(&snap_pool_lock);
 }
 
 int main(void) {
     printf("test_async_snap_pool:\n");
-    run_in_fork(case_snap_pool_reuse_and_limits, "snapshot pool reuse, 16-slot cap, >512KB free, and REQ_CALL safety");
+    run_in_fork(case_snap_pool_reuse_and_limits, "snapshot pool reuse (64KB + 4MB), largest-first pop, and REQ_CALL safety");
+    run_in_fork(case_large_caps_and_eviction, "smaller-slot eviction, 32MB total byte cap, >16MB free, and reset");
     run_in_fork(case_no_snap_pool_env, "LARECOMP_NO_SNAP_POOL rollback");
     puts("PASS: async command-list snapshot pooling");
     return 0;

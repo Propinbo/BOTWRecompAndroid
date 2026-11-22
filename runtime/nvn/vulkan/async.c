@@ -78,10 +78,12 @@ static uint64_t render_cpu_ns(void) {
 }
 
 #define SNAP_POOL_MAX 16
-#define SNAP_POOL_CAP_LIMIT (512u << 10)
+#define SNAP_POOL_CAP_LIMIT (16u << 20)
+#define SNAP_POOL_BYTES_MAX (32u << 20)
 typedef struct { uint8_t *buf; size_t cap; } SnapPoolSlot;
 static SnapPoolSlot snap_pool[SNAP_POOL_MAX];
 static int snap_pool_n;
+static size_t snap_pool_bytes;
 static pthread_mutex_t snap_pool_lock = PTHREAD_MUTEX_INITIALIZER;
 static int snap_pool_off = -1;
 
@@ -97,15 +99,58 @@ static bool snap_pool_enabled(void) {
 static void snap_pool_recycle(void *p, size_t cap) {
     if (!p) return;
     if (snap_pool_enabled() && cap > 0 && cap <= SNAP_POOL_CAP_LIMIT) {
+        void *evict[SNAP_POOL_MAX];
+        int nevict = 0;
+        bool stored = false;
         pthread_mutex_lock(&snap_pool_lock);
-        if (snap_pool_n < SNAP_POOL_MAX) {
+        if (snap_pool_n < SNAP_POOL_MAX && snap_pool_bytes + cap <= SNAP_POOL_BYTES_MAX) {
             snap_pool[snap_pool_n++] = (SnapPoolSlot){(uint8_t *)p, cap};
-            pthread_mutex_unlock(&snap_pool_lock);
-            return;
+            snap_pool_bytes += cap;
+            stored = true;
+        } else {
+            size_t smaller_bytes = 0;
+            int smaller_cnt = 0;
+            for (int i = 0; i < snap_pool_n; i++) {
+                if (snap_pool[i].cap < cap) {
+                    smaller_bytes += snap_pool[i].cap;
+                    smaller_cnt++;
+                }
+            }
+            if (smaller_cnt > 0 && (snap_pool_bytes - smaller_bytes) + cap <= SNAP_POOL_BYTES_MAX) {
+                while (snap_pool_n == SNAP_POOL_MAX || snap_pool_bytes + cap > SNAP_POOL_BYTES_MAX) {
+                    int min_i = -1;
+                    for (int i = 0; i < snap_pool_n; i++) {
+                        if (snap_pool[i].cap < cap && (min_i < 0 || snap_pool[i].cap < snap_pool[min_i].cap))
+                            min_i = i;
+                    }
+                    if (min_i < 0) break;
+                    evict[nevict++] = snap_pool[min_i].buf;
+                    snap_pool_bytes -= snap_pool[min_i].cap;
+                    snap_pool[min_i] = snap_pool[--snap_pool_n];
+                }
+                if (snap_pool_n < SNAP_POOL_MAX && snap_pool_bytes + cap <= SNAP_POOL_BYTES_MAX) {
+                    snap_pool[snap_pool_n++] = (SnapPoolSlot){(uint8_t *)p, cap};
+                    snap_pool_bytes += cap;
+                    stored = true;
+                }
+            }
         }
         pthread_mutex_unlock(&snap_pool_lock);
+        for (int i = 0; i < nevict; i++) free(evict[i]);
+        if (stored) return;
     }
     free(p);
+}
+
+RT_ON_RESET(vk_async_pool_reset) {
+    void *evict[SNAP_POOL_MAX];
+    int nevict = 0;
+    pthread_mutex_lock(&snap_pool_lock);
+    for (int i = 0; i < snap_pool_n; i++) evict[nevict++] = snap_pool[i].buf;
+    snap_pool_n = 0;
+    snap_pool_bytes = 0;
+    pthread_mutex_unlock(&snap_pool_lock);
+    for (int i = 0; i < nevict; i++) free(evict[i]);
 }
 
 static void *render_main(void *arg) {
@@ -289,7 +334,13 @@ static void snap_pool_pop(Snap *s) {
     if (!snap_pool_enabled()) return;
     pthread_mutex_lock(&snap_pool_lock);
     if (snap_pool_n > 0) {
-        SnapPoolSlot slot = snap_pool[--snap_pool_n];
+        int best = 0;
+        for (int i = 1; i < snap_pool_n; i++) {
+            if (snap_pool[i].cap > snap_pool[best].cap) best = i;
+        }
+        SnapPoolSlot slot = snap_pool[best];
+        snap_pool[best] = snap_pool[--snap_pool_n];
+        snap_pool_bytes -= slot.cap;
         s->b = slot.buf;
         s->cap = slot.cap;
     }
