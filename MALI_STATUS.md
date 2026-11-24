@@ -1,49 +1,49 @@
 # MALI Status
 
-Last updated: `2026-11-22` (`Europe/Moscow`)
+Last updated: `2026-11-24` (`Europe/Moscow`)
 
 ## Upstream & Repository Baseline
 
-- **Newest upstream release:** `mamcjr/BOTWRecompAndroid` **`v0.4.11-beta`** (`2026-11-21T23:30:59Z`, `afd7b842`, `versionCode 50`).
-- **Fork `main`:** `afd7b84299fd3492bbfd8f9ee35065dd60f950d9` (`main == origin/main`; `upstream/main` `75bfc64c`).
+- **Newest upstream release:** `mamcjr/BOTWRecompAndroid` **`v0.4.12-beta`** (`2026-11-24T13:33:45Z`, `79ba1909`, `versionCode 51`).
+- **Fork `main`:** `79ba1909f716d7761046a767651c62dbfa917ef1` (`main == origin/main == upstream/main`).
 
 ## Active Worktrees
 
 | Worktree | Branch | HEAD | Purpose |
 |---|---|---|---|
-| Root `.` | `main` | `afd7b84` | Clean `v0.4.11-beta` baseline & docs |
-| `.mali/worktrees/mali-release-0411` | `release/mali-0.4.11-beta` | `072fc5c` | **Installed `v0.4.11-beta-mali`** (`75bfc64c` + `#534..#545`) |
-| `.mali/worktrees/mali-cpu-thermals` | `feat/mali-cpu-thermals` | `0a89336` | **CPU/thermals P1+P2** (`300s` `40fps` `PASS`) |
-| `.mali/worktrees/fix-android-nintendo-gyro` | `fix/android-nintendo-gyro` | `08963d5` | **OPEN PR #545** (`057e` axes/clock/bias, `MERGEABLE`) |
-| `.mali/worktrees/fix-narrow-shadow-539` | `fix/narrow-shadow-539` | `213c521` | **OPEN PR #543** (`Fixes #539` Vert+ shadows) |
+| Root `.` | `main` | `79ba190` | Clean `v0.4.12-beta` baseline & docs |
+| `.mali/worktrees/mali-cpu-thermals` | `feat/mali-cpu-thermals` | `0a89336` | CPU/thermals P1+P2 (`300s` `40fps` `PASS`) |
+| `.mali/worktrees/fix-android-nintendo-gyro` | `fix/android-nintendo-gyro` | `6f30e81` | **OPEN PR #545** (axes/clock/accel/bias) |
+| `.mali/worktrees/fix-narrow-shadow-539` | `fix/narrow-shadow-539` | `d27739c` | **OPEN PR #543** (`Fixes #539` Vert+ shadows) |
+| `.mali/worktrees/mali-renderpass-default` | `feat/vk-mali-renderpass-default` | `c1a29d9` | **OPEN PR #534** (Mali `r49+` RP + `dyn_render`) |
+| `.mali/worktrees/bc-parallel-decode` | `feat/vk-bc-parallel-decode` | `3abb640` | **OPEN PR #531** (`min(4,big)` BC/ASTC decode) |
+| `.mali/worktrees/warm-cache-pipe-fastpath` | `feat/vk-warm-cache-fastpath` | `87ba2a4` | **OPEN PR #529** (FPS-scaled fastpath + peek) |
+| `.mali/worktrees/tile-local-read` | `feat/vk-local-read` | `6bb6c66` | **CLOSED PR #518** (superseded by `#534`) |
+| `.mali/worktrees/fix-descriptor-plan-dyn-ubo` | `fix/vk-descriptor-plan-dynamic-ubo` | `c27c1b7` | **MERGED PR #537** (dynamic UBO plan) |
+| `.mali/worktrees/benchmark-scenes-v2` | `benchmark-scenes-v2` | `c48d1b1` | **MERGED PR #480** (`3/3` starter heights) |
 | `.mali/worktrees/op13-turnip-opt` | `feat/op13-turnip-opt` | `7f4cc9a` | **Installed `v0.4.10-beta-op13`** (`Turnip` opt) |
-| `.mali/worktrees/mali-release-0410` | `release/mali-0.4.10-beta` | `7451bb8` | Archived `v0.4.10-beta-mali` |
-| `.mali/worktrees/fix-descriptor-plan-dyn-ubo` | `fix/vk-descriptor-plan-dynamic-ubo` | `c27c1b7` | **OPEN PR #537** (UBO_DYNAMIC `descriptor_plan`) |
-| `.mali/worktrees/mali-renderpass-default` | `feat/vk-mali-renderpass-default` | `9d5e732` | **OPEN PR #534** (Mali `r49+` classic RP + hash) |
-| `.mali/worktrees/bc-parallel-decode` | `feat/vk-bc-parallel-decode` | `122e11e` | **OPEN PR #531** (4T parallel BC/ASTC decode) |
-| `.mali/worktrees/warm-cache-pipe-fastpath` | `feat/vk-warm-cache-fastpath` | `ea24f43` | **OPEN PR #529** (inline warm cache + ctrl) |
 | `.mali/worktrees/render-cpu-hotpath` | `feat/vk-render-cpu-hotpath` | `e54d6a8` | **HELD** (folded into `7f4cc9a`) |
-| `.mali/worktrees/tile-local-read` | `feat/vk-local-read` | `6bb6c66` | **OPEN PR #518** (`local_read` + ROAA) |
 | `.mali/worktrees/mali-inplace-feedback` | `feat/mali-inplace-feedback` | `2e36682` | **MERGED PR #507** (`2e36682`) |
-| `.mali/worktrees/benchmark-scenes-v2` | `benchmark-scenes-v2` | `c48d1b1` | **OPEN PR #480** (`3/3` starter heights) |
+| `.mali/worktrees/mali-release-0411` | `release/mali-0.4.11-beta` | `072fc5c` | Archived `v0.4.11-beta-mali` |
+| `.mali/worktrees/mali-release-0410` | `release/mali-0.4.10-beta` | `7451bb8` | Archived `v0.4.10-beta-mali` |
+| `.mali/worktrees/mali-release-048` | `release/mali-0.4.8-beta` | `5d93424` | Archived `v0.4.8-beta-mali` |
 
 ## Physical Devices & Backup Guards
 
 | Device | GPU / Driver | Installed App | Verified Backup & Caches |
 |---|---|---|---|
-| **Tab S11 (SM-X730)** *(connected)* | Mali-G925 (`r49p1`) | **`cpu-therm-p2`** (`196c94c6`, `60fa2a5f`, `@0a89336`) | `2026-11-22-gyro-pr`: `68/68` saves, `15802` `.spv`, `1fefc662caaa`; stopped |
-| **OP13 (CPH2653)** *(unplugged)* | Adreno 830 (**Turnip V38**) | **`v0.4.10-beta-op13`** (`63a4195f...`, `60fa2a5f...`) | `2026-11-21`: `83/84` saves, `2707` `.spv`, `725a99243c7f`; stopped |
+| **Tab S11 (SM-X730)** *(connected)* | Mali-G925 (`r49p1`) | `v0.4.12-beta` `#534+#529` (`89a7574a`, `v51`, stopped; `196c94c6` `v50` blocked `-d`) | `2026-11-24/mali`: `68/68` saves, `19004` `.spv`, `ac048f10`; clean |
+| **OP13 (CPH2653)** *(unplugged)* | Adreno 830 (**Turnip V38**) | **`v0.4.10-beta-op13`** (`63a4195f`, `60fa2a5f`) | `2026-11-21`: `83/84` saves, `2707` `.spv`, `725a99243c7f`; stopped |
 
-Rollback APKs (`.mali/apk/`): `v0.4.11-beta-mali` (`9d2aaed2`, prev `aa13a014`/`881201b0`), `v0.4.10-op13` (`63a4195f`), `v0.4.10-mali` (`a6899a76`), `v0.4.10` (`9ae5c77a`), `v0.4.8`..`0.4.5`.
+Rollback APKs (`.mali/apk/`): `pre-review-20261124.apk` (`196c94c6`, `vCode 50`), `v0.4.11-beta-mali` (`9d2aaed2`), `v0.4.10-op13` (`63a4195f`), `v0.4.10-mali` (`a6899a76`), `v0.4.8`..`0.4.5`.
 
 ## Open PRs & Active Priorities
 
-- **Merged:** `#507`, `#504`, `#506`, `#508`, `#481`–`#485`. **Open (`8/8` `CLEAN`):** `#545`, `#543`, `#537`, `#534`, `#531`, `#529`, `#518`, `#480`.
-- **Queue:** `#1` `SM-X730` CPU/thermals (`Sphere 7`, P0–P2 DONE @ `0a89336`, ready to deploy/PR); `Background/HOME Survival` (`Sphere 3`, unfrozen/queued); `Mali Grass Striping` **RESOLVED**; 8 open `CLEAN` PRs; `CPH2653` Turnip (`unplugged`); graphics backlog.
+- **Merged:** `#537`, `#480`, `#507`, `#504`, `#506`, `#508`, `#481`–`#485`. **Closed:** `#518`. **Open (`5/5` `MERGEABLE`):** `#545`, `#543`, `#534`, `#531`, `#529`.
+- **Queue:** `#1` `SM-X730` CPU/thermals (`0a89336`) / optional `v0.4.12-beta-mali` deploy; `Background/HOME Survival` (`Sphere 3`); 5 open `MERGEABLE` PRs; `CPH2653` Turnip (`unplugged`).
 
 ## Recent Milestones
 
-- `[2026-11-22]` **CPU & Thermals (`0a89336`, APK `196c94c6`):** `8/8` host + `18/18` Bionic `PASS`; `300s` soak `40.0 fps` (`68–301s`, `-31.1 pts` late sched `150.8%` vs `181.9%`, `game 0.78` vs `2.39 ms`, `4.06` vs `4.34 W`, unthrottled GPU vs stock collapse).
-- `[2026-11-22]` **PR `#545` (`08963d5`) & `v0.4.11-beta-mali` (`072fc5c`, `9d2aaed2`):** Switch 1 `(-y,z,-x)`, `1.96x` clock scaling, raw-frame `GyroBias`; `3/3` Round 2 verifiers PASS, `13/13` Bionic PASS (`15/15` `test_motion`), live 8BitDo Pro 2 (`0.000` turns drift, owner PASS) & tablet IMU (`0` drift).
-- `[2026-11-22]` **PR `#518` Rebase (`6bb6c66`):** `ROAA`, 88B legacy `pw_id`, format/clear/off-path guards; `2/2` verifier, `17/17` Bionic, `4/4` `SM-X730` FX (`fbcopy -50%..-90%`), `30/40.00 fps`.
-- `[2026-11-22]` **PR `#529` Rebase (`ea24f43`) & PR `#543` (`213c521`, `#539`):** Rebased `#529` over `#520`; fixed Vert+ `mAngle` shadows (`8/8` Bionic).
+- `[2026-11-24]` **Upstream `v0.4.12-beta` (`79ba1909`) PR Review Fixes:** Merged `#480`/`#537`, closed `#518` for `#534`; rebased & fixed `#545` (`6f30e81`, `21/21` `test_motion`), `#531` (`3abb640`, no `android.c`, `min(4,big)`), `#543` (`d27739c`, `12/12` neg controls), `#534` (`c1a29d9`, `dyn_render` + OOM, `SM-X730` `30.0/30.0/16.19`), and `#529` (`87ba2a4`, `4/3/2 ms` tiers + peek, `#534+#529` `89a7574a` `-64.4%` skip / `97.8%` fastpath). Verified `68/68` saves & `ac048f10`.
+- `[2026-11-22]` **CPU & Thermals (`0a89336`, `196c94c6`):** `8/8` host + `18/18` Bionic `PASS`; `300s` soak `40.0 fps` (`-31.1 pts` late sched, `4.06` vs `4.34 W`).
+- `[2026-11-22]` **PR `#545` & `v0.4.11-beta-mali` (`072fc5c`):** Initial Switch 1 `(-y,z,-x)`, `1.96x` clock scaling, 8BitDo Pro 2 (`0.000` turns drift).
