@@ -331,6 +331,7 @@ static void case_hle_turns_past0_on(void) {
     assert(t.hle_depth == 1 && !t.turn_owed);
     kernel_blocking_begin();
     assert(!t.core0_held && t.blocking_depth == 1);
+    usleep(1000);
     kernel_blocking_end();
     // Inside HLE with past-0 turns active: must defer reacquire until kernel_hle_leave_t!
     assert(!t.core0_held && t.turn_owed && t.blocking_depth == 0);
