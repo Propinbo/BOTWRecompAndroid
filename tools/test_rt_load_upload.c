@@ -1233,13 +1233,13 @@ int main(void) {
         tex_sc[0][0][0] = 2.0f; tex_sc[0][0][1] = 2.0f;
         uint32_t dyn1[4] = {0}, dyn2[4] = {0}, dyn3[4] = {0}, nd1 = 0, nd2 = 0, nd3 = 0;
         uint64_t up0 = stat_upload_bytes;
-        stage_set(&rs_pr, VK_NULL_HANDLE, 0, 0, &rs_vs, NULL, NULL, 0, 0, 0, row0, dyn1, &nd1);
+        stage_set(&rs_pr, VK_NULL_HANDLE, 0, 0, &rs_vs, row0, NULL, 0, 0, 0, NULL, dyn1, &nd1);
         uint64_t up1 = stat_upload_bytes;
-        stage_set(&rs_pr, VK_NULL_HANDLE, 0, 0, &rs_vs, NULL, NULL, 0, 0, 0, row0, dyn2, &nd2);
+        stage_set(&rs_pr, VK_NULL_HANDLE, 0, 0, &rs_vs, row0, NULL, 0, 0, 0, NULL, dyn2, &nd2);
         uint64_t up2 = stat_upload_bytes;
         (void)vk_cmd();
         renderer_flush();
-        stage_set(&rs_pr, VK_NULL_HANDLE, 0, 0, &rs_vs, NULL, NULL, 0, 0, 0, row0, dyn3, &nd3);
+        stage_set(&rs_pr, VK_NULL_HANDLE, 0, 0, &rs_vs, row0, NULL, 0, 0, 0, NULL, dyn3, &nd3);
         uint64_t up3 = stat_upload_bytes;
         bool ok_rscale = nd1 == 1 && nd2 == 1 && nd3 == 1 &&
                          up1 > up0 && up2 == up1 && dyn2[0] == dyn1[0] && up3 > up2;

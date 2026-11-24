@@ -4360,10 +4360,12 @@ static bool build_pipeline_ex(Pipe *pp, bool cache_only) {
     if (!g_vk.dyn_render) {  // (no dynamic rendering: against a compatible render pass, rpcompat.c)
         VkRenderPass crp = vk_rp_compat(k->ncolor, k->color, k->depth, k->stencil, ms.rasterizationSamples);
         if (!crp) {
-            pp->retry_s = g_exec_s + 5;
-            atomic_store(&pipe_oom, 1);
-            signal_build_done(&pp->state, 2);
-            return;
+            if (!cache_only) {
+                pp->retry_s = g_exec_s + 5;
+                atomic_store(&pipe_oom, 1);
+                signal_build_done(&pp->state, 2);
+            }
+            return false;
         }
         pi.pNext = ri.pNext, pi.renderPass = crp;
     }
