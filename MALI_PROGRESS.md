@@ -4,6 +4,7 @@ Active indexed English engineering ledger (2026-11-21 to 2026-11-24). Query sele
 
 ## Table of Contents
 
+- [2026-11-24] v0412-beta-mali-rollout — Consolidated `v0.4.12-beta-mali` Release Build, 16/16 Bionic & 30/40 FPS SM-X730 Rollout (COMPLETE)
 - [2026-11-24] pr-reviews-v0412-beta-rebase — Upstream `v0.4.12-beta` Sync & Maintainer Review Fixes Across PRs #518/#529/#531/#534/#543/#545 (COMPLETE)
 - [2026-11-22] mali-cpu-thermals-phase1-phase2 — SM-X730 CPU & Thermals Optimization Phase 0–2 & 300s Thermal Soak (COMPLETE)
 - [2026-11-22] android-nintendo-gyro-pr545 — Android `hid-nintendo` Gyroscope Fix & Upstream PR #545 (`OPEN`)
@@ -19,6 +20,22 @@ Active indexed English engineering ledger (2026-11-21 to 2026-11-24). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-20)
 
 ---
+
+## [2026-11-24] v0412-beta-mali-rollout — Consolidated `v0.4.12-beta-mali` Release Build, 16/16 Bionic & 30/40 FPS SM-X730 Rollout (COMPLETE)
+
+- **Branch, Stack & Cherry-Pick Integration (`.mali/worktrees/mali-release-0412`, `release/mali-0.4.12-beta` @ `f87d238174fa943818ed92a7e4167ab8e16fe56f`):**
+  - Branched from verified `v0.4.12-beta` (`79ba1909f716d7761046a767651c62dbfa917ef1`, `versionCode 51`, already carrying `#480` & `#537`), initialized submodules, and linked `android/deps/out` NTFS junction.
+  - Stacked all 5 updated PRs (`#534` `3e1dce0`, `#531` `631179f`, `#529` `e0ad7a0`, `#543` `1517ed4`, `#545` `b8d2ca6`; omitting closed PR `#518`) followed by all 14 `feat/mali-cpu-thermals` commits (`b3bedb6..bea53d5`, omitting `#518` `can_input_att`/`local_read` hunks cleanly and keeping `#534`'s OOM guards alongside `aa13057` `rp_hash`/`FbEnt.nv`).
+  - Added two clean integration/test fixes: `a1241c7` (`usleep(1000)` in `tools/test_kernel_fastpath.c` `case_hle_turns_past0_on` for MT6991 `13 MHz` clock-tick granularity) and `f87d238` (gating `#534`'s `!crp` OOM path with `if (!cache_only)` + `return false;` inside `build_pipeline_ex()`, and fixing `stage_set()` `row0`/`pre_ii` arg order in `tools/test_rt_load_upload.c`). Protected files (`tools/patches.py`, `runtime/gamelib.h`, `android/gamelib_id.cmake`, `.gitignore`) untouched; pushed `origin/release/mali-0.4.12-beta`.
+- **Verification on Exact Commit `f87d238` & Release APK Build:**
+  - Host Python/WASM/WSL suites (`10/10 PASS`): `test_fullscreen_narrow.py --wsl` (`main` + `--wide-test`; `12/12` negative controls PASS on `bea53d5`), `test_descriptor_plan.py` (`31,040`), `test_soft_linear.py` (`35+3+203`), `test_vulkan_compat.py` (`16`), `test_vulkan_startup.py` (`33`), `test_shader_cache.py` (`17`), `test_gpu_timing_trace.py` (`8`), `test_pipeline_cache_save.py`, `test_workspace160_guard.py`, `test_command_snapshot.py`.
+  - Native Android Bionic on `SM-X730`: `tools/test_android_runtime.ps1` -> **`16/16 PASS`** (including `test_kernel_fastpath` `5/5`, `test_async_snap_pool`, `test_cmdbuf_copy`, `test_render_hotpath`, `test_mali_rp_default`, `test_rt_load_upload`, `test_bc_parallel` `512² 1.45x` / `1024² 1.43x` / `ASTC 3.01x`, `test_warm_cache_fastpath`, `test_motion` `21/21`) plus standalone `test_shader_meta_cache` `PASS`.
+  - Built & debug-signed `:app:assembleRelease` (`JDK 17`): `.mali/apk/v0.4.12-beta-mali/BOTWRecompAndroid-0.4.12-beta-mali-release.apk` (`90,526,812` B, `SHA-256: 8eedca1ad3cee475603f96bd0cd524552498ebe082855ec2140f3f2898cf1a76`, `versionCode=51`, `versionName=0.4.12-beta`, cert `60fa2a5f462fd95d30b37dde54d769de8986d7c8377e13c3ea5773088f20527a`).
+- **Isolated `SM-X730` Live Rollout Verification (`run_verify_release.py`, `75% SGSR1`, `shadows=1`, `inplace_reads=1`):**
+  - Installed in place (`adb install -r`); verified all 4 startup/runtime paths (`classic render passes`, `pipeline cache control: on`, `parallel BC CPU decode: 4 threads`, `in place (settings)`), clean reboots (`0 kept`), warm-cache fastpath hits (Pass 1 `11+68` prog / `330+188` pipe; Pass 2 `284` prog / `696/710` `98.0%` pipe), `0` runtime errors, and crisp `pass1_cap30_ui_zora-plaza.png` / `kakariko-day.png`.
+  - **Pass 1 (`cap30`, `SKIN 32.6 C TS=0`):** `plateau 30.00` (`low1 29.50`, `gpu p50 29.568`, `rnd p50 16.831 ms`), `zora-plaza 30.00` (`low1 29.00`, `gpu p50 31.382`, `rnd p50 18.189 ms`), `kakariko-day 30.00` (`low1 29.35`, `gpu p50 32.179`, `rnd p50 21.241 ms`).
+  - **Pass 2 (`40 FPS` steady warmup via `LARECOMP_FPS=40`, `frames.csv`, `skip_head_s=5.0`, `601–602` frames/scene):** `plateau 40.00 fps` (`low1 39.10`, `period p50/p95/p99 25.000/25.399/25.527`, `rnd p50 16.068`, `gpu p50 20.270 ms`), `zora-plaza 40.00 fps` (`low1 38.09`, `period 25.003/25.670/26.002`, `rnd p50 16.478`, `gpu p50 22.698 ms`), `kakariko-day 40.00 fps` (`low1 37.96`, `period 25.000/25.677/25.893`, `rnd p50 18.550`, `gpu p50 23.262 ms`).
+  - **Post-Flight (`.mali/apk/v0.4.12-beta-mali/install-verification.txt`):** App stopped (`pidof=[]`), scratch cleaned, installed APK == `8eedca1a...`, `saves=68/68` (`0` diffs), `prefs=4/5` (`ActivityThread.IDS.xml` only), `spirv=19004`, `vk_pipelines=ac048f109249...` intact.
 
 ## [2026-11-24] pr-reviews-v0412-beta-rebase — Upstream `v0.4.12-beta` Sync & Maintainer Review Fixes Across PRs #518/#529/#531/#534/#543/#545 (COMPLETE)
 
