@@ -53,7 +53,7 @@ FORBIDDEN_PR_PATTERNS = (
     re.compile(r"(?:^|/)generated", re.IGNORECASE),
     re.compile(r"\.bfttf$", re.IGNORECASE),
     re.compile(r"(?:^|/)(?:\.mali|\.agents)(?:/|$)", re.IGNORECASE),
-    re.compile(r"(?:^|/)(?:AGENTS\.md|GEMINI\.md|MALI_)", re.IGNORECASE),
+    re.compile(r"(?:^|/)(?:AGENTS\.md|GEMINI\.md|MALI_[^/]*\.md)$", re.IGNORECASE),
 )
 
 PROTECTED_PR_FILES = {

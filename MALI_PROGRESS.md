@@ -1,9 +1,10 @@
 # MALI Contribution Execution Progress
 
-Active indexed English engineering ledger (2026-11-21 to 2026-11-24). Query selectively by heading or line range rather than loading the entire file. Historical entries (2026-10-30 to 2026-11-20) are summarized in the bottom digest and archived under `.mali/archive/`.
+Active indexed English engineering ledger (2026-11-21 to 2026-11-25). Query selectively by heading or line range rather than loading the entire file. Historical entries (2026-10-30 to 2026-11-20) are summarized in the bottom digest and archived under `.mali/archive/`.
 
 ## Table of Contents
 
+- [2026-11-25] track5-mali-shader-cleanup-pr582 — Track 5 Phase 0–2 Research & Phase 1 Upstream PR #582 (OPEN)
 - [2026-11-24] v0412-beta-mali-rollout — Consolidated `v0.4.12-beta-mali` Release Build, 16/16 Bionic & 30/40 FPS SM-X730 Rollout (COMPLETE)
 - [2026-11-24] pr-reviews-v0412-beta-rebase — Upstream `v0.4.12-beta` Sync & Maintainer Review Fixes Across PRs #518/#529/#531/#534/#543/#545 (COMPLETE)
 - [2026-11-22] mali-cpu-thermals-phase1-phase2 — SM-X730 CPU & Thermals Optimization Phase 0–2 & 300s Thermal Soak (COMPLETE)
@@ -20,6 +21,20 @@ Active indexed English engineering ledger (2026-11-21 to 2026-11-24). Query sele
 - Historical Archive Digest (2026-10-30 to 2026-11-20)
 
 ---
+
+## [2026-11-25] track5-mali-shader-cleanup-pr582 — Track 5 Phase 0–2 Research & Phase 1 Upstream PR #582 (OPEN)
+
+- **Baseline Sync & Scope Decisions (`v0.5.0-beta` `d68d698` / `upstream/main` `208746bb8a0d2200d8130cc6afe9fee109e4bd80`):**
+  - Gate 0 offline scan of `5,094` production BOTW `1.9.0` `.spv` shaders proved `0 / 5,094` use native Maxwell FP16 (`HADD2`/`HMUL2`/`HFMA2`/`.F16`), so native Maxwell half-precision lowering was dropped in favor of SPIR-V/GLSL `-O0` cleanup (`LARECOMP_MALI_SPIRV_CLEANUP`) and static `1:1` `OpDemoteToHelperInvocation -> OpTerminateInvocation` (`LARECOMP_MALI_DISCARD_OPT`).
+  - Phase 2 prototype (`LARECOMP_MALI_SHADER_FP16`, conservative `RelaxedPrecision` slice in `.mali/worktrees/mali-shader-opt`) and `no_ds_write` / `early_fragment_tests` variant splitting were **parked locally** (`.mali/mali-shader-opt/PHASE2_AB_REPORT.md` & `PHASE1_AB_REPORT.md`) due to `+21` / `+30 ms` compile overhead and accuracy risk without meaningful steady-state GPU relief.
+  - Synced root `main` and `origin/main` cleanly (`--ff-only`) to `upstream/main` (`208746bb`).
+- **PR #582 Package & 3-Lens Pre-PR Audit (`feat/mali-spirv-cleanup-discard` @ `7517817`, `.mali/worktrees/pr-mali-shader-cleanup`):**
+  - Strictly Phase 1 Only (`14 files changed, 2620 insertions(+), 64 deletions(-)`), `1:1` shader variants, `!has_bc && has_astc_ldr` gate with independent env overrides (`LARECOMP_MALI_SPIRV_CLEANUP`, `LARECOMP_MALI_DISCARD_OPT`), `STAGE_VERTEX` (`NoContraction` / `post_flags = 0`) and MSL untouched, `.smeta` bits `MW_TF_MALI_CLEANUP` (`1u<<25`), `MW_TF_MALI_DISCARD_OPT` (`1u<<26`), `MW_TF_SHADER_TERMINATE` (`1u<<27`).
+  - Executed 3-lens adversarial `independent-verifier` review (`ff9b00b0`, `80c9232f`, `af80ce43`; recorded in `.mali/mali-shader-opt/upstream-pr/CODE_REVIEW.md`); resolved all CRITICAL/MAJOR/MINOR findings in `7517817` (`OpAtomicStore = 228`, `GroupNonUniform` `342`/`359..366` taint & literals, `OpIsHelperInvocationEXT = 5381` capability retention, `< bound` guards, `TEXS`/`TLDS`/`TLD4S` `d1` clobber, `MW_TF_SHADER_TERMINATE`).
+- **Exact PR Commit `7517817` Verification & Isolated `SM-X730` Release Smoke A/B (`smoke_ab_summary.json`):**
+  - Host/WASM/Bionic: `5,094 / 5,094` `spirv-val --target-env vulkan1.3` (`89,892,774 -> 65,281,388` words `-27.38%`, `demote=848`, `cleanup=5,090`, `errs=0`); `test_translate` `5,000` MSL (`0 DIFFERENCES`); MSVC + native `aarch64` Bionic `test_mali_shader_opt` & `test_shader_meta_cache` `PASS`; `test_shader_cache.py` (`22/22`), `test_vulkan_compat.py` (`16/16`), `test_vulkan_startup.py` (`33/33`), NDK Android & `-U__ANDROID__` syntax `0` errors; `workspace_check.py pr` `PASS`.
+  - Release Smoke A/B (`upstream/main` `208746b` APK `81aaf2cf...` vs `7517817` APK `0e99185f...`, cert `60fa2a5f...`): cold scratch `.spv` `38,708 KB` (`878` files) -> `34,172 KB` (`900` files, `-11.7%`); warm `zora-plaza` (`30 FPS`, equalized `AP 39.6/37.5°C` vs `39.5/37.9°C`): `30.00 -> 30.03 FPS`, `1% low 23.99`, `gpu p50 29.832 -> 29.879 ms` (`p95 34.819 -> 34.317 ms`), `1:1` variants (`439 progs / 828 gpipes`), `0` errors, visual parity `PSNR 29.49 dB`.
+  - Opened **PR #582** (`https://github.com/mamcjr/BOTWRecompAndroid/pull/582`, `OPEN`, `MERGEABLE`); restored clean `v0.5.0-beta` Release APK (`81aaf2cf...`) on `SM-X730`, `pidof=''`, `66/66` saves, `19,643` `.spv`, `vk_pipelines.bin` `ac048f109249...` intact.
 
 ## [2026-11-24] v0412-beta-mali-rollout — Consolidated `v0.4.12-beta-mali` Release Build, 16/16 Bionic & 30/40 FPS SM-X730 Rollout (COMPLETE)
 
