@@ -108,6 +108,23 @@ void plat_adpf_stats(PlatAdpfStats *out);
 #ifdef __ANDROID__
 // Request a preferred display refresh rate via Display.Mode (0 clears the preference).
 bool plat_set_preferred_display_hz(float hz);
+#ifndef PLAT_CPU_ROLE_DEFINED
+#define PLAT_CPU_ROLE_DEFINED
+enum {
+    PLAT_CPU_ROLE_ALL = 0,
+    PLAT_CPU_ROLE_RENDER = 1,
+    PLAT_CPU_ROLE_PRESENT = 2,
+    PLAT_CPU_ROLE_GUEST_HOT = 3,
+    PLAT_CPU_ROLE_WORKER = 4,
+};
+#endif
+int plat_cpu_affinity_mode(void);  // 0=off, 1=cluster (4-7 / 6-7), 2=split, 3=render+present & workers
+void plat_cpu_set_auto_affinity(int mode);  // sets default affinity mode when LARECOMP_CPU_AFFINITY env var is unset
+bool plat_cpu_is_dual_6plus2(void);
+bool plat_adpf_guests_enabled(void);  // true when hot guest tids should be added to ADPF session
+bool plat_worker_thread_pin(void);  // binds calling worker to worker_mask when mode != 0; returns true if pinned
+bool plat_thread_pin_role(int32_t tid, int role);  // tid==0 means calling thread
+void plat_adpf_set_guest_tids(const int32_t *tids, int count);
 // A new thread back on every core: threads inherit the creating thread's affinity, and the presenting thread is
 // pinned to the fastest cores (platform/android.c)
 void plat_thread_unpin(void);

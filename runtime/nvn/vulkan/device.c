@@ -1348,6 +1348,11 @@ static void android_frame_rate(struct ANativeWindow *aw) {
           : set_rate ? set_rate(aw, want, compat) : -1;
     if (want != asked) LOG("[vk] the window asks for %.0f fps content (compat %d, rc %d)\n", want, compat, r);
     asked_aw = aw, asked = want;
+    {
+        bool mali_40 = vk_driver_is_mali() && framepace_wants_120hz();
+        bool oryon_turnip = vk_driver_is_turnip() && plat_cpu_is_dual_6plus2();
+        plat_cpu_set_auto_affinity((mali_40 || oryon_turnip) ? 1 : 0);
+    }
 }
 
 static bool android_surface_ready(void) {  // false: no window to draw into now
@@ -1404,6 +1409,10 @@ void vk_frame_end(const char *shot_path);
 
 // Acquire the next window image and begin rendering into it (cleared to `clear`). Returns false when there is
 // nothing to draw into (minimised window).
+#ifdef __ANDROID__
+bool vk_async_on(void);
+bool vk_async_is_render_thread(void);
+#endif
 bool vk_frame_begin(const float clear[4]) {
     cur_frame.ok = false;
     int w, h;
@@ -1411,6 +1420,16 @@ bool vk_frame_begin(const float clear[4]) {
     if (!w || !h) return false;  // minimised
 #ifdef __ANDROID__
     if (!android_surface_ready()) return false;
+    {
+        static __thread int last_render_aff_mode;
+        int m = plat_cpu_affinity_mode();
+        if (m != last_render_aff_mode) {
+            last_render_aff_mode = m;
+            plat_thread_pin_role(0, m ? PLAT_CPU_ROLE_RENDER : PLAT_CPU_ROLE_ALL);
+            if (!vk_async_on() || vk_async_is_render_thread())
+                LOG("[android] render thread auto-affinity mode=%d\n", m);
+        }
+    }
     bool want_120_sc = framepace_wants_120hz();
     if (g_vk.swapchain && want_120_sc != sc_for_120hz_fifo &&
         !getenv("LARECOMP_VK_PRESENT") && g_settings.present_fifo < 0)
@@ -2342,15 +2361,8 @@ void ui_window_init(void) {
         }
         if (lrz < 0) lrz = !model[0] || vk_adreno_8xx(model);
         {   // #32: on the Adreno 840 and up (Mesa's a8xx, the Turnip Gen8 drivers from V30), shadowed ground turns red -
-            // ir3 moving a shader's uniform buffer into its constants reads a draw's constants stale. With that off: no
-            // tint and the same ~40 fps (a Z Fold 8). An IR3_SHADER_DEBUG from the driver variables wins.
-            const char *a = strstr(model, "Adreno");
-            int n = 0;
-            if (a) {
-                while (*a && (*a < '0' || *a > '9')) a++;
-                n = atoi(a);
-            }
-            if (n >= 840 && n < 900 && !getenv("IR3_SHADER_DEBUG")) {
+            // ir3 moving a shader's uniform buffer into its constants reads a draw's constants stale. Keep OFF on Adreno 830.
+            if (vk_adreno_needs_nouboopt(model) && !getenv("IR3_SHADER_DEBUG")) {
                 setenv("IR3_SHADER_DEBUG", "nouboopt", 1);
                 LOG("[vk] %s: IR3_SHADER_DEBUG=nouboopt (shadows drawn red, #32)\n", model);
             }

@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 #include "nvn/output_scale.h"
+#include "nvn/vulkan/device_compat.h"
 #include "nvn/vulkan/mali_frame_pacer.h"
 
 static void test_render_scale_parse(void) {
@@ -218,6 +219,17 @@ static void test_adpf_target_ns(void) {
     assert(mali_pacer_adpf_target_ns(60, 0, -1, false, false, false, false, 0.0) == 16666667ull);
 }
 
+static void test_nouboopt_off_on_a830(void) {
+    assert(!vk_adreno_needs_nouboopt(NULL));
+    assert(!vk_adreno_needs_nouboopt(""));
+    assert(!vk_adreno_needs_nouboopt("Adreno (TM) 830"));
+    assert(!vk_adreno_needs_nouboopt("Adreno830"));
+    assert(!vk_adreno_needs_nouboopt("Adreno (TM) 750"));
+    assert(!vk_adreno_needs_nouboopt("Mali-G925-Immortalis MC12"));
+    assert(vk_adreno_needs_nouboopt("Adreno (TM) 840"));
+    assert(vk_adreno_needs_nouboopt("Adreno850"));
+}
+
 int main(void) {
     test_render_scale_parse();
     test_aligned_scales();
@@ -226,6 +238,7 @@ int main(void) {
     test_pacer_antiburst_and_phase_lock();
     test_pacer_slip_no_snapback();
     test_adpf_target_ns();
+    test_nouboopt_off_on_a830();
     printf("PASS test_mali_40fps_pacer (all assertions)\n");
     return 0;
 }

@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #if !defined(VK_VERSION_1_0)
 #include <vulkan/vulkan_core.h>
 #endif
@@ -133,4 +135,15 @@ static inline bool vk_dyn_render_want(bool supported, uint32_t driver_id, const 
     }
     if (reason_out) *reason_out = "default";
     return true;
+}
+
+// Enable IR3_SHADER_DEBUG=nouboopt only on Adreno 840..899 (Z Fold 8 red shadow workaround, #32);
+// Adreno 830 renders shadows cleanly without it and loses ~1.5 ms / ~1.0 W if forced.
+static inline bool vk_adreno_needs_nouboopt(const char *model) {
+    if (!model) return false;
+    const char *a = strstr(model, "Adreno");
+    if (!a) return false;
+    while (*a && (*a < '0' || *a > '9')) a++;
+    int n = atoi(a);
+    return n >= 840 && n < 900;
 }

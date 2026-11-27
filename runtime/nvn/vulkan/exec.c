@@ -2,6 +2,7 @@
 #include <SDL3/SDL_cpuinfo.h>
 #ifdef __ANDROID__
 #include <malloc.h>
+#include <sys/prctl.h>
 #endif
 #include <SDL3/SDL_timer.h>
 #include <ctype.h>
@@ -182,6 +183,9 @@ static pthread_cond_t done_cv = PTHREAD_COND_INITIALIZER;  // (sw_m: done_cached
 static _Atomic uint64_t sw_submitted;
 static void *seq_waiter(void *arg) {
     (void)arg;
+#ifdef __ANDROID__
+    plat_thread_unpin();
+#endif
     for (;;) {
         pthread_mutex_lock(&sw_m);
         uint64_t done;
@@ -584,6 +588,7 @@ void vk_pace_frame(void) {
         uint64_t adpf_budget = vk_adpf_compute_ns();
         atomic_store_explicit(&g_adpf_target_ns, adpf_budget, memory_order_relaxed);
         plat_frame_work_gpu((uint64_t)(hint_busy * 1e6), no_gpu ? 0 : gpu, adpf_budget, (uint64_t)(game_busy * 1e6));
+        if (plat_cpu_affinity_mode() != 0) kernel_affinity_tick();
     }
 #endif
 #ifdef __ANDROID__
@@ -1288,6 +1293,10 @@ static int new_chunk(uint64_t size) {
                                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT};
     VmaAllocationCreateInfo ai = {.usage = VMA_MEMORY_USAGE_AUTO,
                                   .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT};
+    static int ring_cached = -1;
+    if (ring_cached < 0) { const char *e = getenv("LARECOMP_VK_RING_CACHED"); ring_cached = e && atoi(e) != 0; }
+    if (ring_cached)
+        ai.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
     if (getenv("LARECOMP_VK_RING_SYSMEM")) ai.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;  // (test: a GPU without resizable BAR)
     VmaAllocationInfo info;
     VK_CHECK(vmaCreateBuffer(g_vk.vma, &bi, &ai, &c->buf, &c->mem, &info));
@@ -1522,6 +1531,10 @@ static void finish_active_job(pthread_mutex_t *lock, Job **head, int *active) {
 
 static void *worker(void *a) {
     (void)a;
+#ifdef __ANDROID__
+    prctl(PR_SET_NAME, "vk-shaderc", 0, 0, 0);
+    plat_worker_thread_pin();
+#endif
     for (;;) {
         Job *j = mw_job_pop_active(&jobs_lock, &jobs_cond, &jobs_head, &jobs_tail, &jobs_active);
         j->fn(j->arg);
@@ -1550,6 +1563,10 @@ static pthread_cond_t tjobs_cond = PTHREAD_COND_INITIALIZER;
 static int tjobs_active;
 static void *translator(void *a) {
     (void)a;
+#ifdef __ANDROID__
+    prctl(PR_SET_NAME, "vk-xlat", 0, 0, 0);
+    plat_worker_thread_pin();
+#endif
     for (;;) {
         Job *j = mw_job_pop_active(&tjobs_lock, &tjobs_cond, &tjobs_head, &tjobs_tail, &tjobs_active);
         j->fn(j->arg);

@@ -128,6 +128,7 @@ static inline uint64_t vk_bc_select_fast_cpus(const long *mhz, int n, uint64_t a
 
 #ifdef __ANDROID__
 extern void plat_thread_unpin(void) __attribute__((weak));
+extern bool plat_worker_thread_pin(void) __attribute__((weak));
 
 static inline bool vk_bc_read_affinity_mask(pid_t pid, uint64_t *mask_out) {
     unsigned long allowed[16] = {0};
@@ -188,6 +189,7 @@ static inline int vk_bc_detect_default_threads(void) {
 static inline void vk_bc_worker_setup(int threads) {
 #ifdef __ANDROID__
     prctl(PR_SET_NAME, "vk-bc", 0, 0, 0);
+    if (plat_worker_thread_pin && plat_worker_thread_pin()) return;
     if (plat_thread_unpin) plat_thread_unpin();
     uint64_t cur_mask = 0;
     uint64_t allowed_mask = vk_bc_effective_affinity(&cur_mask);
