@@ -92,10 +92,13 @@ static void test_sd8_gen3_and_invalid_topologies(void) {
     assert(t.guest_hot_mask == 0x3Cull && t.n_guest_hot == 4);
     assert(plat_cpu_topo_mask_for_role(&t, 0, PLAT_CPU_ROLE_RENDER) == 0);
     assert(plat_cpu_topo_mask_for_role(&t, 1, PLAT_CPU_ROLE_RENDER) == 0xC0ull);
-    assert(plat_cpu_topo_mask_for_role(&t, 1, PLAT_CPU_ROLE_PRESENT) == 0xC0ull);
+    assert(plat_cpu_topo_mask_for_role(&t, 1, PLAT_CPU_ROLE_PRESENT) == 0x3Cull);
     assert(plat_cpu_topo_mask_for_role(&t, 1, PLAT_CPU_ROLE_GUEST_HOT) == 0x3Cull);
     assert(plat_cpu_topo_mask_for_role(&t, 1, PLAT_CPU_ROLE_WORKER) == 0x03ull);
+    assert(plat_cpu_topo_mask_for_role(&t, 2, PLAT_CPU_ROLE_PRESENT) == 0x3Cull);
     assert(plat_cpu_topo_mask_for_role(&t, 2, PLAT_CPU_ROLE_GUEST_HOT) == 0x3Cull);
+    assert(plat_cpu_topo_mask_for_role(&t, 3, PLAT_CPU_ROLE_RENDER) == 0xC0ull);
+    assert(plat_cpu_topo_mask_for_role(&t, 3, PLAT_CPU_ROLE_PRESENT) == 0);
     assert(plat_cpu_topo_mask_for_role(&t, 3, PLAT_CPU_ROLE_GUEST_HOT) == 0);
     assert(plat_cpu_topo_mask_for_role(&t, 3, PLAT_CPU_ROLE_WORKER) == 0x03ull);
 

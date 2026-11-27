@@ -1500,7 +1500,7 @@ void kernel_affinity_tick(void) {
 
     int32_t self_tid = (int32_t)syscall(__NR_gettid);
     if (self_tid > 0 && self_tid != g_aff_self_pinned_tid) {
-        if (plat_thread_pin_role(0, PLAT_CPU_ROLE_PRESENT)) g_aff_self_pinned_tid = self_tid;
+        if (plat_thread_pin_role(0, PLAT_CPU_ROLE_PRESENT) || mode == 3) g_aff_self_pinned_tid = self_tid;
     }
     if (mode == 3) return;  // render+present & workers only: keep guest threads unpinned on 0-7
 

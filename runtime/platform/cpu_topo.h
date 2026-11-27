@@ -159,8 +159,8 @@ static inline uint64_t plat_cpu_topo_mask_for_role(const PlatCpuTopo *t, int mod
         case PLAT_CPU_ROLE_ALL:
             return t->allowed_mask;
         case PLAT_CPU_ROLE_RENDER:
-        case PLAT_CPU_ROLE_PRESENT:
             return t->prime_mask;
+        case PLAT_CPU_ROLE_PRESENT:
         case PLAT_CPU_ROLE_GUEST_HOT:
             return mode == 3 ? 0 : t->guest_hot_mask;
         case PLAT_CPU_ROLE_WORKER:

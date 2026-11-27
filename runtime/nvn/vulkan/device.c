@@ -1303,7 +1303,7 @@ static void android_frame_rate(struct ANativeWindow *aw) {
         extern int framepace_target(void);
         bool mali_40 = vk_driver_is_mali() && (fps_mode_now() == 4 || framepace_target() == 40);
         bool oryon_turnip = vk_driver_is_turnip() && plat_cpu_is_dual_6plus2();
-        plat_cpu_set_auto_affinity((mali_40 || oryon_turnip) ? 1 : 0);
+        plat_cpu_set_auto_affinity(mali_40 ? 1 : oryon_turnip ? 3 : 0);
     }
 }
 
