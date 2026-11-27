@@ -1193,9 +1193,18 @@ void renderer_sync(void) {
     vk_wait_seq(s);
 }
 
+#ifdef __ANDROID__
+static _Atomic int g_mali_dclears_pending;
+#endif
+
 uint64_t renderer_fence_seq(void) {
     pthread_mutex_lock(&seq_lock);
-    uint64_t q = submit_seq + (subs[cur_sub].main_begun || subs[cur_sub].upload_begun ? 1 : 0);
+#ifdef __ANDROID__
+    bool dclears = atomic_load_explicit(&g_mali_dclears_pending, memory_order_acquire) > 0;
+#else
+    bool dclears = false;
+#endif
+    uint64_t q = submit_seq + (subs[cur_sub].main_begun || subs[cur_sub].upload_begun || dclears ? 1 : 0);
 #ifdef __ANDROID__
     static int fence_present = -1;
     if (fence_present < 0) fence_present = getenv("LARECOMP_FENCE_PRESENT") != NULL;
@@ -2493,6 +2502,9 @@ void vk_dump_watch_frame(void) {
 }
 #ifdef __ANDROID__
 static MaliDeferredClearTable g_mali_dclears;
+static inline void mali_dclear_publish_count(void) {
+    atomic_store_explicit(&g_mali_dclears_pending, g_mali_dclears.count, memory_order_release);
+}
 static MaliActivePassImgs g_mali_active_pass;
 static uint32_t g_mali_pass_draws;
 static uint32_t g_mali_pass_store_none_mask;
@@ -2637,9 +2649,11 @@ static void mali_fs_meta_reset(void) {
 }
 
 static void mali_dclear_materialize(const MaliDeferredClear *e) {
-    if (!e || !e->image || !e->view) return;
-    extern bool vk_view_is_dead(VkImageView v);
-    if (vk_view_is_dead(e->view)) return;
+    if (!e || !e->image) return;
+    VkImageAspectFlags aspect = e->has_color ? VK_IMAGE_ASPECT_COLOR_BIT : e->image_aspect;
+    VkFormat vfmt = e->has_color ? e->view_format : e->image_format;
+    VkImageView v = vk_create_temp_view(e->image, vfmt, e->mip_level, e->array_layer, aspect);
+    if (!v) return;
     if (in_pass) {
         vk_end_pass();
         st.rt_dirty = true;
@@ -2654,7 +2668,7 @@ static void mali_dclear_materialize(const MaliDeferredClear *e) {
     if (e->has_color) {
         colors[0] = e->view_format;
         ca = (VkRenderingAttachmentInfo){.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                                         .imageView = e->view,
+                                         .imageView = v,
                                          .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                                          .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
                                          .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -2664,7 +2678,7 @@ static void mali_dclear_materialize(const MaliDeferredClear *e) {
         if (e->image_aspect & VK_IMAGE_ASPECT_DEPTH_BIT) {
             has_d = true;
             da = (VkRenderingAttachmentInfo){.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                                             .imageView = e->view,
+                                             .imageView = v,
                                              .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                                              .loadOp = e->has_depth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD,
                                              .storeOp = e->has_depth ? VK_ATTACHMENT_STORE_OP_STORE
@@ -2675,7 +2689,7 @@ static void mali_dclear_materialize(const MaliDeferredClear *e) {
         if (e->image_aspect & VK_IMAGE_ASPECT_STENCIL_BIT) {
             has_s = true;
             sa = (VkRenderingAttachmentInfo){.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                                             .imageView = e->view,
+                                             .imageView = v,
                                              .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                                              .loadOp = e->has_stencil ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD,
                                              .storeOp = e->has_stencil ? VK_ATTACHMENT_STORE_OP_STORE
@@ -2691,13 +2705,18 @@ static void mali_dclear_materialize(const MaliDeferredClear *e) {
                           .pColorAttachments = e->has_color ? &ca : NULL,
                           .pDepthAttachment = has_d ? &da : NULL,
                           .pStencilAttachment = has_s ? &sa : NULL};
-    if (!vk_begin_rendering(cb, &ri, e->has_color ? colors : NULL, ds_fmt, e->samples)) return;
+    if (!vk_begin_rendering(cb, &ri, e->has_color ? colors : NULL, ds_fmt, e->samples)) {
+        vk_defer_view(v);
+        return;
+    }
     vk_end_rendering(cb);
+    vk_defer_view(v);
     stat_passes++;
 }
 
 void vk_mali_rp_forget_image(VkImage img) {
     mali_dclear_forget_image(&g_mali_dclears, img);
+    mali_dclear_publish_count();
 }
 
 void vk_mali_rp_flush_clears_for(VkImage img) {
@@ -2715,7 +2734,10 @@ void vk_mali_rp_flush_clears_for(VkImage img) {
         }
         mali_dclear_materialize(&e);
     }
-    if (did) vk_full_barrier(vk_cmd());
+    if (did) {
+        mali_dclear_publish_count();
+        vk_full_barrier(vk_cmd());
+    }
 }
 
 static void vk_mali_rp_flush_all_clears(void) {
@@ -2733,7 +2755,10 @@ static void vk_mali_rp_flush_all_clears(void) {
         }
         mali_dclear_materialize(&e);
     }
-    if (did) vk_full_barrier(vk_cmd());
+    if (did) {
+        mali_dclear_publish_count();
+        vk_full_barrier(vk_cmd());
+    }
 }
 
 static void mali_prepare_rt_scales(void) {
@@ -2869,20 +2894,21 @@ static bool mali_try_defer_rt_clear(int index, const float *color_raw, uint32_t 
 
     VkClearColorValue cc = {0};
     if (index >= 0 && color_raw) memcpy(&cc, color_raw, 16);
-    int rc = mali_dclear_upsert(&g_mali_dclears, b->image, v, vf, b->format, b->aspect, lv, ly, ew, eh,
+    int rc = mali_dclear_upsert(&g_mali_dclears, b->image, vf, b->format, b->aspect, lv, ly, ew, eh,
                                 (VkSampleCountFlagBits)(b->samples ? b->samples : 1),
                                 index >= 0, &cc, set_d, dval, set_s, sval);
     if (rc == MALI_DCLEAR_CONFLICT) {
         vk_mali_rp_flush_clears_for(b->image);
-        rc = mali_dclear_upsert(&g_mali_dclears, b->image, v, vf, b->format, b->aspect, lv, ly, ew, eh,
+        rc = mali_dclear_upsert(&g_mali_dclears, b->image, vf, b->format, b->aspect, lv, ly, ew, eh,
                                 (VkSampleCountFlagBits)(b->samples ? b->samples : 1),
                                 index >= 0, &cc, set_d, dval, set_s, sval);
     } else if (rc == MALI_DCLEAR_FULL) {
         vk_mali_rp_flush_all_clears();
-        rc = mali_dclear_upsert(&g_mali_dclears, b->image, v, vf, b->format, b->aspect, lv, ly, ew, eh,
+        rc = mali_dclear_upsert(&g_mali_dclears, b->image, vf, b->format, b->aspect, lv, ly, ew, eh,
                                 (VkSampleCountFlagBits)(b->samples ? b->samples : 1),
                                 index >= 0, &cc, set_d, dval, set_s, sval);
     }
+    mali_dclear_publish_count();
     return rc == MALI_DCLEAR_OK;
 }
 
@@ -2931,20 +2957,21 @@ static bool mali_try_defer_clear_texture(NvnTexture *t, const NvnTextureView *tv
     uint32_t ew = level_extent(b->width, lv), eh = level_extent(b->height, lv);
     VkClearColorValue cc = {0};
     memcpy(&cc, color, 16);
-    int rc = mali_dclear_upsert(&g_mali_dclears, b->image, v, vf, b->format, b->aspect, lv, ly, ew, eh,
+    int rc = mali_dclear_upsert(&g_mali_dclears, b->image, vf, b->format, b->aspect, lv, ly, ew, eh,
                                 (VkSampleCountFlagBits)(b->samples ? b->samples : 1),
                                 true, &cc, false, 0.0f, false, 0);
     if (rc == MALI_DCLEAR_CONFLICT) {
         vk_mali_rp_flush_clears_for(b->image);
-        rc = mali_dclear_upsert(&g_mali_dclears, b->image, v, vf, b->format, b->aspect, lv, ly, ew, eh,
+        rc = mali_dclear_upsert(&g_mali_dclears, b->image, vf, b->format, b->aspect, lv, ly, ew, eh,
                                 (VkSampleCountFlagBits)(b->samples ? b->samples : 1),
                                 true, &cc, false, 0.0f, false, 0);
     } else if (rc == MALI_DCLEAR_FULL) {
         vk_mali_rp_flush_all_clears();
-        rc = mali_dclear_upsert(&g_mali_dclears, b->image, v, vf, b->format, b->aspect, lv, ly, ew, eh,
+        rc = mali_dclear_upsert(&g_mali_dclears, b->image, vf, b->format, b->aspect, lv, ly, ew, eh,
                                 (VkSampleCountFlagBits)(b->samples ? b->samples : 1),
                                 true, &cc, false, 0.0f, false, 0);
     }
+    mali_dclear_publish_count();
     return rc == MALI_DCLEAR_OK;
 }
 
@@ -3376,6 +3403,7 @@ static void begin_pass(void) {
             for (int k = 0; k < nmat; k++) vk_mali_rp_flush_clears_for(mat_imgs[k]);
             cb = vk_cmd();
         }
+        mali_dclear_publish_count();
     }
 #endif
     // A pass that begins with clears of whole attachments (BOTW's G-buffer, its light buffers): their load operations
@@ -3492,6 +3520,12 @@ static void begin_pass(void) {
     in_pass = true;
     pass_written = 0;
 #ifdef __ANDROID__
+    if (g_vk.mali_rp_merge_opt) {
+        for (uint32_t i = 0; i < pass_ncolor && i < 8; i++)
+            if (ca[i].imageView && ca[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) pass_written |= 1u << i;
+        if ((has_d && da.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) || (has_s && sa.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR))
+            pass_written |= 1u << 8;
+    }
     if (g_vk.mali_rp_merge_opt) {
         g_mali_pass_draws = 0;
         VkImage aimgs[MALI_ACTIVE_PASS_ATT_MAX];
@@ -3750,10 +3784,35 @@ static void mali_check_store_none_write(uint32_t write_mask, const char *where) 
                 where, write_mask, g_mali_pass_store_none_mask);
     }
 }
+
+static uint32_t mali_draw_store_write_mask(uint32_t draw_w) {
+    static int nodt = -1;
+    if (nodt < 0) nodt = getenv("LARECOMP_NO_DEPTH_TEST") != NULL;
+    uint32_t actual_w = draw_w & 0xFFu;
+    if (pass_depth != VK_FORMAT_UNDEFINED && vk_mali_depth_state_writes(st.ds[0] && !nodt, st.ds[1] != 0))
+        actual_w |= 1u << 8;
+    if (pass_stencil != VK_FORMAT_UNDEFINED) {
+        uint32_t ops = (uint32_t)st.ds[5] | ((uint32_t)st.ds[6] << 8) | ((uint32_t)st.ds[7] << 16);
+        if (vk_mali_stencil_state_writes(st.ds[3] != 0, ops, st.stencil_mask[0], st.stencil_mask[1]))
+            actual_w |= 1u << 9;
+    }
+    return actual_w;
+}
 #endif
 
 static void clear(int index, int kind, const void *color, uint32_t mask, bool depth, float dval, bool stencil, uint32_t sval,
                   uint32_t smask) {
+#ifdef __ANDROID__
+    if (g_vk.mali_rp_store_opt && in_pass && !st.rt_dirty && g_mali_pass_store_none_mask) {
+        uint32_t cw = 0;
+        if (index >= 0 && index < 8 && (mask & 0xF)) cw |= 1u << (uint32_t)index;
+        if (index < 0) {
+            if (depth && pass_depth != VK_FORMAT_UNDEFINED) cw |= 1u << 8;
+            if (stencil && pass_stencil != VK_FORMAT_UNDEFINED && (smask & 0xFF)) cw |= 1u << 9;
+        }
+        if (cw & g_mali_pass_store_none_mask) st.rt_dirty = true;
+    }
+#endif
     begin_pass();
     if (!in_pass) return;
     for (int i = 0; i < nlclear; i++) {  // (done by the pass's load operations: begin_pass - each once)
@@ -6741,6 +6800,7 @@ RT_ON_RESET(ubo_inline_reset) {
 #ifdef __ANDROID__
 RT_ON_RESET(mali_rp_opt_reset) {
     mali_dclear_reset(&g_mali_dclears);
+    mali_dclear_publish_count();
     mali_active_pass_reset(&g_mali_active_pass);
     mali_fs_meta_reset();
     g_mali_pass_draws = 0;
@@ -8461,6 +8521,7 @@ void vk_exec_reset(void) {
     dchain_env = -1;
 #ifdef __ANDROID__
     mali_dclear_reset(&g_mali_dclears);
+    mali_dclear_publish_count();
     mali_active_pass_reset(&g_mali_active_pass);
     mali_fs_meta_reset();
     g_mali_pass_draws = 0;
@@ -9619,6 +9680,10 @@ static void draw_(CmdRec *r, bool indexed) {
     // (the attachments this draw writes: once a draw - the targets and masks don't change before it is recorded; three
     // computations of it were ~8% of the render thread on the POCO F7 Ultra)
     const uint32_t draw_w = draw_writes(pr);
+#ifdef __ANDROID__
+    if (g_vk.mali_rp_store_opt && in_pass && !st.rt_dirty && (mali_draw_store_write_mask(draw_w) & g_mali_pass_store_none_mask))
+        st.rt_dirty = true;
+#endif
     resolve_feedback(pr, draw_w);
     if (scene_upscale(pr, r)) {
         if (g_debug_frame) pick_after_draw();
@@ -10719,9 +10784,10 @@ static VkImageView raw_view(TexBackend *b) {
 static VkPipelineLayout post_layout;
 static VkDescriptorSetLayout post_set_layout;
 
-static VkPipeline post_pipeline(const char *fs, VkFormat fmt) {
-    static struct { const char *fs; VkFormat f; VkPipeline p; } cache[16];
-    for (int i = 0; i < 16; i++) if (cache[i].p && cache[i].fs == fs && cache[i].f == fmt) return cache[i].p;
+static VkPipeline post_pipeline(const char *fs, VkFormat fmt, uint32_t write_mask) {
+    uint32_t wm = write_mask & 0xFu;
+    static struct { const char *fs; VkFormat f; uint32_t wm; VkPipeline p; } cache[32];
+    for (int i = 0; i < 32; i++) if (cache[i].p && cache[i].fs == fs && cache[i].f == fmt && cache[i].wm == wm) return cache[i].p;
     if (!post_layout) {
         VkDescriptorSetLayoutBinding b[3];
         for (uint32_t i = 0; i < 3; i++)
@@ -10746,7 +10812,7 @@ static VkPipeline post_pipeline(const char *fs, VkFormat fmt) {
                                                  .polygonMode = VK_POLYGON_MODE_FILL, .lineWidth = 1};
     VkPipelineMultisampleStateCreateInfo ms = {.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
                                                .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
-    VkPipelineColorBlendAttachmentState cba = {.colorWriteMask = 0xF};
+    VkPipelineColorBlendAttachmentState cba = {.colorWriteMask = (VkColorComponentFlags)wm};
     VkPipelineColorBlendStateCreateInfo cb = {.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, .attachmentCount = 1,
                                               .pAttachments = &cba};
     VkDynamicState dyn[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
@@ -10768,7 +10834,7 @@ static VkPipeline post_pipeline(const char *fs, VkFormat fmt) {
         LOG("[vk] post pipeline failed\n");
         return VK_NULL_HANDLE;
     }
-    for (int i = 0; i < 16; i++) if (!cache[i].p) { cache[i].fs = fs; cache[i].f = fmt; cache[i].p = p; break; }
+    for (int i = 0; i < 32; i++) if (!cache[i].p) { cache[i].fs = fs; cache[i].f = fmt; cache[i].wm = wm; cache[i].p = p; break; }
     return p;
 }
 
@@ -10835,14 +10901,15 @@ static VkImageView smaa_lut(int i) {
 
 // One post pass (outside the window image's rendering): srcs (bindings 0..n-1) -> dst, fragment shader `fs`.
 // clear: start from zero (SMAA's edge pass only writes edge pixels; its weights / output read them).
-static void post_pass(VkCommandBuffer cb, const char *fs, const VkImageView *srcs, int n, TexBackend *dst, const float pc[8],
-                      bool clear) {
-    VkPipeline pipe = post_pipeline(fs, dst->format);  // (before the rendering begins: created inside it, the NVIDIA driver crashed)
+static void post_pass_masked(VkCommandBuffer cb, const char *fs, const VkImageView *srcs, int n, TexBackend *dst,
+                             const float pc[8], bool clear, bool load_dst, uint32_t write_mask) {
+    VkPipeline pipe = post_pipeline(fs, dst->format, write_mask);  // (before the rendering begins: created inside it, the NVIDIA driver crashed)
     if (!pipe) return;
     vk_full_barrier(cb);
     VkRenderingAttachmentInfo ca = {.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = post_view(dst),
                                     .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-                                    .loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                    .loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR
+                                                    : (load_dst ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_DONT_CARE),
                                     .storeOp = VK_ATTACHMENT_STORE_OP_STORE};
     VkRenderingInfo ri = {.sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = {{0, 0}, {dst->width, dst->height}},
                           .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &ca};
@@ -10869,11 +10936,16 @@ static void post_pass(VkCommandBuffer cb, const char *fs, const VkImageView *src
     vk_end_rendering(cb);
 }
 
+static void post_pass(VkCommandBuffer cb, const char *fs, const VkImageView *srcs, int n, TexBackend *dst, const float pc[8],
+                      bool clear) {
+    post_pass_masked(cb, fs, srcs, n, dst, pc, clear, false, 0xFu);
+}
+
 // Frame index where pre-HUD scene AA already ran inside scene_upscale() so post_process() avoids softening HUD/text.
 static uint64_t scene_aa_done_frame = ~0ULL;
 
 static VkImageView run_aa_pass(VkCommandBuffer cb, int aa_mode, VkImageView src_v, uint32_t w, uint32_t h,
-                               TexBackend *dst) {
+                               TexBackend *dst, uint32_t dst_wmask, bool load_dst) {
     float fw = (float)w, fh = (float)h;
     float m[8] = {1.0f / fw, 1.0f / fh, fw, fh};
     if (aa_mode == AA_SMAA) {
@@ -10884,10 +10956,10 @@ static VkImageView run_aa_pass(VkCommandBuffer cb, int aa_mode, VkImageView src_
         VkImageView wi[3] = {post_view(edges), smaa_lut(0), smaa_lut(1)};
         post_pass(cb, "smaa_weight.frag", wi, 3, weights, m, true);
         VkImageView bi[3] = {src_v, post_view(weights)};
-        post_pass(cb, "smaa_blend.frag", bi, 2, dst, m, false);
+        post_pass_masked(cb, "smaa_blend.frag", bi, 2, dst, m, false, load_dst, dst_wmask);
     } else {
         VkImageView in[3] = {src_v};
-        post_pass(cb, "fxaa.frag", in, 1, dst, m, false);
+        post_pass_masked(cb, "fxaa.frag", in, 1, dst, m, false, load_dst, dst_wmask);
     }
     return post_view(dst);
 }
@@ -10923,7 +10995,7 @@ static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, 
     vk_frame_suspend();
     if (smaa || fxaa) {
         TexBackend *out = post_image(2, b->width, b->height, VK_FORMAT_R8G8B8A8_UNORM);
-        v = run_aa_pass(cb, smaa ? AA_SMAA : AA_FXAA, v, b->width, b->height, out);
+        v = run_aa_pass(cb, smaa ? AA_SMAA : AA_FXAA, v, b->width, b->height, out, 0xFu, false);
     }
     if (fsr) gp_mark(cb, "present: upscale");  // ([gpuprof]: the AA pass's own row above, the upscale's here)
     if (fsr && up == UPSCALE_SGSR1) {
@@ -10963,6 +11035,18 @@ static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, 
 // screen's (RS_OUT), and the game's composite draw would scale the scene up bilinearly. Before that draw, EASU + RCAS
 // (or SGSR 1) bring the scene to its size in the final image, in the scene's own format (10-bit: no banding); the draw
 // then samples that at 1:1 (texture_info). LARECOMP_SCENE_UPSCALE=0: the game's own bilinear composite (A/B).
+static void prepare_direct_rt_write(NvnTexture *rt, TexBackend *rt_b, uint32_t rt_wmask, const char *why) {
+    renderer_mark_gpu_owned(rt);
+    renderer_texture_first_write(rt);
+    renderer_texture_level_fresh(rt);
+    renderer_texture_frame_fresh(rt);
+    alias_before_write(rt, 0, why);
+#ifdef __ANDROID__
+    if ((rt_wmask & 0xFu) == 0xFu) vk_mali_rp_forget_image(rt_b->image);
+    else vk_mali_rp_flush_clears_for(rt_b->image);
+#endif
+}
+
 static bool scene_upscale(Prog *pr, CmdRec *r) {
     scene_up.t = NULL;
     static int on = -1;
@@ -10972,13 +11056,20 @@ static bool scene_upscale(Prog *pr, CmdRec *r) {
     if (AB("sgsr") == 1) mode = UPSCALE_SGSR1;
     int aa = g_settings.antialias;
     bool do_aa = (aa == AA_SMAA || aa == AA_FXAA);
+    uint32_t rt_wmask = st.channel_mask & 0xFu;
     bool replace_fxaa = settings_eff_no_game_fxaa() && g_cur_fs_hash == 0x058188a1db3e22e9ULL &&
-                        st.rt.ncolor == 1 && !(st.color_state[0] & 1);
+                        st.rt.ncolor == 1 && !(st.color_state[0] & 1) && rt_wmask != 0;
     if (!on && !do_aa && !replace_fxaa) return false;
     NvnTexture *rt = st.rt.ncolor ? st.rt.color[0] : NULL;
     if (!rt || r->x[2] > 6 || !pr->fi->ntex || vk_texture_scale_group(rt) != RS_OUT) return false;
     const float *vp = st.viewport[0];
     if (vp[2] < rt->width * 0.5f || vp[3] < rt->height * 0.5f) return false;  // (a composite fills most of the image)
+    if (replace_fxaa &&
+        (vp[0] != 0.0f || vp[1] != 0.0f || st.scissor[0][0] > 0 || st.scissor[0][1] > 0 || st.scissor[0][2] <= 0 ||
+         st.scissor[0][3] <= 0 || (int64_t)st.scissor[0][0] + (int64_t)st.scissor[0][2] < (int64_t)rt->width ||
+         (int64_t)st.scissor[0][1] + (int64_t)st.scissor[0][3] < (int64_t)rt->height))
+        replace_fxaa = false;
+    if (!on && !do_aa && !replace_fxaa) return false;
     float osx, osy;
     renderer_texture_scale(rt, &osx, &osy);
     uint32_t ow = (uint32_t)lroundf(vp[2] * osx), oh = (uint32_t)lroundf(vp[3] * osy);
@@ -11029,34 +11120,31 @@ static bool scene_upscale(Prog *pr, CmdRec *r) {
         if (do_aa) {
             bool direct_rt = replace_fxaa && cur->width == rt_b->width && cur->height == rt_b->height;
             TexBackend *aa_dst = direct_rt ? rt_b : post_image(need_upscale ? 2 : 6, cur->width, cur->height, cur->format);
+            uint32_t aa_wmask = direct_rt ? rt_wmask : 0xFu;
+            bool aa_load = direct_rt && rt_wmask != 0xFu;
             if (direct_rt) {
-                renderer_mark_gpu_owned(rt);
-                renderer_texture_first_write(rt);
-                renderer_texture_level_fresh(rt);
-                renderer_texture_frame_fresh(rt);
-                alias_before_write(rt, 0, "scene replace aa");
+                prepare_direct_rt_write(rt, rt_b, rt_wmask, "scene replace aa");
+                cb = vk_cmd();
                 dst_written = true;
             }
             gp_mark(cb, "scene pre-hud %s %ux%u", aa == AA_SMAA ? "smaa" : "fxaa", cur->width, cur->height);
-            cur_view = run_aa_pass(cb, aa, cur_view, cur->width, cur->height, aa_dst);
+            cur_view = run_aa_pass(cb, aa, cur_view, cur->width, cur->height, aa_dst, aa_wmask, aa_load);
             cur = aa_dst;
             scene_aa_done_frame = renderer_present_count();
         }
         if (replace_fxaa) {
             if (!dst_written) {
-                renderer_mark_gpu_owned(rt);
-                renderer_texture_first_write(rt);
-                renderer_texture_level_fresh(rt);
-                renderer_texture_frame_fresh(rt);
-                alias_before_write(rt, 0, "scene replace copy");
+                prepare_direct_rt_write(rt, rt_b, rt_wmask, "scene replace copy");
+                cb = vk_cmd();
                 float cp[8] = {1.0f / (float)rt_b->width, 1.0f / (float)rt_b->height, (float)rt_b->width, (float)rt_b->height};
                 gp_mark(cb, "scene replace game fxaa %ux%u", rt_b->width, rt_b->height);
-                post_pass(cb, "scene_copy.frag", &cur_view, 1, rt_b, cp, false);
+                post_pass_masked(cb, "scene_copy.frag", &cur_view, 1, rt_b, cp, false, rt_wmask != 0xFu, rt_wmask);
             }
             vk_full_barrier(cb);
             snapshots_invalidate_for(rt, "scene-replace");
             snapshots_invalidate(rt);
             rt_b->rt_frame = renderer_present_count() + 1;
+            ninplace = 0;
             static uint32_t rw, rh, row, roh;
             static int raa = -1;
             if (b->width != rw || b->height != rh || ow != row || oh != roh || aa != raa) {

@@ -25,7 +25,6 @@ enum {
 
 typedef struct {
     VkImage image;
-    VkImageView view;
     VkFormat view_format;
     VkFormat image_format;
     VkImageAspectFlags image_aspect;
@@ -154,19 +153,18 @@ static inline void mali_dclear_forget_image(MaliDeferredClearTable *t, VkImage i
         if (t->entries[i].image == img) mali_dclear_remove_at(t, i);
 }
 
-static inline int mali_dclear_upsert(MaliDeferredClearTable *t, VkImage img, VkImageView view, VkFormat view_format,
+static inline int mali_dclear_upsert(MaliDeferredClearTable *t, VkImage img, VkFormat view_format,
                                      VkFormat image_format, VkImageAspectFlags image_aspect, uint32_t mip_level,
                                      uint32_t array_layer, uint32_t extent_w, uint32_t extent_h,
                                      VkSampleCountFlagBits samples, bool set_color, const VkClearColorValue *color,
                                      bool set_depth, float depth_val, bool set_stencil, uint32_t stencil_val) {
-    if (!t || !img || !view || !extent_w || !extent_h) return MALI_DCLEAR_CONFLICT;
+    if (!t || !img || !extent_w || !extent_h) return MALI_DCLEAR_CONFLICT;
     int idx = mali_dclear_find(t, img, mip_level, array_layer);
     if (idx >= 0) {
         MaliDeferredClear *e = &t->entries[idx];
         if (e->view_format != view_format || e->extent_w != extent_w || e->extent_h != extent_h ||
             e->samples != samples)
             return MALI_DCLEAR_CONFLICT;
-        e->view = view;
         if (set_color && color) {
             e->has_color = true;
             e->color = *color;
@@ -187,7 +185,6 @@ static inline int mali_dclear_upsert(MaliDeferredClearTable *t, VkImage img, VkI
     if (t->count >= MALI_DEFERRED_CLEAR_MAX) return MALI_DCLEAR_FULL;
     MaliDeferredClear e = {0};
     e.image = img;
-    e.view = view;
     e.view_format = view_format;
     e.image_format = image_format;
     e.image_aspect = image_aspect;

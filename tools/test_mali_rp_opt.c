@@ -65,31 +65,25 @@ static void test_deferred_clear_gbuffer_merge(void) {
     VkImage img_c0_new = (VkImage)(uintptr_t)0x1004;
     VkImage img_d0 = (VkImage)(uintptr_t)0x1005;
 
-    VkImageView vw_c0 = (VkImageView)(uintptr_t)0x2001;
-    VkImageView vw_c1 = (VkImageView)(uintptr_t)0x2002;
-    VkImageView vw_c3 = (VkImageView)(uintptr_t)0x2003;
-    VkImageView vw_c0n = (VkImageView)(uintptr_t)0x2004;
-    VkImageView vw_d0 = (VkImageView)(uintptr_t)0x2005;
-
     VkClearColorValue cc0 = {.float32 = {0.1f, 0.2f, 0.3f, 1.0f}};
     VkClearColorValue cc1 = {.float32 = {0.5f, 0.5f, 0.5f, 1.0f}};
     VkClearColorValue cc3 = {.float32 = {0.0f, 0.0f, 1.0f, 0.0f}};
     VkClearColorValue cc0n = {.float32 = {0.9f, 0.8f, 0.7f, 1.0f}};
 
     // Simulate BOTW p18..p21 incremental G-buffer clears.
-    assert(mali_dclear_upsert(&t, img_c0, vw_c0, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_B10G11R11_UFLOAT_PACK32,
+    assert(mali_dclear_upsert(&t, img_c0, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_B10G11R11_UFLOAT_PACK32,
                               VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1920, 1080, VK_SAMPLE_COUNT_1_BIT,
                               true, &cc0, false, 0.0f, false, 0) == MALI_DCLEAR_OK);
-    assert(mali_dclear_upsert(&t, img_d0, vw_d0, VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT,
+    assert(mali_dclear_upsert(&t, img_d0, VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT,
                               VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1920, 1080, VK_SAMPLE_COUNT_1_BIT,
                               false, NULL, true, 1.0f, false, 0) == MALI_DCLEAR_OK);
-    assert(mali_dclear_upsert(&t, img_c1, vw_c1, VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB,
+    assert(mali_dclear_upsert(&t, img_c1, VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB,
                               VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1920, 1080, VK_SAMPLE_COUNT_1_BIT,
                               true, &cc1, false, 0.0f, false, 0) == MALI_DCLEAR_OK);
-    assert(mali_dclear_upsert(&t, img_c3, vw_c3, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
+    assert(mali_dclear_upsert(&t, img_c3, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
                               VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1920, 1080, VK_SAMPLE_COUNT_1_BIT,
                               true, &cc3, false, 0.0f, false, 0) == MALI_DCLEAR_OK);
-    assert(mali_dclear_upsert(&t, img_c0_new, vw_c0n, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
+    assert(mali_dclear_upsert(&t, img_c0_new, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
                               VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1920, 1080, VK_SAMPLE_COUNT_1_BIT,
                               true, &cc0n, false, 0.0f, false, 0) == MALI_DCLEAR_OK);
     assert(t.count == 5);
@@ -123,13 +117,12 @@ static void test_depth_stencil_and_conflicts(void) {
     mali_dclear_reset(&t);
 
     VkImage img_ds = (VkImage)(uintptr_t)0x3001;
-    VkImageView vw_ds = (VkImageView)(uintptr_t)0x4001;
 
     // Independent depth then stencil clear on combined D24_S8 merges cleanly.
-    assert(mali_dclear_upsert(&t, img_ds, vw_ds, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT,
+    assert(mali_dclear_upsert(&t, img_ds, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT,
                               VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 0, 960, 540,
                               VK_SAMPLE_COUNT_1_BIT, false, NULL, true, 0.0f, false, 0) == MALI_DCLEAR_OK);
-    assert(mali_dclear_upsert(&t, img_ds, vw_ds, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT,
+    assert(mali_dclear_upsert(&t, img_ds, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT,
                               VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 0, 960, 540,
                               VK_SAMPLE_COUNT_1_BIT, false, NULL, false, 0.0f, true, 0x5A) == MALI_DCLEAR_OK);
     assert(t.count == 1 && t.entries[0].has_depth && t.entries[0].has_stencil);
@@ -153,13 +146,12 @@ static void test_depth_stencil_and_conflicts(void) {
 
     // Integer RT bit-exact preservation & view format mismatch guard.
     VkImage img_u = (VkImage)(uintptr_t)0x3002;
-    VkImageView vw_u = (VkImageView)(uintptr_t)0x4002;
     VkClearColorValue cu = {.uint32 = {0x80000001u, 0xFFFFFFFFu, 0x12345678u, 7u}};
-    assert(mali_dclear_upsert(&t, img_u, vw_u, VK_FORMAT_R32G32B32A32_UINT, VK_FORMAT_R32G32B32A32_UINT,
+    assert(mali_dclear_upsert(&t, img_u, VK_FORMAT_R32G32B32A32_UINT, VK_FORMAT_R32G32B32A32_UINT,
                               VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 256, 256, VK_SAMPLE_COUNT_1_BIT,
                               true, &cu, false, 0.0f, false, 0) == MALI_DCLEAR_OK);
     // Re-clearing same subresource in a different format must report MALI_DCLEAR_CONFLICT.
-    assert(mali_dclear_upsert(&t, img_u, vw_u, VK_FORMAT_R32G32B32A32_SINT, VK_FORMAT_R32G32B32A32_UINT,
+    assert(mali_dclear_upsert(&t, img_u, VK_FORMAT_R32G32B32A32_SINT, VK_FORMAT_R32G32B32A32_UINT,
                               VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 256, 256, VK_SAMPLE_COUNT_1_BIT,
                               true, &cu, false, 0.0f, false, 0) == MALI_DCLEAR_CONFLICT);
     VkClearColorValue out_u = {0};
@@ -170,11 +162,11 @@ static void test_depth_stencil_and_conflicts(void) {
 
     // Table capacity & reset / forget cleanup.
     for (int i = 0; i < MALI_DEFERRED_CLEAR_MAX; i++) {
-        assert(mali_dclear_upsert(&t, (VkImage)(uintptr_t)(0x5000 + i), (VkImageView)(uintptr_t)(0x6000 + i),
+        assert(mali_dclear_upsert(&t, (VkImage)(uintptr_t)(0x5000 + i),
                                   VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT,
                                   0, 0, 64, 64, VK_SAMPLE_COUNT_1_BIT, true, &cu, false, 0.0f, false, 0) == MALI_DCLEAR_OK);
     }
-    assert(mali_dclear_upsert(&t, (VkImage)(uintptr_t)0x5999, (VkImageView)(uintptr_t)0x6999,
+    assert(mali_dclear_upsert(&t, (VkImage)(uintptr_t)0x5999,
                               VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT,
                               0, 0, 64, 64, VK_SAMPLE_COUNT_1_BIT, true, &cu, false, 0.0f, false, 0) == MALI_DCLEAR_FULL);
     mali_dclear_forget_image(&t, (VkImage)(uintptr_t)0x5000);
@@ -245,15 +237,9 @@ static void test_deferred_clear_bloom_filter(void) {
         (VkImage)(uintptr_t)0x9003,
         (VkImage)(uintptr_t)0x9004,
     };
-    VkImageView vws[4] = {
-        (VkImageView)(uintptr_t)0xa001,
-        (VkImageView)(uintptr_t)0xa002,
-        (VkImageView)(uintptr_t)0xa003,
-        (VkImageView)(uintptr_t)0xa004,
-    };
     VkClearColorValue cc = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}};
     for (int i = 0; i < 3; i++) {
-        assert(mali_dclear_upsert(&t, imgs[i], vws[i], VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
+        assert(mali_dclear_upsert(&t, imgs[i], VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
                                   VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 128, 128, VK_SAMPLE_COUNT_1_BIT,
                                   true, &cc, false, 0.0f, false, 0) == MALI_DCLEAR_OK);
         assert((t.image_bloom & mali_dclear_img_bit(imgs[i])) != 0);
@@ -275,7 +261,7 @@ static void test_deferred_clear_bloom_filter(void) {
     mali_dclear_forget_image(&t, imgs[2]);
     assert(t.count == 0 && t.image_bloom == 0);
 
-    assert(mali_dclear_upsert(&t, imgs[3], vws[3], VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
+    assert(mali_dclear_upsert(&t, imgs[3], VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
                               VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 128, 128, VK_SAMPLE_COUNT_1_BIT,
                               true, &cc, false, 0.0f, false, 0) == MALI_DCLEAR_OK);
     mali_dclear_reset(&t);

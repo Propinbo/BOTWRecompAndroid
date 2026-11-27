@@ -1050,6 +1050,9 @@ static void upload_pending(TexBackend *b) {
     bool scaled = b->scalable && (w != b->width || h != b->height);
     if (!scaled && w > b->width) w = b->width;
     if (!scaled && h > b->height) h = b->height;
+#ifdef __ANDROID__
+    if (b->image && (scaled || (w == b->width && h == b->height))) vk_mali_rp_forget_image(b->image);
+#endif
     VkSpan s = vk_transient_copy(px, (uint64_t)stride * h, 16);
     free(px);
     VkBufferImageCopy rg = {.bufferOffset = s.off, .bufferRowLength = stride / 4,
@@ -1573,6 +1576,19 @@ VkImageView vk_image_view(TexBackend *b, VkImageViewType type, VkFormat fmt, uin
     ViewEnt *e = &view_tab[slot];
     if (e->b) { defer((Dead){.view = e->view}); vk_view_gen++; }  // evict (16 probes taken)
     *e = (ViewEnt){b, k1, k2, v};
+    return v;
+}
+
+VkImageView vk_create_temp_view(VkImage img, VkFormat fmt, uint32_t lv, uint32_t ly, VkImageAspectFlags aspect) {
+    if (!img) return VK_NULL_HANDLE;
+    VkImageViewCreateInfo vi = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                                .image = img,
+                                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                                .format = fmt,
+                                .subresourceRange = {aspect, lv, 1, ly, 1}};
+    VkImageView v = VK_NULL_HANDLE;
+    if (vkCreateImageView(g_vk.dev, &vi, NULL, &v) != VK_SUCCESS) return VK_NULL_HANDLE;
+    dv_set(v, false);
     return v;
 }
 

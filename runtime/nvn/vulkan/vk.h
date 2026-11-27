@@ -191,6 +191,7 @@ VkSampler vk_default_sampler(bool linear);
 void vk_image_init_layout(VkCommandBuffer cb, VkImage img, VkImageAspectFlags aspect);
 // Destruction once every submission that may use the object has completed.
 void vk_defer_image(VkImage img, VmaAllocation mem);
+VkImageView vk_create_temp_view(VkImage img, VkFormat fmt, uint32_t lv, uint32_t ly, VkImageAspectFlags aspect);
 void vk_defer_view(VkImageView v);
 void vk_views_forget(TexBackend *b);  // drop (deferred) the cached views of an image being replaced
 uint64_t vk_frame_counter(void);

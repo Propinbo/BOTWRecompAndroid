@@ -1384,9 +1384,11 @@ double vk_display_hz(void) {
 static _Atomic uint32_t s_resume_fr_gen;
 
 void vk_android_on_resume(void) {
+    extern void audio_on_resume(void);
     atomic_fetch_add_explicit(&s_resume_fr_gen, 1, memory_order_release);
     plat_cpu_reapply_affinity();
     plat_adpf_on_resume();
+    audio_on_resume();
     LOG("[android] resume: reset 120Hz/pacer/affinity/ADPF\n");
 }
 
@@ -2420,10 +2422,12 @@ const char *vk_gpu_name(void) { return g_vk.props.deviceName; }
 // resumes, before it blocks: a watch sees them even then): the game stops at its next present meanwhile
 // (nvn/objects.c nvn_background)
 void nvn_background(bool on);
+void audio_on_background(bool on);
+void audio_on_device_removed(void);
 static bool SDLCALL background_watch(void *user, SDL_Event *e) {
     (void)user;
-    if (e->type == SDL_EVENT_DID_ENTER_BACKGROUND) nvn_background(true);
-    else if (e->type == SDL_EVENT_WILL_ENTER_FOREGROUND) nvn_background(false);
+    if (e->type == SDL_EVENT_DID_ENTER_BACKGROUND) { nvn_background(true); audio_on_background(true); }
+    else if (e->type == SDL_EVENT_WILL_ENTER_FOREGROUND) { nvn_background(false); audio_on_background(false); }
     return true;
 }
 #endif
@@ -2691,6 +2695,7 @@ int ui_run(void) {
 #endif
 #ifdef __ANDROID__
             if (e.type == SDL_EVENT_WILL_ENTER_BACKGROUND && g_vk.dev) vk_pipeline_cache_save();  // (may not come back)
+            if (e.type == SDL_EVENT_AUDIO_DEVICE_REMOVED) audio_on_device_removed();
 #endif
             if (e.type == SDL_EVENT_QUIT) {
                 LOG("window closed\n");

@@ -347,7 +347,7 @@ static const char *builtin_src(const char *name, int *stage) {
                "layout(set = 0, binding = 0) uniform sampler2D t0;\n"
                "layout(push_constant) uniform P { vec4 a; vec4 b; } pc;\n"
                "layout(location = 0) out vec4 o;\n"
-               "void main() { o = vec4(textureLod(t0, gl_FragCoord.xy * pc.a.xy, 0.0).rgb, 0.0); }\n";
+               "void main() { o = textureLod(t0, gl_FragCoord.xy * pc.a.xy, 0.0); }\n";
     }
     if (!strcmp(name, "present_a.frag")) {  // (debug pass dumps: alpha kept)
         *stage = STAGE_FRAGMENT;
@@ -393,12 +393,13 @@ static const char *builtin_src(const char *name, int *stage) {
                "const float steps[5] = float[](1.0, 1.5, 2.0, 4.0, 12.0);\n"
                "void main() {\n"
                "  highp vec2 px = pc.a.xy, uv = gl_FragCoord.xy * px;\n"
-               "  vec3 cM = at(uv);\n"
+               "  highp vec4 cM4 = textureLod(t0, uv, 0.0);\n"
+               "  vec3 cM = cM4.rgb;\n"
                "  float lM = lu(cM), lN = la(uv + vec2(0.0, -px.y)), lS = la(uv + vec2(0.0, px.y));\n"
                "  float lE = la(uv + vec2(px.x, 0.0)), lW = la(uv + vec2(-px.x, 0.0));\n"
                "  float mx = max(lM, max(max(lN, lS), max(lE, lW))), mn = min(lM, min(min(lN, lS), min(lE, lW)));\n"
                "  float range = mx - mn;\n"
-               "  if (range < max(0.0625, mx * 0.125)) { o = vec4(cM, 1.0); return; }\n"
+               "  if (range < max(0.0625, mx * 0.125)) { o = cM4; return; }\n"
                "  float lNW = la(uv - px), lSE = la(uv + px);\n"
                "  float lNE = la(uv + vec2(px.x, -px.y)), lSW = la(uv + vec2(-px.x, px.y));\n"
                "  float sub = (2.0 * (lN + lS + lE + lW) + lNW + lNE + lSW + lSE) / 12.0;\n"
@@ -427,7 +428,7 @@ static const char *builtin_src(const char *name, int *stage) {
                "  bool sgn = pDist <= nDist ? pD >= 0.0 : nD >= 0.0;\n"
                "  float edgeBlend = sgn == (lM - edgeL >= 0.0) ? 0.0 : float(0.5 - shortest / (pDist + nDist));\n"
                "  float f = max(subBlend, edgeBlend);\n"
-               "  o = vec4(at(uv + (isH ? vec2(0.0, stepLen * f) : vec2(stepLen * f, 0.0))), 1.0);\n"
+               "  o = vec4(at(uv + (isH ? vec2(0.0, stepLen * f) : vec2(stepLen * f, 0.0))), cM4.a);\n"
                "}\n";
     }
     if (!strcmp(name, "fxaa.frag")) {
@@ -442,12 +443,13 @@ static const char *builtin_src(const char *name, int *stage) {
                "const float steps[10] = float[](1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0);\n"
                "void main() {\n"
                "  vec2 px = pc.a.xy, uv = gl_FragCoord.xy * px;\n"
-               "  vec3 cM = at(uv);\n"
+               "  vec4 cM4 = textureLod(t0, uv, 0.0);\n"
+               "  vec3 cM = cM4.rgb;\n"
                "  float lM = lu(cM), lN = la(uv + vec2(0.0, -px.y)), lS = la(uv + vec2(0.0, px.y));\n"
                "  float lE = la(uv + vec2(px.x, 0.0)), lW = la(uv + vec2(-px.x, 0.0));\n"
                "  float mx = max(lM, max(max(lN, lS), max(lE, lW))), mn = min(lM, min(min(lN, lS), min(lE, lW)));\n"
                "  float range = mx - mn;\n"
-               "  if (range < max(0.0312, mx * 0.125)) { o = vec4(cM, 1.0); return; }\n"
+               "  if (range < max(0.0312, mx * 0.125)) { o = cM4; return; }\n"
                "  float lNW = la(uv - px), lSE = la(uv + px);\n"
                "  float lNE = la(uv + vec2(px.x, -px.y)), lSW = la(uv + vec2(-px.x, px.y));\n"
                "  float sub = (2.0 * (lN + lS + lE + lW) + lNW + lNE + lSW + lSE) / 12.0;\n"
@@ -475,7 +477,7 @@ static const char *builtin_src(const char *name, int *stage) {
                "  bool sgn = pDist <= nDist ? pD >= 0.0 : nD >= 0.0;\n"
                "  float edgeBlend = sgn == (lM - edgeL >= 0.0) ? 0.0 : 0.5 - shortest / (pDist + nDist);\n"
                "  float f = max(subBlend, edgeBlend);\n"
-               "  o = vec4(at(uv + (isH ? vec2(0.0, stepLen * f) : vec2(stepLen * f, 0.0))), 1.0);\n"
+               "  o = vec4(at(uv + (isH ? vec2(0.0, stepLen * f) : vec2(stepLen * f, 0.0))), cM4.a);\n"
                "}\n";
     }
     // SMAA 1x (third_party/smaa, runtime/nvn/smaa_data.c): the reference SMAA.hlsl in its GLSL mode, High preset,
@@ -521,7 +523,7 @@ static const char *builtin_src(const char *name, int *stage) {
                 "  vec2 uv = gl_FragCoord.xy * SMAA_RT_METRICS.xy;\n"
                 "  vec4 off;\n"
                 "  SMAANeighborhoodBlendingVS(uv, off);\n"
-                "  o = vec4(SMAANeighborhoodBlendingPS(uv, off, t0, t1).rgb, 1.0);\n"
+                "  o = vec4(SMAANeighborhoodBlendingPS(uv, off, t0, t1).rgb, textureLod(t0, uv, 0.0).a);\n"
                 "}\n"};
             size_t n = strlen(head) + strlen(smaa_hlsl_src) + strlen(mains[k]) + 1;
             src[k] = malloc(n);

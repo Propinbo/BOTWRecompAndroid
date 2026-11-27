@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <time.h>
+#include <stdatomic.h>
 
 #include <SDL3/SDL.h>
 
@@ -999,6 +1000,158 @@ static void apply_gain(SDL_AudioStream *st) {
     if (st && SDL_GetAudioStreamGain(st) != g) SDL_SetAudioStreamGain(st, g);
 }
 
+#ifdef __ANDROID__
+static _Atomic bool g_audio_in_bg;
+static _Atomic uint32_t g_audio_resume_gen;
+static _Atomic uint32_t g_audio_removed_gen;
+
+void audio_on_background(bool on) {
+    atomic_store_explicit(&g_audio_in_bg, on, memory_order_release);
+    if (!on) atomic_fetch_add_explicit(&g_audio_resume_gen, 1, memory_order_release);
+}
+
+void audio_on_resume(void) {
+    atomic_store_explicit(&g_audio_in_bg, false, memory_order_release);
+    atomic_fetch_add_explicit(&g_audio_resume_gen, 1, memory_order_release);
+}
+
+void audio_on_device_removed(void) {
+    atomic_fetch_add_explicit(&g_audio_removed_gen, 1, memory_order_release);
+}
+
+static bool audio_disabled(void) {
+    const char *e = getenv("LARECOMP_NO_AUDIO");
+    return e && strcmp(e, "0") != 0;
+}
+
+static int audio_stream_target_bytes(SDL_AudioStream *st, int chans, uint32_t rate, uint32_t sample_count,
+                                     bool is_audren, int frame_bytes) {
+    if (!st) return is_audren ? 4 * frame_bytes : 0;
+    SDL_AudioSpec dev;
+    int dev_frames = 0;
+    if (!SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(st), &dev, &dev_frames) || dev_frames <= 0) {
+        if (!is_audren) dev_frames = 1024;
+        else return 4 * frame_bytes;
+    }
+    if (is_audren) {
+        int t = (2 * dev_frames * (int)rate / (dev.freq ? dev.freq : 48000) + (int)sample_count) * 2 * (int)sizeof(float);
+        return t > 4 * frame_bytes ? t : 4 * frame_bytes;
+    }
+    return 2 * dev_frames * 2 * chans;
+}
+
+typedef struct {
+    bool want_stream;
+    bool tried_resume_kick;
+    bool reopen_pending;
+    uint32_t seen_resume_gen;
+    uint32_t seen_removed_gen;
+    uint64_t stall_since_ns;
+    uint64_t last_reopen_ns;
+    uint64_t resume_grace_until_ns;
+} AudioRecovery;
+
+static bool audio_reopen_stream(SDL_AudioStream **pst, SDL_AudioFormat fmt, int chans, uint32_t rate,
+                                uint32_t sample_count, bool is_audren, int *target_out, int frame_bytes,
+                                const char *who, const char *reason) {
+    if (audio_disabled()) return false;
+    if (*pst) {
+        SDL_DestroyAudioStream(*pst);
+        *pst = NULL;
+    }
+    if (!SDL_WasInit(SDL_INIT_AUDIO) && !SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+        LOG("[%s] audio reopen failed on SDL init (%s): %s\n", who, reason, SDL_GetError());
+        return false;
+    }
+    uint32_t r = rate ? rate : 48000;
+    SDL_AudioSpec spec = {fmt, chans, (int)r};
+    SDL_AudioStream *st = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+    if (!st) {
+        LOG("[%s] audio reopen failed (%s): %s\n", who, reason, SDL_GetError());
+        return false;
+    }
+    apply_gain(st);
+    SDL_ResumeAudioStreamDevice(st);
+    *pst = st;
+    if (target_out) *target_out = audio_stream_target_bytes(st, chans, r, sample_count, is_audren, frame_bytes);
+    LOG("[%s] reopened audio stream (%s)\n", who, reason);
+    return true;
+}
+
+static void audio_recovery_init(AudioRecovery *ar, bool has_stream) {
+    memset(ar, 0, sizeof *ar);
+    ar->want_stream = has_stream && !audio_disabled();
+    ar->seen_resume_gen = atomic_load_explicit(&g_audio_resume_gen, memory_order_acquire);
+    ar->seen_removed_gen = atomic_load_explicit(&g_audio_removed_gen, memory_order_acquire);
+}
+
+static void audio_recovery_step(AudioRecovery *ar, Drain *d, SDL_AudioStream **pst, SDL_AudioFormat fmt, int chans,
+                                uint32_t rate, uint32_t sample_count, bool is_audren, int *target_out,
+                                int frame_bytes, const char *who) {
+    if (!ar->want_stream || audio_disabled()) return;
+    bool in_bg = atomic_load_explicit(&g_audio_in_bg, memory_order_acquire);
+    uint32_t rgen = atomic_load_explicit(&g_audio_resume_gen, memory_order_acquire);
+    uint32_t dgen = atomic_load_explicit(&g_audio_removed_gen, memory_order_acquire);
+    uint64_t now = mono_ns();
+    if (in_bg) {
+        ar->stall_since_ns = 0;
+        ar->tried_resume_kick = false;
+        ar->seen_resume_gen = rgen;
+        ar->seen_removed_gen = dgen;
+        return;
+    }
+    if (rgen != ar->seen_resume_gen) {
+        ar->seen_resume_gen = rgen;
+        ar->tried_resume_kick = false;
+        ar->resume_grace_until_ns = now + 400000000ull;
+        if (*pst) SDL_ResumeAudioStreamDevice(*pst);
+    }
+    if (dgen != ar->seen_removed_gen) {
+        ar->seen_removed_gen = dgen;
+        if (!ar->last_reopen_ns || now - ar->last_reopen_ns >= 1000000000ull) {
+            ar->last_reopen_ns = now;
+            ar->reopen_pending = !audio_reopen_stream(pst, fmt, chans, rate, sample_count, is_audren, target_out,
+                                                      frame_bytes, who, "device removed");
+            d->stalled = false;
+            d->next = 0;
+            d->last = 0;
+            ar->stall_since_ns = 0;
+            ar->tried_resume_kick = false;
+            return;
+        }
+    }
+    if (!*pst && ar->reopen_pending && (!ar->last_reopen_ns || now - ar->last_reopen_ns >= 2000000000ull)) {
+        ar->last_reopen_ns = now;
+        ar->reopen_pending = !audio_reopen_stream(pst, fmt, chans, rate, sample_count, is_audren, target_out,
+                                                  frame_bytes, who, "retry");
+        d->stalled = false;
+        d->next = 0;
+        d->last = 0;
+        return;
+    }
+    if (*pst && d->stalled) {
+        if (!ar->stall_since_ns) ar->stall_since_ns = now;
+        uint64_t stalled_ns = now - ar->stall_since_ns;
+        if (!ar->tried_resume_kick && now >= ar->resume_grace_until_ns && stalled_ns >= 350000000ull) {
+            ar->tried_resume_kick = true;
+            SDL_ResumeAudioStreamDevice(*pst);
+        } else if (stalled_ns >= 750000000ull && (!ar->last_reopen_ns || now - ar->last_reopen_ns >= 2000000000ull)) {
+            ar->last_reopen_ns = now;
+            ar->reopen_pending = !audio_reopen_stream(pst, fmt, chans, rate, sample_count, is_audren, target_out,
+                                                      frame_bytes, who, "foreground stall");
+            d->stalled = false;
+            d->next = 0;
+            d->last = 0;
+            ar->stall_since_ns = 0;
+            ar->tried_resume_kick = false;
+        }
+    } else if (!d->stalled) {
+        ar->stall_since_ns = 0;
+        ar->tried_resume_kick = false;
+    }
+}
+#endif
+
 static void wav_header(FILE *f, uint32_t bytes) {
     uint32_t h[11] = {0x46464952, 36 + bytes, 0x45564157, 0x20746d66, 16, 0x00020003, 48000, 48000 * 8,
                       0x00200008, 0x61746164, bytes};
@@ -1029,7 +1182,15 @@ static void *renderer_tick(void *arg) {
         }
     }
     Drain drain = {0};
+#ifdef __ANDROID__
+    AudioRecovery rec;
+    audio_recovery_init(&rec, r->stream != NULL);
+#endif
     while (!r->quit) {
+#ifdef __ANDROID__
+        audio_recovery_step(&rec, &drain, &r->stream, SDL_AUDIO_F32, 2, r->sample_rate, N, true, &target,
+                            frame_bytes, "audren");
+#endif
         if (r->stream) {
             drain_wait(&drain, r->stream, target, (uint64_t)N * 1000000000ull / r->sample_rate, frame_bytes, &r->quit, "audren");
         } else {
@@ -1584,7 +1745,15 @@ static void *audout_thread(void *arg) {
         target = 2 * dev_frames * 2 * (int)ch;  // bytes of s16 at the source rate (close enough at 48 kHz)
     }
     Drain drain = {0};
+#ifdef __ANDROID__
+    AudioRecovery rec;
+    audio_recovery_init(&rec, a->stream != NULL);
+#endif
     while (!a->quit) {
+#ifdef __ANDROID__
+        audio_recovery_step(&rec, &drain, &a->stream, SDL_AUDIO_S16, (int)ch, a->rate ? a->rate : 48000, 0, false,
+                            &target, 0, "audout");
+#endif
         pthread_mutex_lock(&a->lock);
         uint64_t size = 0, tag = 0, data = 0;
         if (a->state == 0 && a->queued) { size = a->sizes[0]; tag = a->tags[0]; data = a->datas[0]; }
