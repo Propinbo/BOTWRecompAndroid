@@ -32,6 +32,7 @@
 #include "../paths.h"
 #include "../platform.h"
 #include "../rt.h"
+#include "cpu_topo.h"
 #include "../../android/common/guest_window.h"
 
 uint64_t g_guest_lo;  // the window's start (rt.h GUEST_LO), set by plat_reserve_guest before main()
@@ -929,7 +930,131 @@ typedef struct APerformanceHintSession APerformanceHintSession;
 // on from - a race in the game's job system that a main thread much faster than its workers wins (on the Switch every
 // core runs at the same clock).
 static cpu_set_t g_all_cores;
+static bool g_all_cores_valid;
 static bool g_pinned;
+static pthread_once_t g_topo_once = PTHREAD_ONCE_INIT;
+static PlatCpuTopo g_cpu_topo;
+static int g_cpu_aff_mode;
+static bool g_cpu_aff_env_set;
+static atomic_int g_cpu_auto_mode;
+
+static bool apply_cpu_mask(pid_t tid, uint64_t mask) {
+    if (!mask) return false;
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    for (int c = 0; c < 64 && c < CPU_SETSIZE; c++) {
+        if (mask & (1ull << c)) CPU_SET(c, &set);
+    }
+    return sched_setaffinity(tid, sizeof set, &set) == 0;
+}
+
+static void plat_cpu_topo_init(void) {
+    const char *e = getenv("LARECOMP_CPU_AFFINITY");
+    g_cpu_aff_env_set = (e != NULL);
+    int mode = e ? atoi(e) : 0;
+    if (mode < 0) mode = 0;
+    if (mode > 3) mode = 3;
+    g_cpu_aff_mode = mode;
+
+    cpu_set_t proc_set;
+    CPU_ZERO(&proc_set);
+    uint64_t allowed = 0;
+    if (sched_getaffinity(getpid(), sizeof proc_set, &proc_set) == 0) {
+        g_all_cores = proc_set;
+        g_all_cores_valid = true;
+        for (int c = 0; c < 64 && c < CPU_SETSIZE; c++) {
+            if (CPU_ISSET(c, &proc_set)) allowed |= 1ull << c;
+        }
+    }
+
+    uint32_t cap[64] = {0};
+    long khz[64] = {0};
+    int max_c = 0;
+    for (int c = 0; c < 64 && c < CPU_SETSIZE; c++) {
+        char path[96];
+        snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cpu_capacity", c);
+        FILE *fc = fopen(path, "re");
+        if (fc) {
+            unsigned v = 0;
+            if (fscanf(fc, "%u", &v) == 1) cap[c] = v;
+            fclose(fc);
+            if (c + 1 > max_c) max_c = c + 1;
+        }
+        snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", c);
+        FILE *ff = fopen(path, "re");
+        if (ff) {
+            long v = 0;
+            if (fscanf(ff, "%ld", &v) == 1) khz[c] = v;
+            fclose(ff);
+            if (c + 1 > max_c) max_c = c + 1;
+        }
+    }
+    plat_cpu_topo_classify(cap, khz, max_c, allowed, &g_cpu_topo);
+    LOG("[android] cpu topology: mode=%d valid=%d dual6p2=%d src=%s allowed=0x%llx little=0x%llx(%d) "
+        "big=0x%llx(%d) mid=0x%llx(%d) prime=0x%llx(%d) worker=0x%llx(%d) guest_hot=0x%llx(%d)\n",
+        g_cpu_aff_mode, g_cpu_topo.valid, g_cpu_topo.dual_6plus2,
+        g_cpu_topo.used_capacity ? "cpu_capacity" : "max_freq",
+        (unsigned long long)g_cpu_topo.allowed_mask,
+        (unsigned long long)g_cpu_topo.little_mask, g_cpu_topo.n_little,
+        (unsigned long long)g_cpu_topo.big_mask, g_cpu_topo.n_big,
+        (unsigned long long)g_cpu_topo.mid_big_mask, g_cpu_topo.n_mid_big,
+        (unsigned long long)g_cpu_topo.prime_mask, g_cpu_topo.n_prime,
+        (unsigned long long)g_cpu_topo.worker_mask, g_cpu_topo.n_worker,
+        (unsigned long long)g_cpu_topo.guest_hot_mask, g_cpu_topo.n_guest_hot);
+}
+
+void plat_cpu_set_auto_affinity(int mode) {
+    if (mode < 0) mode = 0;
+    if (mode > 3) mode = 3;
+    atomic_store_explicit(&g_cpu_auto_mode, mode, memory_order_release);
+}
+
+bool plat_cpu_is_dual_6plus2(void) {
+    pthread_once(&g_topo_once, plat_cpu_topo_init);
+    return g_cpu_topo.valid && g_cpu_topo.dual_6plus2;
+}
+
+int plat_cpu_affinity_mode(void) {
+    pthread_once(&g_topo_once, plat_cpu_topo_init);
+    return g_cpu_aff_env_set ? g_cpu_aff_mode : atomic_load_explicit(&g_cpu_auto_mode, memory_order_acquire);
+}
+
+bool plat_adpf_guests_enabled(void) {
+    pthread_once(&g_topo_once, plat_cpu_topo_init);
+    static int cached = -1;
+    if (cached < 0) {
+        const char *e = getenv("LARECOMP_ADPF_GUESTS");
+        cached = (e && atoi(e) != 0) ? 1 : 0;
+    }
+    return cached != 0;
+}
+
+bool plat_thread_pin_role(int32_t tid, int role) {
+    int mode = plat_cpu_affinity_mode();
+    if (!g_cpu_topo.valid) return false;
+    if (role == PLAT_CPU_ROLE_ALL && g_cpu_topo.allowed_mask)
+        return apply_cpu_mask((pid_t)tid, g_cpu_topo.allowed_mask);
+    uint64_t mask = plat_cpu_topo_mask_for_role(&g_cpu_topo, mode, role);
+    if (!mask) return false;
+    return apply_cpu_mask((pid_t)tid, mask);
+}
+
+bool plat_worker_thread_pin(void) {
+    int mode = plat_cpu_affinity_mode();
+    if (mode != 0 && g_cpu_topo.valid) {
+        uint64_t mask = plat_cpu_topo_mask_for_role(&g_cpu_topo, mode, PLAT_CPU_ROLE_WORKER);
+        bool ok = apply_cpu_mask(0, mask);
+        static atomic_bool logged;
+        if (!atomic_exchange(&logged, true)) {
+            LOG("[android] background worker pinned to worker cluster 0x%llx (%d cores): %s\n",
+                (unsigned long long)mask, plat_cpu_popcnt64(mask),
+                ok ? "ok" : strerror(errno));
+        }
+        return ok;
+    }
+    plat_thread_unpin();
+    return false;
+}
 
 // LARECOMP_UCLAMP_MIN=<1-1024> (a test, issue #41): a utilization floor for every thread that starts here (the game's,
 // the render thread, audio), so the governor runs their cores at least at that share of their top clock, however
@@ -965,6 +1090,12 @@ static void uclamp_min_thread(void) {
 // 90 ms a frame translating the world, while the game's thread had a big one (2026-11-08). Default: on low RAM
 // (vulkan/exec.c vk_low_ram - the weak phones); LARECOMP_RENDER_BIG=1 / 0.
 void plat_render_thread_pin(void) {
+    if (plat_cpu_affinity_mode() != 0 && g_cpu_topo.valid) {
+        bool ok = plat_thread_pin_role(0, PLAT_CPU_ROLE_RENDER);
+        LOG("[android] render thread pinned to big cluster 0x%llx (%d cores): %s\n",
+            (unsigned long long)g_cpu_topo.big_mask, g_cpu_topo.n_big, ok ? "ok" : strerror(errno));
+        return;
+    }
     const char *e = getenv("LARECOMP_RENDER_BIG");
     extern bool vk_low_ram(void);
     if (e ? !atoi(e) : !vk_low_ram()) return;
@@ -994,7 +1125,9 @@ void plat_render_thread_pin(void) {
 }
 
 void plat_thread_unpin(void) {
-    if (g_pinned) sched_setaffinity(0, sizeof g_all_cores, &g_all_cores);
+    int mode = plat_cpu_affinity_mode();
+    if ((g_pinned || mode != 0) && g_all_cores_valid)
+        sched_setaffinity(0, sizeof g_all_cores, &g_all_cores);
     uclamp_min_thread();
 }
 
@@ -1022,6 +1155,7 @@ static void pin_to_fastest_cores(void) {
         }
     if (!best || k == 0 || k == n) return;  // (one cluster: nothing to pick)
     if (sched_getaffinity(0, sizeof g_all_cores, &g_all_cores)) return;
+    g_all_cores_valid = true;
     g_pinned = true;  // (before: a thread started from here from now on goes back to g_all_cores)
     int r = sched_setaffinity(0, sizeof set, &set);
     LOG("[android] presenting thread on the %d fastest cores (%ld MHz): %s\n", k, best / 1000, r ? strerror(errno) : "ok");
@@ -1034,11 +1168,66 @@ static int loaded;  // 0 untried, 1 on, -1 off, -2 disabled
 static int s_split = -1;
 static int s_errors, s_last_error, s_recreated;
 static int32_t s_presenting_tid, s_render_tid;
+static int32_t s_guest_tids[3];
+static int s_guest_ntids;
+static uint32_t s_guest_gen, s_applied_guest_gen;
+static int32_t s_pinned_present_tid;
 static int s_session_threads;
 static float s_target_ms, s_work_ms, s_game_ms, s_render_ms;
 static int s_game_cpu = -1, s_render_cpu = -1;
 
 static pthread_mutex_t adpf_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static int adpf_collect_tids(int32_t out[5]) {
+    int n = 0;
+    int32_t cand[5] = {s_presenting_tid, s_render_tid, s_guest_tids[0], s_guest_tids[1], s_guest_tids[2]};
+    for (int i = 0; i < 5; i++) {
+        int32_t tid = cand[i];
+        if (tid <= 0) continue;
+        bool dup = false;
+        for (int j = 0; j < n; j++) {
+            if (out[j] == tid) { dup = true; break; }
+        }
+        if (!dup) out[n++] = tid;
+    }
+    return n;
+}
+
+void plat_adpf_set_guest_tids(const int32_t *tids, int count) {
+    pthread_mutex_lock(&adpf_lock);
+    int32_t next[3] = {0};
+    int nn = 0;
+    if (tids && count > 0) {
+        for (int i = 0; i < count && nn < 3; i++) {
+            int32_t tid = tids[i];
+            if (tid <= 0 || tid == s_presenting_tid || tid == s_render_tid) continue;
+            bool dup = false;
+            for (int j = 0; j < nn; j++) {
+                if (next[j] == tid) { dup = true; break; }
+            }
+            if (!dup) next[nn++] = tid;
+        }
+    }
+    // Canonical ascending sort so rank swaps between equal-load guest threads do not trigger ADPF set_threads().
+    for (int i = 1; i < nn; i++) {
+        int32_t k = next[i];
+        int j = i - 1;
+        while (j >= 0 && next[j] > k) { next[j + 1] = next[j]; j--; }
+        next[j + 1] = k;
+    }
+    bool changed = (nn != s_guest_ntids);
+    if (!changed) {
+        for (int i = 0; i < nn; i++) {
+            if (next[i] != s_guest_tids[i]) { changed = true; break; }
+        }
+    }
+    if (changed) {
+        memcpy(s_guest_tids, next, sizeof s_guest_tids);
+        s_guest_ntids = nn;
+        s_guest_gen++;
+    }
+    pthread_mutex_unlock(&adpf_lock);
+}
 
 // Caller holds adpf_lock, including initialization and session replacement.
 static void adpf_work_locked(int slot, uint64_t work_ns, uint64_t target_ns, uint64_t gpu_ns, uint64_t game_ns) {
@@ -1121,17 +1310,25 @@ static void adpf_work_locked(int slot, uint64_t work_ns, uint64_t target_ns, uin
     if (!m) return;
 
     if (!s_split) {
-        // --- Single session mode (both threads in session[0]) ---
+        if (slot == 0 && s_presenting_tid > 0 && s_presenting_tid != s_pinned_present_tid &&
+            plat_cpu_affinity_mode() != 0 && g_cpu_topo.valid) {
+            bool ok = plat_thread_pin_role(0, PLAT_CPU_ROLE_PRESENT);
+            if (ok) {
+                s_pinned_present_tid = s_presenting_tid;
+                LOG("[android] presenting thread (%d) pinned to big cluster 0x%llx (%d cores): ok\n",
+                    s_presenting_tid, (unsigned long long)g_cpu_topo.big_mask, g_cpu_topo.n_big);
+            }
+        }
+        // --- Single session mode (presenting + render + up to 3 hot guest threads in session[0]) ---
+        int32_t tids[5];
+        int ntids = adpf_collect_tids(tids);
         if (!session[0]) {
             if (slot == 0) pin_to_fastest_cores();
-            int32_t tids[2];
-            int ntids = 0;
-            if (s_presenting_tid > 0) tids[ntids++] = s_presenting_tid;
-            if (s_render_tid > 0) tids[ntids++] = s_render_tid;
             if (ntids > 0) {
                 session[0] = create(m, tids, (size_t)ntids, (int64_t)target_ns);
                 if (session[0]) {
                     s_session_threads = ntids;
+                    s_applied_guest_gen = s_guest_gen;
                     target[0] = target_ns;
                     state[0] = 1;
                     LOG("[android] performance hint single session (%d thread%s): on\n", ntids, ntids > 1 ? "s" : "");
@@ -1140,22 +1337,29 @@ static void adpf_work_locked(int slot, uint64_t work_ns, uint64_t target_ns, uin
                     s_last_error = errno;
                 }
             }
-        } else if (s_session_threads < 2 && s_presenting_tid > 0 && s_render_tid > 0) {
-            // Add the second thread to the active session
-            int32_t tids[2] = {s_presenting_tid, s_render_tid};
+        } else if (ntids > 0 && (s_session_threads != ntids || s_applied_guest_gen != s_guest_gen)) {
             int ok = 0;
             if (set_threads) {
-                int r = set_threads(session[0], tids, 2);
-                if (r == 0) { ok = 1; s_session_threads = 2; }
-                else { s_errors++; s_last_error = r; }
+                int r = set_threads(session[0], tids, (size_t)ntids);
+                if (r == 0) {
+                    ok = 1;
+                    s_session_threads = ntids;
+                    s_applied_guest_gen = s_guest_gen;
+                    LOG("[android] performance hint session updated: %d threads (guests=%d)\n", ntids, s_guest_ntids);
+                } else {
+                    s_errors++;
+                    s_last_error = r;
+                }
             }
             if (!ok) {
                 if (close_session) close_session(session[0]);
-                session[0] = create(m, tids, 2, (int64_t)target_ns);
+                session[0] = create(m, tids, (size_t)ntids, (int64_t)target_ns);
                 if (session[0]) {
-                    s_session_threads = 2;
+                    s_session_threads = ntids;
+                    s_applied_guest_gen = s_guest_gen;
                     s_recreated++;
-                    LOG("[android] performance hint session recreated with 2 threads: on\n");
+                    LOG("[android] performance hint session recreated with %d threads (guests=%d): on\n",
+                        ntids, s_guest_ntids);
                 } else {
                     s_errors++;
                     s_last_error = errno;
