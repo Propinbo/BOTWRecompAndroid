@@ -52,6 +52,9 @@ struct KThread {
     bool core0_evicted;    // atomic request to reconcile core ownership at the next guest safe point
     int lock_core;         // (core0_held) whose turn it holds: 0, or 1-3 with LARECOMP_CORE_LOCKS
     KThread *core0_next;   // a core's runnable queue (c0_m)
+    int32_t host_tid;      // Linux host tid for Track 6 dynamic hot-thread affinity
+    uint64_t aff_cpu_ns;   // previous thread CPU-clock sample for hot-thread ranking
+    bool aff_promoted;     // currently pinned to PLAT_CPU_ROLE_GUEST_HOT
 #endif
 };
 
@@ -78,3 +81,6 @@ void kernel_signal(KObject *o);  // caller holds g_klock
 KEvent *kernel_create_event_pair(uint32_t *writable, uint32_t *readable);
 KThread *kernel_current_thread(void);
 uint64_t kernel_heap_size(void);  // bytes from HEAP_BASE set by SetHeapSize
+#ifdef __ANDROID__
+void kernel_affinity_tick(void);
+#endif

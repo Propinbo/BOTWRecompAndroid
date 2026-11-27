@@ -3,6 +3,9 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef __ANDROID__
+#include <sys/syscall.h>
+#endif
 
 #include "hle.h"
 #include "kernel.h"
@@ -541,6 +544,7 @@ static void *thread_main(void *arg) {
     t_cur = t;
 #ifdef __ANDROID__
     plat_thread_unpin();  // (not the presenting thread's fast cores: platform.h)
+    __atomic_store_n(&t->host_tid, (int32_t)syscall(__NR_gettid), __ATOMIC_RELEASE);
 #endif
     crash_handler_install();
     rt_set_fpcr(0);
@@ -556,6 +560,10 @@ static void *thread_main(void *arg) {
     if (!setjmp(t->unwind)) guest_call(&t->cpu, t->entry);
 #endif
     pthread_mutex_lock(&g_klock);
+#ifdef __ANDROID__
+    __atomic_store_n(&t->host_tid, 0, __ATOMIC_RELEASE);
+    t->aff_promoted = false;
+#endif
     t->finished = true;
     kernel_signal(&t->obj);
     pthread_mutex_unlock(&g_klock);
@@ -1477,9 +1485,125 @@ void kernel_stop_threads(void (*idle)(void)) {
 
 // Reboot, step 2 (threads stopped): a fresh kernel. Kernel objects are leaked rather than freed: host statics
 // can still point at some (vi.c's vsync event, signalled by its host timer thread).
+#ifdef __ANDROID__
+static uint64_t g_aff_last_ns;
+static uint32_t g_aff_last_hash;
+static int32_t g_aff_self_pinned_tid;
+
+void kernel_affinity_tick(void) {
+    int mode = plat_cpu_affinity_mode();
+    if (mode == 0) return;
+    uint64_t now = plat_now_ns();
+    if (g_aff_last_ns && now - g_aff_last_ns < 1000000000ull) return;
+    uint64_t dt_ns = g_aff_last_ns ? (now - g_aff_last_ns) : 0;
+    g_aff_last_ns = now;
+
+    int32_t self_tid = (int32_t)syscall(__NR_gettid);
+    if (self_tid > 0 && self_tid != g_aff_self_pinned_tid) {
+        if (plat_thread_pin_role(0, PLAT_CPU_ROLE_PRESENT)) g_aff_self_pinned_tid = self_tid;
+    }
+    if (mode == 3) return;  // render+present & workers only: keep guest threads unpinned on 0-7
+
+    int32_t hot_tids[3] = {0};
+    double hot_pct[3] = {0};
+    int nhot = 0;
+
+    pthread_mutex_lock(&g_klock);
+    if (dt_ns == 0) {
+        for (KThread *t = g_threads; t; t = t->anext) {
+            if (!t->started || t->finished) continue;
+            clockid_t cid;
+            struct timespec ts;
+            if (pthread_getcpuclockid(t->host, &cid) == 0 && clock_gettime(cid, &ts) == 0)
+                t->aff_cpu_ns = (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+        }
+        pthread_mutex_unlock(&g_klock);
+        return;
+    }
+
+    KThread *top[3] = {NULL, NULL, NULL};
+    uint64_t top_score[3] = {0, 0, 0};
+    double top_pct[3] = {0, 0, 0};
+    uint64_t min_delta = dt_ns / 20;  // >= 5% of 1 core
+    for (KThread *t = g_threads; t; t = t->anext) {
+        int32_t tid = __atomic_load_n(&t->host_tid, __ATOMIC_ACQUIRE);
+        if (!t->started || t->finished || tid <= 0 || tid == self_tid) continue;
+        clockid_t cid;
+        struct timespec ts;
+        if (pthread_getcpuclockid(t->host, &cid) != 0 || clock_gettime(cid, &ts) != 0) continue;
+        uint64_t cur_ns = (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+        uint64_t delta = cur_ns >= t->aff_cpu_ns ? cur_ns - t->aff_cpu_ns : 0;
+        t->aff_cpu_ns = cur_ns;
+        if (delta < min_delta) continue;
+        // 15% hysteresis bonus for already-promoted threads to prevent churn between close contenders
+        uint64_t score = t->aff_promoted ? (delta + delta * 15 / 100) : delta;
+        double pct = 100.0 * (double)delta / (double)dt_ns;
+        for (int i = 0; i < 3; i++) {
+            if (score > top_score[i]) {
+                for (int j = 2; j > i; j--) {
+                    top[j] = top[j - 1];
+                    top_score[j] = top_score[j - 1];
+                    top_pct[j] = top_pct[j - 1];
+                }
+                top[i] = t;
+                top_score[i] = score;
+                top_pct[i] = pct;
+                break;
+            }
+        }
+    }
+
+    for (KThread *t = g_threads; t; t = t->anext) {
+        int32_t tid = __atomic_load_n(&t->host_tid, __ATOMIC_ACQUIRE);
+        if (!t->started || t->finished || tid <= 0 || tid == self_tid) continue;
+        bool want = (t == top[0] || t == top[1] || t == top[2]);
+        if (want && !t->aff_promoted) {
+            if (plat_thread_pin_role(tid, PLAT_CPU_ROLE_GUEST_HOT)) t->aff_promoted = true;
+        } else if (!want && t->aff_promoted) {
+            if (plat_thread_pin_role(tid, PLAT_CPU_ROLE_ALL)) t->aff_promoted = false;
+        }
+    }
+    for (int i = 0; i < 3; i++) {
+        if (top[i] && top[i]->aff_promoted) {
+            hot_tids[nhot] = top[i]->host_tid;
+            hot_pct[nhot] = top_pct[i];
+            nhot++;
+        }
+    }
+    pthread_mutex_unlock(&g_klock);
+
+    // Canonical ascending sort by TID for clean logging & change tracking
+    for (int i = 1; i < nhot; i++) {
+        int32_t kt = hot_tids[i];
+        double kp = hot_pct[i];
+        int j = i - 1;
+        while (j >= 0 && hot_tids[j] > kt) {
+            hot_tids[j + 1] = hot_tids[j];
+            hot_pct[j + 1] = hot_pct[j];
+            j--;
+        }
+        hot_tids[j + 1] = kt;
+        hot_pct[j + 1] = kp;
+    }
+
+    if (plat_adpf_guests_enabled()) plat_adpf_set_guest_tids(hot_tids, nhot);
+    uint32_t h = (uint32_t)nhot;
+    for (int i = 0; i < nhot; i++) h = h * 1315423911u ^ (uint32_t)hot_tids[i];
+    if (h != g_aff_last_hash) {
+        g_aff_last_hash = h;
+        LOG("[affinity] hot guest tids=%d [%d,%d,%d] (top cpu%%: %.1f, %.1f, %.1f)\n",
+            nhot, hot_tids[0], hot_tids[1], hot_tids[2], hot_pct[0], hot_pct[1], hot_pct[2]);
+    }
+}
+#endif
+
 void kernel_reset(void) {
     pthread_mutex_lock(&g_klock);
 #ifdef __ANDROID__
+    g_aff_last_ns = 0;
+    g_aff_last_hash = 0;
+    g_aff_self_pinned_tid = 0;
+    plat_adpf_set_guest_tids(NULL, 0);
     pthread_mutex_lock(&c0_m);
     memset(cq, 0, sizeof cq);
     c0_nevicted = 0;

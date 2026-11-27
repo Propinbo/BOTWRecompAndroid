@@ -1299,6 +1299,12 @@ static void android_frame_rate(struct ANativeWindow *aw) {
           : set_rate ? set_rate(aw, want, compat) : -1;
     if (want != asked) LOG("[vk] the window asks for %.0f fps content (%d)\n", want, r);
     asked_aw = aw, asked = want;
+    {
+        extern int framepace_target(void);
+        bool mali_40 = vk_driver_is_mali() && (fps_mode_now() == 4 || framepace_target() == 40);
+        bool oryon_turnip = vk_driver_is_turnip() && plat_cpu_is_dual_6plus2();
+        plat_cpu_set_auto_affinity((mali_40 || oryon_turnip) ? 1 : 0);
+    }
 }
 
 static bool android_surface_ready(void) {  // false: no window to draw into now
@@ -1354,6 +1360,10 @@ void vk_frame_end(const char *shot_path);
 
 // Acquire the next window image and begin rendering into it (cleared to `clear`). Returns false when there is
 // nothing to draw into (minimised window).
+#ifdef __ANDROID__
+bool vk_async_on(void);
+bool vk_async_is_render_thread(void);
+#endif
 bool vk_frame_begin(const float clear[4]) {
     cur_frame.ok = false;
     int w, h;
@@ -1361,6 +1371,16 @@ bool vk_frame_begin(const float clear[4]) {
     if (!w || !h) return false;  // minimised
 #ifdef __ANDROID__
     if (!android_surface_ready()) return false;
+    {
+        static __thread int last_render_aff_mode;
+        int m = plat_cpu_affinity_mode();
+        if (m != last_render_aff_mode) {
+            last_render_aff_mode = m;
+            plat_thread_pin_role(0, m ? PLAT_CPU_ROLE_RENDER : PLAT_CPU_ROLE_ALL);
+            if (!vk_async_on() || vk_async_is_render_thread())
+                LOG("[android] render thread auto-affinity mode=%d\n", m);
+        }
+    }
 #endif
     if (!g_vk.swapchain || (uint32_t)w != g_vk.sc_extent.width || (uint32_t)h != g_vk.sc_extent.height) recreate_swapchain();
     if (!g_vk.swapchain) return false;
