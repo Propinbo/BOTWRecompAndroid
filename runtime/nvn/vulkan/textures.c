@@ -1275,6 +1275,9 @@ static bool upload_texture_impl(NvnTexture *t, TexBackend *b, bool for_rt_load) 
         // End any previous open pass, record the replacement in program order on s->main, wait for all prior reads/
         // writes on b->image (WAR/WAW) before TRANSFER_WRITE, and publish to subsequent attachment/shader/transfer
         // consumers (RAW/WAW) below.
+#ifdef __ANDROID__
+        if (b->image) vk_mali_rp_flush_clears_for(b->image);
+#endif
         vk_end_pass();
         cb = vk_cmd();
         tex_emit_image_barrier(cb, b, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
@@ -1525,6 +1528,7 @@ void vk_views_forget(TexBackend *b) { views_forget(b); }
 uint32_t vk_view_gen;  // bumped whenever a cached view may be destroyed (exec.c's per-frame texture memo)
 void vk_texture_views_drop(TexBackend *b);  // (lsfg/lsfg_present.c: its outputs, before they go)
 static void views_forget(TexBackend *b) {
+    if (b && b->image) vk_mali_rp_forget_image(b->image);
     vk_view_gen++;
     for (int i = 0; i < VIEW_TAB; i++)
         if (view_tab[i].b == b) { defer((Dead){.view = view_tab[i].view}); view_tab[i].b = NULL; view_tab[i].view = VK_NULL_HANDLE; }

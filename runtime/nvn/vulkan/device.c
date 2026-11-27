@@ -25,6 +25,7 @@
 #ifdef __ANDROID__
 #include "mali_frame_pacer.h"
 #include "mali_shader_opt.h"
+#include "mali_rp_opt.h"
 #endif
 #include "../output_scale.h"
 #include "../renderer.h"
@@ -955,6 +956,13 @@ static void create_device(void) {
     LOG("[vk-cap] Mali SPIR-V cleanup: %s (%s)\n", g_vk.mali_spirv_cleanup ? "on" : "off", msc_why);
     LOG("[vk-cap] Mali discard opt: %s (%s)\n", g_vk.mali_discard_opt ? "on" : "off", mdo_why);
     LOG("[vk-cap] no-op blend opt: %s (%s)\n", g_vk.noop_blend_opt ? "on" : "off", nb_why);
+    const char *mrm_why = NULL, *mrs_why = NULL;
+    g_vk.mali_rp_merge_opt = vk_mali_rp_merge_opt_want(
+        has_bc, has_astc_ldr, is_turnip, getenv("LARECOMP_MALI_RP_MERGE_OPT"), &mrm_why);
+    g_vk.mali_rp_store_opt = vk_mali_rp_store_opt_want(
+        has_bc, has_astc_ldr, is_turnip, g_vk.api, getenv("LARECOMP_MALI_RP_STORE_OPT"), &mrs_why);
+    LOG("[vk-cap] Mali RP merge opt: %s (%s)\n", g_vk.mali_rp_merge_opt ? "on" : "off", mrm_why);
+    LOG("[vk-cap] Mali RP store opt: %s (%s)\n", g_vk.mali_rp_store_opt ? "on" : "off", mrs_why);
 #endif
     float prio = 1.0f;
     VkDeviceQueueCreateInfo qi = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = g_vk.qfam,
@@ -1820,6 +1828,7 @@ void backend_present(NvnTexture *t) {
     g_last_presented = t;
     TexBackend *b = vk_tex(t, true);
     b->presented = true;
+    vk_mali_rp_flush_clears_for(b->image);
     vk_end_pass();
 #ifdef __ANDROID__
     vk_bc_shadows_resolve(NULL, NULL, NULL, 0);  // (BC textures drawn into: decoded, as before anything outside a pass)
