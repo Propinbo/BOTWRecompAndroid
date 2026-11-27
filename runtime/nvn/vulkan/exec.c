@@ -1544,9 +1544,17 @@ static void *worker(void *a) {
 #ifdef __ANDROID__
     prctl(PR_SET_NAME, "vk-shaderc", 0, 0, 0);
     plat_worker_thread_pin();
+    uint32_t aff_epoch = plat_cpu_affinity_epoch();
 #endif
     for (;;) {
         Job *j = mw_job_pop_active(&jobs_lock, &jobs_cond, &jobs_head, &jobs_tail, &jobs_active);
+#ifdef __ANDROID__
+        uint32_t cur_epoch = plat_cpu_affinity_epoch();
+        if (cur_epoch != aff_epoch) {
+            aff_epoch = cur_epoch;
+            plat_worker_thread_pin();
+        }
+#endif
         j->fn(j->arg);
         free(j);
         finish_active_job(&jobs_lock, &jobs_head, &jobs_active);
@@ -1576,9 +1584,17 @@ static void *translator(void *a) {
 #ifdef __ANDROID__
     prctl(PR_SET_NAME, "vk-xlat", 0, 0, 0);
     plat_worker_thread_pin();
+    uint32_t aff_epoch = plat_cpu_affinity_epoch();
 #endif
     for (;;) {
         Job *j = mw_job_pop_active(&tjobs_lock, &tjobs_cond, &tjobs_head, &tjobs_tail, &tjobs_active);
+#ifdef __ANDROID__
+        uint32_t cur_epoch = plat_cpu_affinity_epoch();
+        if (cur_epoch != aff_epoch) {
+            aff_epoch = cur_epoch;
+            plat_worker_thread_pin();
+        }
+#endif
         j->fn(j->arg);
         free(j);
         finish_active_job(&tjobs_lock, &tjobs_head, &tjobs_active);
@@ -1744,6 +1760,10 @@ static void account_build_wait(uint64_t dt) {
                                                              memory_order_relaxed, memory_order_relaxed)) {}
 }
 
+#ifdef __ANDROID__
+static void gpl_log_summary(const char *where);
+#endif
+
 void vk_shader_build_report(const char *where) {
     uint64_t wns = atomic_exchange_explicit(&boot_build_wait_ns, 0, memory_order_relaxed);
     uint64_t wmax = atomic_exchange_explicit(&stat_build_wait_max_ns, 0, memory_order_relaxed);
@@ -1757,6 +1777,9 @@ void vk_shader_build_report(const char *where) {
     if (hits || misses)
         LOG("[vk] shader-meta (%s): %llu hits / %llu misses\n", where ? where : "?",
             (unsigned long long)hits, (unsigned long long)misses);
+#ifdef __ANDROID__
+    gpl_log_summary(where);
+#endif
 }
 
 static void wait_built_job(_Atomic int *state, _Atomic int *urgent_flag, void *steal_arg, uint64_t wd_arg) {
@@ -3861,6 +3884,10 @@ typedef struct {
     uint8_t evict;      // (prog_evict, vk_exec_reset) 1: to be freed, 2: kept - a pipeline of its still building
     uint32_t used_s;    // when a draw last used it (g_exec_s), and that submission (prog_evict)
     uint64_t used_seq;
+#ifdef __ANDROID__
+    VkPipeline gpl_pre[4];
+    VkPipeline gpl_fs[16];
+#endif
 } Prog;
 
 static VkPipelineLayout make_layout(Prog *p, int nsets, VkShaderStageFlags s0, VkShaderStageFlags s1) {
@@ -4734,11 +4761,20 @@ static Pipe *pw_pending;
 #define PW_PENDING_DECLARED
 #endif
 
+#ifdef __ANDROID__
+static Pipe *pw_pending;
+#define PW_PENDING_DECLARED
+static Pipe *pw_inflight[8];
+#define PW_INFLIGHT_DECLARED
+static pthread_mutex_t gpl_lock = PTHREAD_MUTEX_INITIALIZER;
+#endif
+
 // ---- freeing programs and their pipelines (render thread; nothing building with them, the GPU done with them)
 static void pipe_free(Pipe *pp) {
     if (pp == last_pipeline) last_pipeline = NULL;
 #ifdef __ANDROID__
     if (pp == pw_pending) pw_pending = NULL;
+    for (int i = 0; i < 8; i++) if (pw_inflight[i] == pp) pw_inflight[i] = NULL;
 #endif
     if (pp->pipe) {
         long long mg0 = vk_mnow();
@@ -4752,6 +4788,19 @@ static void pipe_free(Pipe *pp) {
 // (a graphics program; compute ones: cs_free)
 static void prog_free(Prog *p) {
     if (p == last_prog) last_prog = NULL;
+#ifdef __ANDROID__
+    VkPipeline gpl_tmp[20];
+    int ngpl = 0;
+    pthread_mutex_lock(&gpl_lock);
+    for (int i = 0; i < 4; i++) {
+        if (p->gpl_pre[i]) { gpl_tmp[ngpl++] = p->gpl_pre[i]; p->gpl_pre[i] = VK_NULL_HANDLE; }
+    }
+    for (int i = 0; i < 16; i++) {
+        if (p->gpl_fs[i]) { gpl_tmp[ngpl++] = p->gpl_fs[i]; p->gpl_fs[i] = VK_NULL_HANDLE; }
+    }
+    pthread_mutex_unlock(&gpl_lock);
+    for (int i = 0; i < ngpl; i++) vkDestroyPipeline(g_vk.dev, gpl_tmp[i], NULL);
+#endif
     long long mg0 = vk_mnow();
     if (p->vs) vkDestroyShaderModule(g_vk.dev, p->vs, NULL);
     if (p->fs) vkDestroyShaderModule(g_vk.dev, p->fs, NULL);
@@ -4859,6 +4908,327 @@ static uint64_t hmix(uint64_t h, const void *p, size_t n) {
 static VkPrimitiveTopology topo_class_base(uint8_t c) {
     return c == 0 ? VK_PRIMITIVE_TOPOLOGY_POINT_LIST : c == 1 ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 }
+
+#ifdef __ANDROID__
+typedef struct {
+    uint32_t ncolor, samples;
+    uint32_t write_mask[8];
+    VkFormat color[8], depth, stencil;
+    uint8_t blend[8][8];
+    uint8_t blend_on, a2c, fb_loop, pad;
+} GplFoKey;
+
+typedef struct {
+    uint64_t hash;
+    GplFoKey key;
+    VkPipeline pipe;
+} GplFoEntry;
+
+static VkPipeline gpl_vi[6];
+static GplFoEntry *gpl_fo_tab;
+static size_t gpl_fo_cap, gpl_fo_cnt;
+static _Atomic uint64_t gpl_links, gpl_fallbacks, gpl_link_ns;
+static _Atomic uint64_t gpl_vi_hits, gpl_vi_misses, gpl_pre_hits, gpl_pre_misses;
+static _Atomic uint64_t gpl_fs_hits, gpl_fs_misses, gpl_fo_hits, gpl_fo_misses;
+
+static int gpl_sample_idx(uint32_t s) {
+    return s == 1 ? 0 : s == 2 ? 1 : s == 4 ? 2 : s == 8 ? 3 : -1;
+}
+
+static VkPipeline gpl_fo_lookup_locked(const GplFoKey *fk, uint64_t h) {
+    if (!gpl_fo_cap) return VK_NULL_HANDLE;
+    size_t slot = (size_t)h & (gpl_fo_cap - 1);
+    while (gpl_fo_tab[slot].hash) {
+        if (gpl_fo_tab[slot].hash == h && memcmp(&gpl_fo_tab[slot].key, fk, sizeof *fk) == 0)
+            return gpl_fo_tab[slot].pipe;
+        slot = (slot + 1) & (gpl_fo_cap - 1);
+    }
+    return VK_NULL_HANDLE;
+}
+
+static bool gpl_fo_insert_locked(const GplFoKey *fk, uint64_t h, VkPipeline pipe, VkPipeline *existing_out) {
+    if ((gpl_fo_cnt + 1) * 10 >= gpl_fo_cap * 7) {
+        size_t ncap = gpl_fo_cap ? gpl_fo_cap * 2 : 64;
+        GplFoEntry *ntab = calloc(ncap, sizeof *ntab);
+        if (!ntab) return false;
+        for (size_t i = 0; i < gpl_fo_cap; i++) {
+            if (!gpl_fo_tab[i].hash) continue;
+            size_t s = (size_t)gpl_fo_tab[i].hash & (ncap - 1);
+            while (ntab[s].hash) s = (s + 1) & (ncap - 1);
+            ntab[s] = gpl_fo_tab[i];
+        }
+        free(gpl_fo_tab);
+        gpl_fo_tab = ntab;
+        gpl_fo_cap = ncap;
+    }
+    size_t slot = (size_t)h & (gpl_fo_cap - 1);
+    while (gpl_fo_tab[slot].hash) {
+        if (gpl_fo_tab[slot].hash == h && memcmp(&gpl_fo_tab[slot].key, fk, sizeof *fk) == 0) {
+            *existing_out = gpl_fo_tab[slot].pipe;
+            return false;
+        }
+        slot = (slot + 1) & (gpl_fo_cap - 1);
+    }
+    gpl_fo_tab[slot] = (GplFoEntry){.hash = h, .key = *fk, .pipe = pipe};
+    gpl_fo_cnt++;
+    return true;
+}
+
+static void gpl_log_summary(const char *where) {
+    uint64_t l = atomic_load_explicit(&gpl_links, memory_order_relaxed);
+    uint64_t fb = atomic_load_explicit(&gpl_fallbacks, memory_order_relaxed);
+    uint64_t ns = atomic_load_explicit(&gpl_link_ns, memory_order_relaxed);
+    uint64_t vim = atomic_load_explicit(&gpl_vi_misses, memory_order_relaxed);
+    if (!l && !fb && !vim) return;
+    LOG("[vk-gpl] (%s): links=%llu avg=%.2fms fallbacks=%llu vi=%llu/%llu pre=%llu/%llu fs=%llu/%llu fo=%llu/%llu\n",
+        where ? where : "?", (unsigned long long)l, l ? (double)ns / 1e6 / (double)l : 0.0,
+        (unsigned long long)fb,
+        (unsigned long long)atomic_load_explicit(&gpl_vi_hits, memory_order_relaxed), (unsigned long long)vim,
+        (unsigned long long)atomic_load_explicit(&gpl_pre_hits, memory_order_relaxed),
+        (unsigned long long)atomic_load_explicit(&gpl_pre_misses, memory_order_relaxed),
+        (unsigned long long)atomic_load_explicit(&gpl_fs_hits, memory_order_relaxed),
+        (unsigned long long)atomic_load_explicit(&gpl_fs_misses, memory_order_relaxed),
+        (unsigned long long)atomic_load_explicit(&gpl_fo_hits, memory_order_relaxed),
+        (unsigned long long)atomic_load_explicit(&gpl_fo_misses, memory_order_relaxed));
+}
+
+static void gpl_reset(void) {
+    gpl_log_summary("reset");
+    pthread_mutex_lock(&gpl_lock);
+    for (int i = 0; i < 6; i++) {
+        if (gpl_vi[i]) { vkDestroyPipeline(g_vk.dev, gpl_vi[i], NULL); gpl_vi[i] = VK_NULL_HANDLE; }
+    }
+    for (size_t i = 0; i < gpl_fo_cap; i++) {
+        if (gpl_fo_tab[i].pipe) vkDestroyPipeline(g_vk.dev, gpl_fo_tab[i].pipe, NULL);
+    }
+    free(gpl_fo_tab);
+    gpl_fo_tab = NULL;
+    gpl_fo_cap = gpl_fo_cnt = 0;
+    pthread_mutex_unlock(&gpl_lock);
+    atomic_store_explicit(&gpl_links, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_fallbacks, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_link_ns, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_vi_hits, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_vi_misses, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_pre_hits, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_pre_misses, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_fs_hits, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_fs_misses, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_fo_hits, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_fo_misses, 0, memory_order_relaxed);
+}
+
+static void gpl_log_fallback_once(const char *stage, VkResult rc) {
+    atomic_fetch_add_explicit(&gpl_fallbacks, 1, memory_order_relaxed);
+    static atomic_bool logged;
+    if (!atomic_exchange(&logged, true))
+        LOG("[vk-gpl] fallback to monolithic at %s (rc=%d)\n", stage, (int)rc);
+}
+
+static bool build_pipeline_gpl(const PipeKey *k, const VkPipelineShaderStageCreateInfo stages[2],
+                               const VkPipelineInputAssemblyStateCreateInfo *ia,
+                               const VkPipelineViewportStateCreateInfo *vs,
+                               const VkPipelineRasterizationStateCreateInfo *rs,
+                               const VkPipelineMultisampleStateCreateInfo *ms,
+                               const VkPipelineDepthStencilStateCreateInfo *ds,
+                               const VkPipelineColorBlendStateCreateInfo *cb,
+                               const VkPipelineRenderingCreateInfo *ri,
+                               bool fb_loop, VkPipeline *out_pipe) {
+    if (!g_vk.gpl || !g_vk.dyn_render || !g_vk.eds || !g_vk.eds2 || !g_vk.dyn_vi ||
+        k->fx.on || g_vk.exec_stats || k->topo_class >= 3)
+        return false;
+    int sidx = gpl_sample_idx(k->samples);
+    if (sidx < 0) return false;
+    int vi_idx = (int)k->topo_class * 2 + (k->prim_restart ? 1 : 0);
+    int pre_idx = (k->poly_fill ? 1 : 0) | (k->depth_clamp ? 2 : 0);
+    int fs_idx = (sidx << 2) | (k->a2c ? 2 : 0) | (fb_loop ? 1 : 0);
+
+    // 1. Vertex Input Interface
+    pthread_mutex_lock(&gpl_lock);
+    VkPipeline p_vi = gpl_vi[vi_idx];
+    if (p_vi) atomic_fetch_add_explicit(&gpl_vi_hits, 1, memory_order_relaxed);
+    else atomic_fetch_add_explicit(&gpl_vi_misses, 1, memory_order_relaxed);
+    pthread_mutex_unlock(&gpl_lock);
+    if (!p_vi) {
+        static const VkDynamicState vi_dyn[3] = {
+            VK_DYNAMIC_STATE_VERTEX_INPUT_EXT, VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY,
+            VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE};
+        VkPipelineDynamicStateCreateInfo dy = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                               .dynamicStateCount = 3, .pDynamicStates = vi_dyn};
+        VkGraphicsPipelineLibraryCreateInfoEXT lc = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT,
+            .flags = VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT};
+        VkGraphicsPipelineCreateInfo pi = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &lc,
+            .flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR,
+            .pInputAssemblyState = ia, .pDynamicState = &dy};
+        VkPipeline created = VK_NULL_HANDLE;
+        VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &created);
+        if (r != VK_SUCCESS) { gpl_log_fallback_once("vi", r); return false; }
+        pthread_mutex_lock(&gpl_lock);
+        if (gpl_vi[vi_idx]) {
+            p_vi = gpl_vi[vi_idx];
+            pthread_mutex_unlock(&gpl_lock);
+            vkDestroyPipeline(g_vk.dev, created, NULL);
+        } else {
+            gpl_vi[vi_idx] = p_vi = created;
+            pthread_mutex_unlock(&gpl_lock);
+        }
+    }
+
+    // 2. Pre-Rasterization Shaders
+    pthread_mutex_lock(&gpl_lock);
+    VkPipeline p_pre = k->prog->gpl_pre[pre_idx];
+    if (p_pre) atomic_fetch_add_explicit(&gpl_pre_hits, 1, memory_order_relaxed);
+    else atomic_fetch_add_explicit(&gpl_pre_misses, 1, memory_order_relaxed);
+    pthread_mutex_unlock(&gpl_lock);
+    if (!p_pre) {
+        static const VkDynamicState pre_dyn[6] = {
+            VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_DEPTH_BIAS,
+            VK_DYNAMIC_STATE_CULL_MODE, VK_DYNAMIC_STATE_FRONT_FACE, VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE};
+        VkPipelineDynamicStateCreateInfo dy = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                               .dynamicStateCount = 6, .pDynamicStates = pre_dyn};
+        VkGraphicsPipelineLibraryCreateInfoEXT lc = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT,
+            .flags = VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT};
+        VkGraphicsPipelineCreateInfo pi = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &lc,
+            .flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR,
+            .stageCount = 1, .pStages = &stages[0],
+            .pViewportState = vs, .pRasterizationState = rs, .pDynamicState = &dy,
+            .layout = k->prog->layout};
+        VkPipeline created = VK_NULL_HANDLE;
+        VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &created);
+        if (r != VK_SUCCESS) { gpl_log_fallback_once("pre", r); return false; }
+        pthread_mutex_lock(&gpl_lock);
+        if (k->prog->gpl_pre[pre_idx]) {
+            p_pre = k->prog->gpl_pre[pre_idx];
+            pthread_mutex_unlock(&gpl_lock);
+            vkDestroyPipeline(g_vk.dev, created, NULL);
+        } else {
+            k->prog->gpl_pre[pre_idx] = p_pre = created;
+            pthread_mutex_unlock(&gpl_lock);
+        }
+    }
+
+    // 3. Fragment Shader
+    pthread_mutex_lock(&gpl_lock);
+    VkPipeline p_fs = k->prog->gpl_fs[fs_idx];
+    if (p_fs) atomic_fetch_add_explicit(&gpl_fs_hits, 1, memory_order_relaxed);
+    else atomic_fetch_add_explicit(&gpl_fs_misses, 1, memory_order_relaxed);
+    pthread_mutex_unlock(&gpl_lock);
+    if (!p_fs) {
+        static const VkDynamicState fs_dyn[8] = {
+            VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK, VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
+            VK_DYNAMIC_STATE_STENCIL_REFERENCE, VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE,
+            VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE, VK_DYNAMIC_STATE_DEPTH_COMPARE_OP,
+            VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE, VK_DYNAMIC_STATE_STENCIL_OP};
+        VkPipelineDynamicStateCreateInfo dy = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                               .dynamicStateCount = 8, .pDynamicStates = fs_dyn};
+        VkGraphicsPipelineLibraryCreateInfoEXT lc = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT,
+            .flags = VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT};
+        VkPipelineCreateFlags fflags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR |
+            (fb_loop ? VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT : 0);
+        VkGraphicsPipelineCreateInfo pi = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &lc,
+            .flags = fflags,
+            .stageCount = 1, .pStages = &stages[1],
+            .pMultisampleState = ms, .pDepthStencilState = ds, .pDynamicState = &dy,
+            .layout = k->prog->layout};
+        VkPipeline created = VK_NULL_HANDLE;
+        VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &created);
+        if (r != VK_SUCCESS) { gpl_log_fallback_once("fs", r); return false; }
+        pthread_mutex_lock(&gpl_lock);
+        if (k->prog->gpl_fs[fs_idx]) {
+            p_fs = k->prog->gpl_fs[fs_idx];
+            pthread_mutex_unlock(&gpl_lock);
+            vkDestroyPipeline(g_vk.dev, created, NULL);
+        } else {
+            k->prog->gpl_fs[fs_idx] = p_fs = created;
+            pthread_mutex_unlock(&gpl_lock);
+        }
+    }
+
+    // 4. Fragment Output Interface
+    GplFoKey fk;
+    memset(&fk, 0, sizeof fk);
+    fk.ncolor = k->ncolor;
+    fk.samples = k->samples;
+    for (uint32_t i = 0; i < k->ncolor && i < 8; i++) {
+        fk.write_mask[i] = k->write_mask[i];
+        fk.color[i] = k->color[i];
+        if ((k->blend_on >> i) & 1) memcpy(fk.blend[i], k->blend[i], 8);
+    }
+    fk.depth = k->depth;
+    fk.stencil = k->stencil;
+    fk.blend_on = k->blend_on;
+    fk.a2c = k->a2c;
+    fk.fb_loop = fb_loop ? 1 : 0;
+    uint64_t fh = hash_words(0xcbf29ce484222325ull, &fk, sizeof fk);
+    if (!fh) fh = 1;
+
+    pthread_mutex_lock(&gpl_lock);
+    VkPipeline p_fo = gpl_fo_lookup_locked(&fk, fh);
+    if (p_fo) atomic_fetch_add_explicit(&gpl_fo_hits, 1, memory_order_relaxed);
+    else atomic_fetch_add_explicit(&gpl_fo_misses, 1, memory_order_relaxed);
+    pthread_mutex_unlock(&gpl_lock);
+    if (!p_fo) {
+        static const VkDynamicState fo_dyn[1] = {VK_DYNAMIC_STATE_BLEND_CONSTANTS};
+        VkPipelineDynamicStateCreateInfo dy = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                               .dynamicStateCount = 1, .pDynamicStates = fo_dyn};
+        VkPipelineRenderingCreateInfo ri_copy = *ri;
+        ri_copy.pNext = NULL;
+        VkGraphicsPipelineLibraryCreateInfoEXT lc = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT,
+            .pNext = &ri_copy,
+            .flags = VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT};
+        VkPipelineCreateFlags fflags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR |
+            (fb_loop ? VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT : 0);
+        VkGraphicsPipelineCreateInfo pi = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &lc,
+            .flags = fflags,
+            .pMultisampleState = ms, .pColorBlendState = cb, .pDynamicState = &dy};
+        VkPipeline created = VK_NULL_HANDLE;
+        VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &created);
+        if (r != VK_SUCCESS) { gpl_log_fallback_once("fo", r); return false; }
+        VkPipeline existing = VK_NULL_HANDLE;
+        pthread_mutex_lock(&gpl_lock);
+        bool inserted = gpl_fo_insert_locked(&fk, fh, created, &existing);
+        pthread_mutex_unlock(&gpl_lock);
+        if (!inserted) {
+            vkDestroyPipeline(g_vk.dev, created, NULL);
+            if (!existing) { gpl_log_fallback_once("fo_oom", VK_ERROR_OUT_OF_HOST_MEMORY); return false; }
+            p_fo = existing;
+        } else {
+            p_fo = created;
+        }
+    }
+
+    // 5. Fast-Link all 4 pipeline libraries
+    VkPipeline libs[4] = {p_vi, p_pre, p_fs, p_fo};
+    VkPipelineLibraryCreateInfoKHR link_ci = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR,
+        .libraryCount = 4, .pLibraries = libs};
+    VkGraphicsPipelineCreateInfo link_pi = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &link_ci,
+        .flags = fb_loop ? VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT : 0,
+        .layout = k->prog->layout};
+    uint64_t t0 = plat_now_ns();
+    VkResult lr = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &link_pi, NULL, out_pipe);
+    if (lr != VK_SUCCESS) {
+        gpl_log_fallback_once("link", lr);
+        *out_pipe = VK_NULL_HANDLE;
+        return false;
+    }
+    atomic_fetch_add_explicit(&gpl_link_ns, plat_now_ns() - t0, memory_order_relaxed);
+    atomic_fetch_add_explicit(&gpl_links, 1, memory_order_relaxed);
+    static atomic_bool first_ok;
+    if (!atomic_exchange(&first_ok, true)) LOG("[vk-gpl] first fast-link ok\n");
+    return true;
+}
+#endif
 
 static void build_pipeline(void *arg) {
     Pipe *pp = arg;
@@ -4981,7 +5351,14 @@ static void build_pipeline(void *arg) {
     }
 #endif
     long long mg0 = vk_mnow();
-    VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &pp->pipe);
+    VkResult r = VK_ERROR_UNKNOWN;
+#ifdef __ANDROID__
+    if (build_pipeline_gpl(k, stages, &ia, &vs, &rs, &ms, &ds, &cb, &ri,
+                           g_vk.turnip_fb_loop && k->ncolor > 0, &pp->pipe))
+        r = VK_SUCCESS;
+    else
+#endif
+        r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &pp->pipe);
     vk_mgrow_add(MG_GPIPE, mg0);
     {   // LARECOMP_PIPE_FAIL_OOM=<n>: the n-th to (n+19)-th pipelines built fail once as out of device memory (a test of
         // the retry, #520; twenty, so some of them are drawn again)
@@ -5149,7 +5526,7 @@ static VkImageView scene_up_view(const NvnTexEntry *e) {
                              (VkComponentSwizzle)(c[3] + 1)};
     return vk_image_view(scene_up.img, VK_IMAGE_VIEW_TYPE_2D, scene_up.img->format, 0, 1, 0, 1, sw, VK_IMAGE_ASPECT_COLOR_BIT);
 }
-static void scene_upscale(Prog *pr, CmdRec *r);
+static bool scene_upscale(Prog *pr, CmdRec *r);
 
 static NvnTexture *shader_texture_object(int stage, ShaderTexture *st_) {
     NvnTexEntry *e = shader_texture_entry(stage, st_);
@@ -8039,6 +8416,9 @@ void vk_exec_reset(void) {
     pipe_cache = (VkObjectCache){0};
     atomic_store(&program_keys, 0);
     atomic_store(&pipeline_keys, 0);
+#ifdef __ANDROID__
+    gpl_reset();
+#endif
     int nc = compute_reset();
     LOG("[vk] reboot: %d programs, %d pipelines and %d compute programs freed (%d kept)\n", np, ng, nc, kept);
     guest_copy_flush();
@@ -9240,7 +9620,12 @@ static void draw_(CmdRec *r, bool indexed) {
     // computations of it were ~8% of the render thread on the POCO F7 Ultra)
     const uint32_t draw_w = draw_writes(pr);
     resolve_feedback(pr, draw_w);
-    scene_upscale(pr, r);
+    if (scene_upscale(pr, r)) {
+        if (g_debug_frame) pick_after_draw();
+        stat_draws++;
+        cum_draws++;
+        return;
+    }
     snap_reason = "draw-depthwrite";
     if (st.rt.depth && st.ds[0] && st.ds[1]) {
         bool fb = false;
@@ -10269,7 +10654,7 @@ static VkPipeline present_pipeline_a(VkFormat fmt, bool alpha) {  // alpha: the 
         VkDescriptorSetLayoutBinding b = {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL};
         VkDescriptorSetLayoutCreateInfo li = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 1, .pBindings = &b};
         VK_CHECK(vkCreateDescriptorSetLayout(g_vk.dev, &li, NULL, &present_set_layout));
-        VkPushConstantRange r = {VK_SHADER_STAGE_VERTEX_BIT, 0, 32};
+        VkPushConstantRange r = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32};
         VkPipelineLayoutCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1,
                                          .pSetLayouts = &present_set_layout, .pushConstantRangeCount = 1, .pPushConstantRanges = &r};
         VK_CHECK(vkCreatePipelineLayout(g_vk.dev, &ci, NULL, &present_layout));
@@ -10484,11 +10869,35 @@ static void post_pass(VkCommandBuffer cb, const char *fs, const VkImageView *src
     vk_end_rendering(cb);
 }
 
+// Frame index where pre-HUD scene AA already ran inside scene_upscale() so post_process() avoids softening HUD/text.
+static uint64_t scene_aa_done_frame = ~0ULL;
+
+static VkImageView run_aa_pass(VkCommandBuffer cb, int aa_mode, VkImageView src_v, uint32_t w, uint32_t h,
+                               TexBackend *dst) {
+    float fw = (float)w, fh = (float)h;
+    float m[8] = {1.0f / fw, 1.0f / fh, fw, fh};
+    if (aa_mode == AA_SMAA) {
+        TexBackend *edges = post_image(0, w, h, VK_FORMAT_R8G8B8A8_UNORM);
+        TexBackend *weights = post_image(1, w, h, VK_FORMAT_R8G8B8A8_UNORM);
+        VkImageView in[3] = {src_v};
+        post_pass(cb, "smaa_edge.frag", in, 1, edges, m, true);
+        VkImageView wi[3] = {post_view(edges), smaa_lut(0), smaa_lut(1)};
+        post_pass(cb, "smaa_weight.frag", wi, 3, weights, m, true);
+        VkImageView bi[3] = {src_v, post_view(weights)};
+        post_pass(cb, "smaa_blend.frag", bi, 2, dst, m, false);
+    } else {
+        VkImageView in[3] = {src_v};
+        post_pass(cb, "fxaa.frag", in, 1, dst, m, false);
+    }
+    return post_view(dst);
+}
+
 // The view the present samples: the game image, or its anti-aliased / upscaled version. ow x oh: the whole image's
 // size in the window (its crop is drawn into the viewport).
 static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, double oh_d) {
     VkImageView v = raw_view(b);
-    bool smaa = g_settings.antialias == AA_SMAA, fxaa = g_settings.antialias == AA_FXAA;
+    bool aa_done = scene_aa_done_frame == renderer_present_count();
+    bool smaa = !aa_done && g_settings.antialias == AA_SMAA, fxaa = !aa_done && g_settings.antialias == AA_FXAA;
     uint32_t ow = (uint32_t)lround(ow_d), oh = (uint32_t)lround(oh_d);
     if (ow > 16384) ow = 16384;
     if (oh > 16384) oh = 16384;
@@ -10512,25 +10921,9 @@ static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, 
     extern void vk_frame_suspend(void);
     extern void vk_frame_resume(void);
     vk_frame_suspend();
-    if (smaa) {  // SMAA 1x: luma edges -> blending weights -> neighbourhood blending
-        float w = (float)b->width, h = (float)b->height;
-        float m[8] = {1.0f / w, 1.0f / h, w, h};
-        TexBackend *edges = post_image(0, b->width, b->height, VK_FORMAT_R8G8B8A8_UNORM), *weights = post_image(1, b->width, b->height, VK_FORMAT_R8G8B8A8_UNORM);
+    if (smaa || fxaa) {
         TexBackend *out = post_image(2, b->width, b->height, VK_FORMAT_R8G8B8A8_UNORM);
-        VkImageView in[3] = {v};
-        post_pass(cb, "smaa_edge.frag", in, 1, edges, m, true);
-        VkImageView wi[3] = {post_view(edges), smaa_lut(0), smaa_lut(1)};
-        post_pass(cb, "smaa_weight.frag", wi, 3, weights, m, true);
-        VkImageView bi[3] = {v, post_view(weights)};
-        post_pass(cb, "smaa_blend.frag", bi, 2, out, m, false);
-        v = post_view(out);
-    } else if (fxaa) {  // FXAA (shaders.c fxaa.frag): one pass
-        float w = (float)b->width, h = (float)b->height;
-        float m[8] = {1.0f / w, 1.0f / h, w, h};
-        TexBackend *out = post_image(2, b->width, b->height, VK_FORMAT_R8G8B8A8_UNORM);
-        VkImageView in[3] = {v};
-        post_pass(cb, "fxaa.frag", in, 1, out, m, false);
-        v = post_view(out);
+        v = run_aa_pass(cb, smaa ? AA_SMAA : AA_FXAA, v, b->width, b->height, out);
     }
     if (fsr) gp_mark(cb, "present: upscale");  // ([gpuprof]: the AA pass's own row above, the upscale's here)
     if (fsr && up == UPSCALE_SGSR1) {
@@ -10570,18 +10963,22 @@ static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, 
 // screen's (RS_OUT), and the game's composite draw would scale the scene up bilinearly. Before that draw, EASU + RCAS
 // (or SGSR 1) bring the scene to its size in the final image, in the scene's own format (10-bit: no banding); the draw
 // then samples that at 1:1 (texture_info). LARECOMP_SCENE_UPSCALE=0: the game's own bilinear composite (A/B).
-static void scene_upscale(Prog *pr, CmdRec *r) {
+static bool scene_upscale(Prog *pr, CmdRec *r) {
     scene_up.t = NULL;
     static int on = -1;
     if (on < 0) on = getenv("LARECOMP_SCENE_UPSCALE") ? atoi(getenv("LARECOMP_SCENE_UPSCALE")) : 1;
     int mode = g_settings.upscaler;
     extern int vk_ab(const char *what);
     if (AB("sgsr") == 1) mode = UPSCALE_SGSR1;
-    if (!on || (mode != UPSCALE_FSR1 && mode != UPSCALE_SGSR1)) return;
+    int aa = g_settings.antialias;
+    bool do_aa = (aa == AA_SMAA || aa == AA_FXAA);
+    bool replace_fxaa = settings_eff_no_game_fxaa() && g_cur_fs_hash == 0x058188a1db3e22e9ULL &&
+                        st.rt.ncolor == 1 && !(st.color_state[0] & 1);
+    if (!on && !do_aa && !replace_fxaa) return false;
     NvnTexture *rt = st.rt.ncolor ? st.rt.color[0] : NULL;
-    if (!rt || r->x[2] > 6 || !pr->fi->ntex || vk_texture_scale_group(rt) != RS_OUT) return;
+    if (!rt || r->x[2] > 6 || !pr->fi->ntex || vk_texture_scale_group(rt) != RS_OUT) return false;
     const float *vp = st.viewport[0];
-    if (vp[2] < rt->width * 0.5f || vp[3] < rt->height * 0.5f) return;  // (a composite fills most of the image)
+    if (vp[2] < rt->width * 0.5f || vp[3] < rt->height * 0.5f) return false;  // (a composite fills most of the image)
     float osx, osy;
     renderer_texture_scale(rt, &osx, &osy);
     uint32_t ow = (uint32_t)lroundf(vp[2] * osx), oh = (uint32_t)lroundf(vp[3] * osy);
@@ -10593,43 +10990,99 @@ static void scene_upscale(Prog *pr, CmdRec *r) {
         if (!t || t->target != 1 || vk_texture_scale_group(t) != RS_SCENE || t->width * 2 < vp[2] || t->height * 2 < vp[3]) continue;
         TexBackend *b = vk_tex(t, false);
         if (!b->image || b->layers != 1 || b->samples != 1 || b->depth != 1 || (b->aspect & ~VK_IMAGE_ASPECT_COLOR_BIT)) continue;
-        if (ow <= b->width + 1 && oh <= b->height + 1) return;  // (at its size in the final image already)
+        bool need_upscale = on && (mode == UPSCALE_FSR1 || mode == UPSCALE_SGSR1) && (ow > b->width + 1 || oh > b->height + 1);
+        if (!need_upscale && !do_aa && !replace_fxaa) return false;
         VkFormatProperties fp;
         vkGetPhysicalDeviceFormatProperties(g_vk.phys, b->format, &fp);
-        if (!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) continue;
+        if ((need_upscale || do_aa) && !(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) continue;
+        TexBackend *rt_b = replace_fxaa ? vk_tex(rt, true) : NULL;
+        if (replace_fxaa && (!rt_b || !rt_b->image || rt_b->layers != 1 || rt_b->depth != 1 ||
+                             (rt_b->aspect & ~VK_IMAGE_ASPECT_COLOR_BIT) || rt_b->width != ow || rt_b->height != oh))
+            replace_fxaa = false;
+        if (!need_upscale && !do_aa && !replace_fxaa) return false;
         vk_end_pass();
         VkCommandBuffer cb = vk_cmd();
-        float iw = (float)b->width, ih = (float)b->height;
         static const VkComponentMapping id = {0};
-        VkImageView in[3] = {vk_image_view(b, VK_IMAGE_VIEW_TYPE_2D, b->format, 0, 1, 0, 1, id, VK_IMAGE_ASPECT_COLOR_BIT)};
-        TexBackend *o = post_image(6, ow, oh, b->format);
-        gp_mark(cb, "scene upscale %ux%u -> %ux%u: %s", b->width, b->height, ow, oh, mode == UPSCALE_SGSR1 ? "sgsr1" : "easu");
-        if (mode == UPSCALE_SGSR1) {
-            float ps[8] = {1.0f / iw, 1.0f / ih, iw, ih, (float)ow, (float)oh};
-            post_pass(cb, "sgsr1.frag", in, 1, o, ps, false);
-        } else {
-            TexBackend *e = post_image(5, ow, oh, b->format);
-            float pe[8] = {iw / ow, ih / oh, 0.5f * iw / ow - 0.5f, 0.5f * ih / oh - 0.5f, iw, ih};
-            post_pass(cb, "easu.frag", in, 1, e, pe, false);
-            gp_mark(cb, "scene upscale: rcas");
-            float pr_[8] = {exp2f(-0.2f), 0, 0, 0, (float)ow, (float)oh};  // (sharpness 0.2 stops: AMD's default)
-            VkImageView ri[3] = {post_view(e)};
-            post_pass(cb, "rcas.frag", ri, 1, o, pr_, false);
+        TexBackend *cur = b;
+        VkImageView cur_view = vk_image_view(b, VK_IMAGE_VIEW_TYPE_2D, b->format, 0, 1, 0, 1, id, VK_IMAGE_ASPECT_COLOR_BIT);
+        if (need_upscale) {
+            float iw = (float)b->width, ih = (float)b->height;
+            VkImageView in[3] = {cur_view};
+            TexBackend *o = post_image(6, ow, oh, b->format);
+            gp_mark(cb, "scene upscale %ux%u -> %ux%u: %s", b->width, b->height, ow, oh, mode == UPSCALE_SGSR1 ? "sgsr1" : "easu");
+            if (mode == UPSCALE_SGSR1) {
+                float ps[8] = {1.0f / iw, 1.0f / ih, iw, ih, (float)ow, (float)oh};
+                post_pass(cb, "sgsr1.frag", in, 1, o, ps, false);
+            } else {
+                TexBackend *e = post_image(5, ow, oh, b->format);
+                float pe[8] = {iw / ow, ih / oh, 0.5f * iw / ow - 0.5f, 0.5f * ih / oh - 0.5f, iw, ih};
+                post_pass(cb, "easu.frag", in, 1, e, pe, false);
+                gp_mark(cb, "scene upscale: rcas");
+                float pr_[8] = {exp2f(-0.2f), 0, 0, 0, (float)ow, (float)oh};
+                VkImageView ri[3] = {post_view(e)};
+                post_pass(cb, "rcas.frag", ri, 1, o, pr_, false);
+            }
+            cur = o;
+            cur_view = post_view(o);
+        }
+        bool dst_written = false;
+        if (do_aa) {
+            bool direct_rt = replace_fxaa && cur->width == rt_b->width && cur->height == rt_b->height;
+            TexBackend *aa_dst = direct_rt ? rt_b : post_image(need_upscale ? 2 : 6, cur->width, cur->height, cur->format);
+            if (direct_rt) {
+                renderer_mark_gpu_owned(rt);
+                renderer_texture_first_write(rt);
+                renderer_texture_level_fresh(rt);
+                renderer_texture_frame_fresh(rt);
+                alias_before_write(rt, 0, "scene replace aa");
+                dst_written = true;
+            }
+            gp_mark(cb, "scene pre-hud %s %ux%u", aa == AA_SMAA ? "smaa" : "fxaa", cur->width, cur->height);
+            cur_view = run_aa_pass(cb, aa, cur_view, cur->width, cur->height, aa_dst);
+            cur = aa_dst;
+            scene_aa_done_frame = renderer_present_count();
+        }
+        if (replace_fxaa) {
+            if (!dst_written) {
+                renderer_mark_gpu_owned(rt);
+                renderer_texture_first_write(rt);
+                renderer_texture_level_fresh(rt);
+                renderer_texture_frame_fresh(rt);
+                alias_before_write(rt, 0, "scene replace copy");
+                float cp[8] = {1.0f / (float)rt_b->width, 1.0f / (float)rt_b->height, (float)rt_b->width, (float)rt_b->height};
+                gp_mark(cb, "scene replace game fxaa %ux%u", rt_b->width, rt_b->height);
+                post_pass(cb, "scene_copy.frag", &cur_view, 1, rt_b, cp, false);
+            }
+            vk_full_barrier(cb);
+            snapshots_invalidate_for(rt, "scene-replace");
+            snapshots_invalidate(rt);
+            rt_b->rt_frame = renderer_present_count() + 1;
+            static uint32_t rw, rh, row, roh;
+            static int raa = -1;
+            if (b->width != rw || b->height != rh || ow != row || oh != roh || aa != raa) {
+                LOG("[post] scene %ux%u -> %ux%u (skip game FXAA, pre-HUD AA=%s)\n", b->width, b->height, ow, oh,
+                    aa == AA_SMAA ? "smaa" : aa == AA_FXAA ? "fxaa" : "off");
+                rw = b->width; rh = b->height; row = ow; roh = oh; raa = aa;
+            }
+            return true;
         }
         vk_full_barrier(cb);
         scene_up.t = t;
-        scene_up.img = o;
-        scene_up.view = post_view(o);
-        scene_up.sx = (float)ow / (float)t->width;
-        scene_up.sy = (float)oh / (float)t->height;
+        scene_up.img = cur;
+        scene_up.view = cur_view;
+        scene_up.sx = (float)cur->width / (float)t->width;
+        scene_up.sy = (float)cur->height / (float)t->height;
         static uint32_t lw, lh, low, loh;
-        static int lmode = -1;
-        if (b->width != lw || b->height != lh || ow != low || oh != loh || mode != lmode)
-            LOG("[post] scene %ux%u -> %s %ux%u (format %d)\n", b->width, b->height, mode == UPSCALE_SGSR1 ? "sgsr1" : "fsr1",
-                ow, oh, b->format);
-        lw = b->width; lh = b->height; low = ow; loh = oh; lmode = mode;
-        return;
+        static int lmode = -1, laa = -1;
+        if (b->width != lw || b->height != lh || cur->width != low || cur->height != loh || mode != lmode || aa != laa)
+            LOG("[post] scene %ux%u -> %s%s %ux%u (format %d)\n", b->width, b->height,
+                need_upscale ? (mode == UPSCALE_SGSR1 ? "sgsr1" : "fsr1") : "1:1",
+                do_aa ? (aa == AA_SMAA ? "+pre_smaa" : "+pre_fxaa") : "",
+                cur->width, cur->height, b->format);
+        lw = b->width; lh = b->height; low = cur->width; loh = cur->height; lmode = mode; laa = aa;
+        return false;
     }
+    return false;
 }
 
 // Inside the window image's rendering (device.c vk_frame_begin): the game image into (vx, vy, vw, vh).
@@ -10647,7 +11100,7 @@ void vk_present_draw(VkCommandBuffer cb, TexBackend *b, float vx, float vy, floa
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, present_layout, 0, 1, &ds, 0, NULL);
     VkViewport vp = {vx, vy, vw, vh, 0, 1};
     vkCmdSetViewport(cb, 0, 1, &vp);
-    vkCmdPushConstants(cb, present_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 32, pv);
+    vkCmdPushConstants(cb, present_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32, pv);
     ss_forget();  // (static-VI pipeline and another layout: draws re-bind state)
     vkCmdDraw(cb, 3, 1, 0, 0);
     VkViewport full = {0, 0, (float)g_vk.sc_extent.width, (float)g_vk.sc_extent.height, 0, 1};
@@ -10733,7 +11186,7 @@ void renderer_save_texture_tex(TexBackend *b, const char *path) {
         vkCmdSetViewport(cb, 0, 1, &vp);
         vkCmdSetScissor(cb, 0, 1, &sc);
         float pv[8] = {renderer_origin_lower_left() && !strstr(path, "window") ? 1.0f : 0.0f, 0, 0, 0, crop[0], crop[1], crop[2], crop[3]};
-        vkCmdPushConstants(cb, present_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 32, pv);
+        vkCmdPushConstants(cb, present_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32, pv);
         ss_forget();  // (static-VI pipeline and another layout: draws re-bind state)
         vkCmdDraw(cb, 3, 1, 0, 0);
         vk_end_rendering(cb);

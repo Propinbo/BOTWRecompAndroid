@@ -13,6 +13,8 @@
 #endif
 
 #include "../../benchmark_perf.h"
+#include "../../settings.h"
+#include "device_compat.h"
 #include "vk.h"
 #include "../astc.h"
 #include "../renderer.h"
@@ -356,11 +358,13 @@ static void bc_decode(VkFormat bc, const uint8_t *blocks, uint32_t wb, uint32_t 
 //             HUD and menus are drawn sharp
 //   RS_SCENE  the 3D scene's targets (1600x900 docked, the game's dynamic sizes down to 1280x720, their fractions):
 //             the internal resolution (Video > Internal resolution)
-static float g_rs[3][2] = {{1, 1}, {1, 1}, {1, 1}};
+//   RS_SHADOW BOTW sun shadow cascades (896x896 D16x3) and gather downsample (448x448 R16x3)
+static float g_rs[4][2] = {{1, 1}, {1, 1}, {1, 1}, {1, 1}};
 void renderer_get_scale(float *sx, float *sy) { *sx = g_rs[RS_OUT][0]; *sy = g_rs[RS_OUT][1]; }
 void renderer_set_scale(float sx, float sy) { g_rs[RS_OUT][0] = sx; g_rs[RS_OUT][1] = sy; }
 void renderer_get_scene_scale(float *sx, float *sy) { *sx = g_rs[RS_SCENE][0]; *sy = g_rs[RS_SCENE][1]; }
 void renderer_set_scene_scale(float sx, float sy) { g_rs[RS_SCENE][0] = sx; g_rs[RS_SCENE][1] = sy; }
+void renderer_set_shadow_scale(float s) { g_rs[RS_SHADOW][0] = s; g_rs[RS_SHADOW][1] = s; }
 uint64_t renderer_present_count(void);
 static bool rs_stale(const TexBackend *b) {
     return b->rs_group && (b->sx != g_rs[b->rs_group][0] || b->sy != g_rs[b->rs_group][1]);
@@ -375,6 +379,9 @@ static uint8_t tex_scale_group(const NvnTexture *t) {
     if (on < 0) on = getenv("LARECOMP_NO_SCALE") == NULL;
     if (!on) return RS_NONE;
     if ((t->target != 1 && t->target != 4) || t->samples > 1 || !(t->flags & 9) || t->width < 32 || t->height < 16) return RS_NONE;
+    if (vk_is_botw_shadow_target(t->target, t->width, t->height, t->layout.layers ? t->layout.layers : t->depth,
+                                 t->samples, t->format))
+        return RS_SHADOW;
     float a = (float)t->width / (float)t->height;
     if (a < 1.74f || a > 1.81f) return RS_NONE;
     if (t->flags & 1) return RS_OUT;  // NVN_TEXTURE_FLAGS_DISPLAY: the images the game presents
@@ -421,7 +428,7 @@ bool renderer_texture_level_fresh(NvnTexture *t) {
     static int keep = -1;
     if (keep < 0) keep = getenv("LARECOMP_KEEP_TARGETS") != NULL;
     if (!b || keep || b->level_gen == g_level_gen) return false;
-    if (!b->scalable) { b->level_gen = g_level_gen; return false; }
+    if (!b->scalable || b->rs_group == RS_SHADOW) { b->level_gen = g_level_gen; return false; }
     bool fresh = b->level_gen != 0;
     b->level_gen = g_level_gen;
     return fresh;
@@ -2050,9 +2057,36 @@ static VkCompareOp compare_op(uint32_t f) {
 
 static VkSampler make_sampler(const NvnSamplerDesc *d, bool compare);
 
+static uint32_t sampler_override_cfg(void) {
+    int ea = g_vk.aniso ? settings_eff_aniso() : 0;
+    bool el = settings_eff_lod_bias_ultra();
+    return (ea > 1 ? (uint32_t)ea : 0u) | (el ? 0x100u : 0u);
+}
+
+static VkSampler sampler_cached(const NvnSamplerDesc *d, bool compare, uint32_t cfg) {
+    static struct { const NvnSamplerDesc *d; bool compare; uint32_t cfg; VkSampler s; } tab[1024];
+    static uint32_t next;
+    uint32_t h = (uint32_t)(((uintptr_t)d >> 4) ^ (cfg * 0x9E3779B1u) ^ (compare ? 0x517CC1B7u : 0u));
+    uint32_t slot = h & 1023u;
+    for (uint32_t p = 0; p < 16; p++, slot = (slot + 1u) & 1023u) {
+        if (tab[slot].d == d && tab[slot].compare == compare && tab[slot].cfg == cfg && tab[slot].s) return tab[slot].s;
+        if (!tab[slot].s) {
+            tab[slot].d = d; tab[slot].compare = compare; tab[slot].cfg = cfg;
+            return tab[slot].s = make_sampler(d, compare);
+        }
+    }
+    uint32_t evict = (h + next++) & 1023u;
+    tab[evict].d = d; tab[evict].compare = compare; tab[evict].cfg = cfg;
+    return tab[evict].s = make_sampler(d, compare);
+}
+
 VkSampler vk_sampler(NvnSamplerDesc *d) {
-    if (!d->backend) d->backend = (void *)make_sampler(d, true);
-    return (VkSampler)d->backend;
+    uint32_t cfg = sampler_override_cfg();
+    if (!cfg) {
+        if (!d->backend) d->backend = (void *)make_sampler(d, true);
+        return (VkSampler)d->backend;
+    }
+    return sampler_cached(d, true, cfg);
 }
 
 // The sampler for a lookup without depth comparison (a plain texture() in the shader): a comparison sampler there is
@@ -2060,6 +2094,8 @@ VkSampler vk_sampler(NvnSamplerDesc *d) {
 // its depth buffer through a comparison sampler and got 0 everywhere: no lighting, Link a black silhouette. Kept per
 // comparison sampler (the slot's VkSampler), so the descriptor struct the game sees stays as it is.
 VkSampler vk_sampler_plain(NvnSamplerDesc *d) {
+    uint32_t cfg = sampler_override_cfg();
+    if (cfg) return sampler_cached(d, false, cfg);
     VkSampler s = vk_sampler(d);
     if (!d->compare_mode) return s;
     static struct { VkSampler cmp, plain; } tab[256];
@@ -2187,6 +2223,29 @@ static VkSampler make_sampler(const NvnSamplerDesc *d, bool compare) {
     if (d->compare_mode && compare) {
         si.compareEnable = VK_TRUE;
         si.compareOp = getenv("LARECOMP_NO_SHADOW") ? VK_COMPARE_OP_ALWAYS : compare_op(d->compare_func);
+    }
+    if (!g_force_nearest && vk_sampler_aniso_override_ok(si.minFilter, si.magFilter, si.mipmapMode, si.maxLod,
+                                                          si.compareEnable, true)) {
+        int ea = g_vk.aniso ? settings_eff_aniso() : 0;
+        bool el = settings_eff_lod_bias_ultra();
+        if (ea > 1 && g_vk.props.limits.maxSamplerAnisotropy > 1.0f) {
+            si.anisotropyEnable = VK_TRUE;
+            si.maxAnisotropy = fminf(fmaxf(si.maxAnisotropy, (float)ea), g_vk.props.limits.maxSamplerAnisotropy);
+        }
+        if (el) {
+            float max_bias = g_vk.props.limits.maxSamplerLodBias;
+            si.mipLodBias -= 0.5849625f;
+            if (si.mipLodBias < -max_bias) si.mipLodBias = -max_bias;
+            if (si.mipLodBias > max_bias) si.mipLodBias = max_bias;
+        }
+        if (ea > 1 || el) {
+            static int logged_ea = -1, logged_el = -1;
+            if (logged_ea != ea || logged_el != (int)el) {
+                logged_ea = ea; logged_el = (int)el;
+                LOG("[vk] 3D sampler enhance: aniso=%dx (hw max %.1f) lod_bias_ultra=%d\n",
+                    ea, g_vk.props.limits.maxSamplerAnisotropy, (int)el);
+            }
+        }
     }
     VkSamplerCustomBorderColorCreateInfoEXT cb = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT};
     if (border) {

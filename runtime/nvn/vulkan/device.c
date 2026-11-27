@@ -508,6 +508,8 @@ static void create_device(void) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_FEATURES_EXT};
     VkPhysicalDeviceDynamicRenderingLocalReadFeaturesKHR lr_have = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES_KHR};
+    VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT gpl_have = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT};
     VkPhysicalDeviceFeatures2 optional = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
 #define QUERY_OPTIONAL(name, feature) do { if (has_ext(ep, ne, name)) { \
         feature.pNext = optional.pNext; optional.pNext = &feature; } } while (0)
@@ -519,6 +521,7 @@ static void create_device(void) {
     QUERY_OPTIONAL(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME, vids_have);
     QUERY_OPTIONAL(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME, fbl_have);
     QUERY_OPTIONAL(VK_KHR_DYNAMIC_RENDERING_LOCAL_READ_EXTENSION_NAME, lr_have);
+    QUERY_OPTIONAL(VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME, gpl_have);
 #undef QUERY_OPTIONAL
     vkGetPhysicalDeviceFeatures2(g_vk.phys, &optional);
 #endif
@@ -533,9 +536,15 @@ static void create_device(void) {
     // (VkPhysicalDeviceDriverProperties: core from 1.2, before that its own extension, only queried)
     bool driver_props = g_vk.api >= VK_API_VERSION_1_2 || has_ext(ep, ne, VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME);
     g_driver_props = driver_props;
-    VkPhysicalDeviceDriverProperties driver = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
-    VkPhysicalDeviceProperties2 properties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-                                              .pNext = driver_props ? &driver : NULL};
+    bool have_pl_ext = has_ext(ep, ne, VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
+    bool have_gpl_ext = has_ext(ep, ne, VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME);
+    VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT gpl_props = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_PROPERTIES_EXT};
+    VkPhysicalDeviceDriverProperties driver = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES,
+                                              .pNext = have_gpl_ext ? (void *)&gpl_props : NULL};
+    VkPhysicalDeviceProperties2 properties = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = driver_props ? (void *)&driver : (have_gpl_ext ? (void *)&gpl_props : NULL)};
     vkGetPhysicalDeviceProperties2(g_vk.phys, &properties);
     if (!driver_props) snprintf(driver.driverName, sizeof driver.driverName, "unknown");
     const char *no_dr_env = getenv("LARECOMP_NO_DYNAMIC_RENDERING");
@@ -861,6 +870,7 @@ static void create_device(void) {
     b->dualSrcBlend = h->dualSrcBlend;
     b->fillModeNonSolid = h->fillModeNonSolid;
     b->samplerAnisotropy = h->samplerAnisotropy;
+    g_vk.aniso = h->samplerAnisotropy != VK_FALSE;
     b->textureCompressionBC = h->textureCompressionBC;
 #ifdef __ANDROID__
     b->textureCompressionASTC_LDR = h->textureCompressionASTC_LDR;  // (Adreno: the game's ASTC textures as they are)
@@ -951,6 +961,23 @@ static void create_device(void) {
         vids.pNext = f.pNext;
         f.pNext = &vids;
     }
+    bool gpl_supported = have_pl_ext && have_gpl_ext && gpl_have.graphicsPipelineLibrary &&
+                         gpl_props.graphicsPipelineLibraryFastLinking &&
+                         g_vk.dyn_render && g_vk.eds && g_vk.eds2 && g_vk.dyn_vi &&
+                         (n_ext + 2 <= sizeof ext / sizeof ext[0]);
+    g_vk.gpl = vk_gpl_want(gpl_supported, (uint32_t)driver.driverID, driver_props, getenv("LARECOMP_VK_GPL"));
+    VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT gpl_feat = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT,
+        .graphicsPipelineLibrary = VK_TRUE};
+    if (g_vk.gpl) {
+        ext[n_ext++] = VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME;
+        ext[n_ext++] = VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME;
+        gpl_feat.pNext = f.pNext;
+        f.pNext = &gpl_feat;
+    }
+    LOG("[vk-cap] graphics pipeline library: %s (fast_link=%d, indep_interp=%d)\n",
+        g_vk.gpl ? "on" : "off", (int)gpl_props.graphicsPipelineLibraryFastLinking,
+        (int)gpl_props.graphicsPipelineLibraryIndependentInterpolationDecoration);
     bool has_bc = have.features.textureCompressionBC != VK_FALSE;
     bool has_astc_ldr = have.features.textureCompressionASTC_LDR != VK_FALSE;
     bool is_turnip = vk_driver_is_turnip();
@@ -1354,6 +1381,15 @@ double vk_display_hz(void) {
     return m ? m->refresh_rate : 0;
 }
 
+static _Atomic uint32_t s_resume_fr_gen;
+
+void vk_android_on_resume(void) {
+    atomic_fetch_add_explicit(&s_resume_fr_gen, 1, memory_order_release);
+    plat_cpu_reapply_affinity();
+    plat_adpf_on_resume();
+    LOG("[android] resume: reset 120Hz/pacer/affinity/ADPF\n");
+}
+
 // ... and while it's set the window says so (40 or 45 fps content): a system that can switch to a rate where it's even
 // may (a 120 Hz screen that offers 90 for 45); otherwise the system's own choice again. Asked again for a new window
 // (from the background).
@@ -1361,6 +1397,15 @@ static void android_frame_rate(struct ANativeWindow *aw) {
     static struct ANativeWindow *asked_aw;
     static float asked = -1;
     static float asked_pref_hz = -1;
+    static uint32_t last_fr_gen;
+    uint32_t fr_gen = atomic_load_explicit(&s_resume_fr_gen, memory_order_acquire);
+    if (fr_gen != last_fr_gen) {
+        last_fr_gen = fr_gen;
+        asked_aw = NULL;
+        asked = -1;
+        asked_pref_hz = -1;
+        mali_pacer_reset(&g_mali_pacer);
+    }
     bool wants_120 = framepace_wants_120hz();
     float want = wants_120 ? 120.0f
                : (fps_mode_now() == 4 && vk_between_target() != 30) ? (float)vk_between_target() : 0.0f;
@@ -1415,6 +1460,8 @@ static void android_frame_rate(struct ANativeWindow *aw) {
 static bool android_surface_ready(void) {  // false: no window to draw into now
     struct ANativeWindow *aw = android_window();
     if (!aw) { surface_lost = true; return false; }
+    bool was_lost = surface_lost;
+    if (was_lost) vk_android_on_resume();
     android_frame_rate(aw);
     if (aw == surface_aw && !surface_lost) return true;
     WdMark wd_mark = vk_wd_enter(WD_R_SWAPCHAIN, 1);  // (freeze watchdog)
@@ -1478,10 +1525,11 @@ bool vk_frame_begin(const float clear[4]) {
 #ifdef __ANDROID__
     if (!android_surface_ready()) return false;
     {
-        static __thread int last_render_aff_mode;
+        static __thread uint64_t last_render_aff_tag = UINT64_MAX;
         int m = plat_cpu_affinity_mode();
-        if (m != last_render_aff_mode) {
-            last_render_aff_mode = m;
+        uint64_t tag = ((uint64_t)plat_cpu_affinity_epoch() << 32) | (uint32_t)m;
+        if (tag != last_render_aff_tag) {
+            last_render_aff_tag = tag;
             plat_thread_pin_role(0, m ? PLAT_CPU_ROLE_RENDER : PLAT_CPU_ROLE_ALL);
             if (!vk_async_on() || vk_async_is_render_thread())
                 LOG("[android] render thread auto-affinity mode=%d\n", m);
@@ -1952,8 +2000,11 @@ void backend_present(NvnTexture *t) {
         widescreen_set_factor((float)shape);
         renderer_set_scale((float)sx, (float)sy);
         renderer_set_scene_scale((float)os.scene_sx, (float)os.scene_sy);
+        renderer_set_shadow_scale((float)settings_eff_shadow_scale());
         VkCommandBuffer cb = vk_cmd();
-        float pv[8] = {renderer_origin_lower_left() ? 1.0f : 0.0f, 0, 0, 0, crop[0], crop[1], crop[2], crop[3]};
+        float pv[8] = {renderer_origin_lower_left() ? 1.0f : 0.0f, (float)(renderer_present_count() & 63),
+                       settings_eff_oled_dither() ? (1.0f / 255.0f) : 0.0f,
+                       settings_eff_oled_black() ? 1.0f : 0.0f, crop[0], crop[1], crop[2], crop[3]};
         memcpy(g_shot_crop, crop, sizeof crop);
 #ifdef __ANDROID__
         fg_place.ok = true, fg_place.vx = (float)vx, fg_place.vy = (float)vy, fg_place.vw = (float)vw, fg_place.vh = (float)vh;

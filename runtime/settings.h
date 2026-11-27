@@ -36,6 +36,12 @@ typedef struct {
     int antialias;       // AA_*: anti-aliasing of the game image before it is scaled to the window
     bool shadows;        // the game's shadows drawn (off: their draws skipped - a flatter picture, a little less GPU
                          // work; vulkan/exec.c)
+    bool no_game_fxaa;   // bypass BOTW's built-in screen-space FXAA pass to keep native pixels or port AA crisp
+    int aniso;           // anisotropic filtering override on 3D linear mipmapped samplers: 0 = game default, 4 / 8 / 16
+    bool oled_dither;    // apply triangular IGN dithering before swapchain output to prevent AMOLED gradient banding
+    bool oled_black;     // smooth non-clipping black-point shadow toe for AMOLED contrast mastering
+    int shadow_scale;    // sun shadow cascade resolution multiplier: 1 = game default, 2 = 2x
+    bool lod_bias_ultra; // sharper mipmap LOD bias (-0.585) on 3D linear mipmapped samplers
     float volume;        // master volume, 1 = 100%
     bool reverb;         // room reverb effect
     bool movie_audio;
@@ -131,3 +137,11 @@ const char *settings_language_name(void);
 // (tests). Elsewhere "en".
 const char *settings_menu_language(void);
 bool settings_host_portuguese(void);  // (settings_menu_language is "pt")
+
+// Effective values (honor optional LARECOMP_* env overrides while keeping live menu toggles responsive).
+bool settings_eff_no_game_fxaa(void);
+int settings_eff_aniso(void);
+bool settings_eff_oled_dither(void);
+bool settings_eff_oled_black(void);
+int settings_eff_shadow_scale(void);
+bool settings_eff_lod_bias_ultra(void);

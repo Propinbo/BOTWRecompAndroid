@@ -67,6 +67,30 @@ source += '''
     queue.queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
     if (vk_backend_queue_supported(&queue, VK_SUCCESS, VK_FALSE)) return 20;
     if (vk_backend_queue_supported(&queue, VK_ERROR_SURFACE_LOST_KHR, VK_TRUE)) return 21;
+
+    // Adreno 830 regression guard: keep nouboopt OFF on a830, ON only on a840..a899
+    if (vk_adreno_needs_nouboopt("Adreno (TM) 830")) return 22;
+    if (!vk_adreno_needs_nouboopt("Adreno (TM) 840")) return 23;
+    if (vk_adreno_needs_nouboopt("Mali-G925")) return 24;
+
+    // Aniso/LOD override gate: only 3D non-compare mipmapped linear samplers (maxLod > 1)
+    if (!vk_sampler_aniso_override_ok(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 8.0f, VK_FALSE, false)) return 25;
+    if (!vk_sampler_aniso_override_ok(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, 8.0f, VK_FALSE, true)) return 26;
+    if (vk_sampler_aniso_override_ok(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 1.0f, VK_FALSE, false)) return 27;
+    if (vk_sampler_aniso_override_ok(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, 8.0f, VK_TRUE, true)) return 28;
+
+    // BOTW shadow cascade & gather target detection
+    if (!vk_is_botw_shadow_target(4, 896, 896, 3, 1, 0x32)) return 29;
+    if (!vk_is_botw_shadow_target(4, 448, 448, 3, 1, 0x6)) return 30;
+    if (vk_is_botw_shadow_target(4, 1920, 1080, 1, 1, 0x3d)) return 31;
+
+    // Turnip-only GPL gate (strictly off on Mali/unknown, respects env override when supported)
+    if (!vk_gpl_want(true, 18u, true, 0)) return 32;
+    if (vk_gpl_want(true, 0u, true, 0)) return 33;
+    if (vk_gpl_want(true, 18u, false, 0)) return 34;
+    if (vk_gpl_want(false, 18u, true, "1")) return 35;
+    if (vk_gpl_want(true, 18u, true, "0")) return 36;
+    if (!vk_gpl_want(true, 99u, true, "1")) return 37;
     return 0;
 }
 '''
@@ -81,7 +105,7 @@ const fs = require('fs');
 WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(({instance}) => {
   const code = instance.exports.check();
   if (code) throw new Error(`Vulkan preflight check ${code} failed`);
-  console.log('16 Vulkan compatibility checks passed (production C)');
+  console.log('Vulkan compatibility checks passed (production C)');
 }).catch(e => {console.error(e); process.exit(1);});
 ''')
 subprocess.run(['node', str(out / 'run.cjs'), str(out / 'test.wasm')], check=True)

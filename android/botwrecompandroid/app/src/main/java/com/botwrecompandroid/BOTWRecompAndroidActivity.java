@@ -57,6 +57,7 @@ public class BOTWRecompAndroidActivity extends SDLActivity {
     private static final String TAG = "BOTWRecompAndroid";
     private static String bootState;
     private static native void nativeMemoryPressure(int level, long available, long total, long threshold, boolean low, int pss);
+    private static native void nativeOnResume();
 
     private final Handler stats = new Handler(Looper.getMainLooper());
     private final Runnable report = new Runnable() {
@@ -162,6 +163,10 @@ public class BOTWRecompAndroidActivity extends SDLActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        try {
+            nativeOnResume();
+        } catch (UnsatisfiedLinkError ignored) {
+        }
         stats.post(report);
         if (watchMap != null) watchMap.resume();
     }

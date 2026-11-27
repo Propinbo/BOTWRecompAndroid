@@ -321,10 +321,33 @@ static const char *builtin_src(const char *name, int *stage) {
     if (!strcmp(name, "present.frag")) {
         *stage = STAGE_FRAGMENT;
         return "#version 450\n"
+               "layout(push_constant) uniform P { vec4 a; vec4 crop; } pc;\n"
                "layout(set = 0, binding = 0) uniform sampler2D t;\n"
                "layout(location = 0) in vec2 uv;\n"
                "layout(location = 0) out vec4 o;\n"
-               "void main() { o = vec4(texture(t, uv).rgb, 1.0); }\n";
+               "float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }\n"
+               "void main() {\n"
+               "  vec3 c = texture(t, uv).rgb;\n"
+               "  if (pc.a.w > 0.0) {\n"
+               "    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));\n"
+               "    float s = smoothstep(0.0, 0.18, l);\n"
+               "    c *= mix(1.0, mix(0.84, 1.0, s), pc.a.w);\n"
+               "  }\n"
+               "  if (pc.a.z > 0.0) {\n"
+               "    vec2 p = gl_FragCoord.xy + vec2(pc.a.y * 17.0, pc.a.y * 31.0);\n"
+               "    float n1 = ign(p), n2 = ign(p + vec2(0.7548777, 0.5698403));\n"
+               "    c = clamp(c + (n1 - n2) * pc.a.z, 0.0, 1.0);\n"
+               "  }\n"
+               "  o = vec4(c, 1.0);\n"
+               "}\n";
+    }
+    if (!strcmp(name, "scene_copy.frag")) {
+        *stage = STAGE_FRAGMENT;
+        return "#version 450\n"
+               "layout(set = 0, binding = 0) uniform sampler2D t0;\n"
+               "layout(push_constant) uniform P { vec4 a; vec4 b; } pc;\n"
+               "layout(location = 0) out vec4 o;\n"
+               "void main() { o = vec4(textureLod(t0, gl_FragCoord.xy * pc.a.xy, 0.0).rgb, 0.0); }\n";
     }
     if (!strcmp(name, "present_a.frag")) {  // (debug pass dumps: alpha kept)
         *stage = STAGE_FRAGMENT;

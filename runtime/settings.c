@@ -10,6 +10,7 @@
 #ifdef __ANDROID__
 #include <SDL3/SDL.h>
 #include <sys/system_properties.h>
+#include "platform.h"
 #endif
 
 #define SETTINGS_FILE settings_file()
@@ -35,7 +36,14 @@ Settings g_settings = {
     .reverb = true,
     .movie_audio = true,
     .motion = true,
+    .antialias = AA_OFF,
     .shadows = true,
+    .no_game_fxaa = false,
+    .aniso = 0,
+    .oled_dither = false,
+    .oled_black = false,
+    .shadow_scale = 1,
+    .lod_bias_ultra = false,
 #ifdef __ANDROID__
     .show_fps = true,  // (the performance overlay, ui/perf_overlay.mm: on until turned off in the menu)
     .touch_controls = true,
@@ -210,6 +218,24 @@ const char *settings_language_name(void) {
 }
 
 static Settings g_defaults;  // (the defaults above, kept before the file overrides them: settings_reset_defaults)
+#ifdef __ANDROID__
+static void settings_apply_android_hw_defaults(void) {
+    if (!plat_cpu_is_dual_6plus2()) return;
+    g_settings.fps_mode = 4;
+    g_settings.res_mode = RES_MATCH;
+    g_settings.out_lines = 0;
+    g_settings.native_code = true;
+    g_settings.pipe_prewarm = true;
+    g_settings.no_game_fxaa = true;
+    g_settings.antialias = AA_SMAA;
+    g_settings.aniso = 16;
+    g_settings.oled_dither = true;
+    g_settings.oled_black = true;
+    g_settings.shadow_scale = 2;
+    g_settings.lod_bias_ultra = true;
+}
+#endif
+
 static bool g_have_defaults;
 
 void settings_reset_defaults(void) {
@@ -222,6 +248,12 @@ void settings_reset_defaults(void) {
     g_settings.out_lines = d->out_lines;
     g_settings.antialias = d->antialias;
     g_settings.shadows = d->shadows;
+    g_settings.no_game_fxaa = d->no_game_fxaa;
+    g_settings.aniso = d->aniso;
+    g_settings.oled_dither = d->oled_dither;
+    g_settings.oled_black = d->oled_black;
+    g_settings.shadow_scale = d->shadow_scale;
+    g_settings.lod_bias_ultra = d->lod_bias_ultra;
     g_settings.volume = d->volume;
     g_settings.reverb = d->reverb;
     g_settings.movie_audio = d->movie_audio;
@@ -249,6 +281,7 @@ void settings_reset_defaults(void) {
     g_settings.pipe_prewarm = d->pipe_prewarm;
     g_settings.core_turns = d->core_turns;
     g_settings.files_in_place = d->files_in_place;
+    settings_apply_android_hw_defaults();
 #endif
 }
 
@@ -257,6 +290,9 @@ void settings_load(void) {
     if (!g_have_defaults) g_defaults = g_settings, g_have_defaults = true;
     if (loaded) return;
     loaded = true;
+#ifdef __ANDROID__
+    settings_apply_android_hw_defaults();
+#endif
     FILE *f = fopen(SETTINGS_FILE, "r");
     if (!f) return;
 #ifdef __ANDROID__
@@ -378,6 +414,12 @@ void settings_load(void) {
         }
         else if (!strcmp(key, "antialias")) g_settings.antialias = !strcmp(val, "off") ? AA_OFF : !strcmp(val, "fxaa") ? AA_FXAA : AA_SMAA;
         else if (!strcmp(key, "shadows")) g_settings.shadows = atoi(val) != 0;
+        else if (!strcmp(key, "no_game_fxaa")) g_settings.no_game_fxaa = atoi(val) != 0;
+        else if (!strcmp(key, "aniso")) { int a = atoi(val); g_settings.aniso = (a == 4 || a == 8 || a == 16) ? a : 0; }
+        else if (!strcmp(key, "oled_dither")) g_settings.oled_dither = atoi(val) != 0;
+        else if (!strcmp(key, "oled_black")) g_settings.oled_black = atoi(val) != 0;
+        else if (!strcmp(key, "shadow_scale")) g_settings.shadow_scale = atoi(val) == 2 ? 2 : 1;
+        else if (!strcmp(key, "lod_bias_ultra")) g_settings.lod_bias_ultra = atoi(val) != 0;
         else if (!strcmp(key, "language")) {  // ("auto" or one of the game's codes; anything else: auto)
             g_settings.language = LANG_AUTO;
             const char *v = !strcmp(val, "zh-CN") ? "zh-Hans" : !strcmp(val, "zh-TW") ? "zh-Hant" : val;  // (saved before #15)
@@ -462,6 +504,9 @@ void settings_save(void) {
     else fprintf(f, "output = %s\n", g_settings.out_lines == OUT_AUTO ? "auto" : "screen");
     fprintf(f, "antialias = %s\n", g_settings.antialias == AA_SMAA ? "smaa" : g_settings.antialias == AA_FXAA ? "fxaa" : "off");
     fprintf(f, "shadows = %d\n", g_settings.shadows ? 1 : 0);
+    fprintf(f, "no_game_fxaa = %d\naniso = %d\noled_dither = %d\noled_black = %d\nshadow_scale = %d\nlod_bias_ultra = %d\n",
+            g_settings.no_game_fxaa ? 1 : 0, g_settings.aniso, g_settings.oled_dither ? 1 : 0,
+            g_settings.oled_black ? 1 : 0, g_settings.shadow_scale == 2 ? 2 : 1, g_settings.lod_bias_ultra ? 1 : 0);
     if (g_settings.res_mode == RES_DYNAMIC) fprintf(f, "resolution = dynamic\n");
     else if (g_settings.res_mode == RES_Q85) fprintf(f, "resolution = 85%%\n");
     else if (g_settings.res_mode == RES_Q75) fprintf(f, "resolution = 75%%\n");
@@ -485,3 +530,55 @@ void settings_save(void) {
 // Settings > "Switch-style core turns" (kernel.c core0_init reads it when the game's threads first take turns)
 bool settings_core_turns(void) { return g_settings.core_turns; }
 #endif
+
+static int eff_env_flag(const char *name) {
+    const char *v = getenv(name);
+    return v && *v ? (atoi(v) != 0 ? 1 : 0) : -1;
+}
+
+bool settings_eff_no_game_fxaa(void) {
+    static int e = -2;
+    if (e == -2) e = eff_env_flag("LARECOMP_NO_GAME_FXAA");
+    return e >= 0 ? e != 0 : g_settings.no_game_fxaa;
+}
+
+int settings_eff_aniso(void) {
+    static int e = -2;
+    if (e == -2) {
+        const char *v = getenv("LARECOMP_ANISO");
+        if (v && *v) {
+            int n = atoi(v);
+            e = (n == 4 || n == 8 || n == 16) ? n : 0;
+        } else {
+            e = -1;
+        }
+    }
+    return e >= 0 ? e : g_settings.aniso;
+}
+
+bool settings_eff_oled_dither(void) {
+    static int e = -2;
+    if (e == -2) e = eff_env_flag("LARECOMP_OLED_DITHER");
+    return e >= 0 ? e != 0 : g_settings.oled_dither;
+}
+
+bool settings_eff_oled_black(void) {
+    static int e = -2;
+    if (e == -2) e = eff_env_flag("LARECOMP_OLED_BLACK");
+    return e >= 0 ? e != 0 : g_settings.oled_black;
+}
+
+int settings_eff_shadow_scale(void) {
+    static int e = -2;
+    if (e == -2) {
+        const char *v = getenv("LARECOMP_SHADOW_SCALE");
+        e = v && *v ? (atoi(v) == 2 ? 2 : 1) : -1;
+    }
+    return e >= 0 ? e : (g_settings.shadow_scale == 2 ? 2 : 1);
+}
+
+bool settings_eff_lod_bias_ultra(void) {
+    static int e = -2;
+    if (e == -2) e = eff_env_flag("LARECOMP_LOD_BIAS_ULTRA");
+    return e >= 0 ? e != 0 : g_settings.lod_bias_ultra;
+}

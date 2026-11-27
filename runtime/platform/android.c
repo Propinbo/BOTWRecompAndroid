@@ -811,6 +811,11 @@ JNIEXPORT void JNICALL Java_com_botwrecompandroid_BOTWRecompAndroidActivity_nati
         (unsigned long long)threshold >> 20, low != 0, pss / 1024);
 }
 
+JNIEXPORT void JNICALL Java_com_botwrecompandroid_BOTWRecompAndroidActivity_nativeOnResume(JNIEnv *env, jclass cls) {
+    (void)env; (void)cls;
+    vk_android_on_resume();
+}
+
 JNIEXPORT void JNICALL Java_com_botwrecompandroid_BOTWRecompAndroidActivity_nativeDeviceStats(JNIEnv *env, jclass cls, jfloat batt_temp_c,
                                                                             jfloat batt_pct, jfloat watts, jint thermal,
                                                                             jfloat headroom, jint plugged) {
@@ -1043,6 +1048,17 @@ bool plat_adpf_guests_enabled(void) {
     return cached != 0;
 }
 
+static _Atomic uint32_t g_aff_resume_gen;
+
+uint32_t plat_cpu_affinity_epoch(void) {
+    return atomic_load_explicit(&g_aff_resume_gen, memory_order_acquire);
+}
+
+void plat_cpu_reapply_affinity(void) {
+    uint32_t gen = atomic_fetch_add_explicit(&g_aff_resume_gen, 1, memory_order_acq_rel) + 1;
+    LOG("[android] resume: reapplying CPU affinity (epoch=%u)\n", gen);
+}
+
 bool plat_thread_pin_role(int32_t tid, int role) {
     int mode = plat_cpu_affinity_mode();
     if (!g_cpu_topo.valid) return false;
@@ -1189,6 +1205,11 @@ static int32_t s_pinned_present_tid;
 static int s_session_threads;
 static float s_target_ms, s_work_ms, s_game_ms, s_render_ms;
 static int s_game_cpu = -1, s_render_cpu = -1;
+static _Atomic uint32_t g_adpf_resume_gen;
+
+void plat_adpf_on_resume(void) {
+    atomic_fetch_add_explicit(&g_adpf_resume_gen, 1, memory_order_release);
+}
 
 static pthread_mutex_t adpf_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -1254,12 +1275,26 @@ static void adpf_work_locked(int slot, uint64_t work_ns, uint64_t target_ns, uin
     static int state[2];  // per slot: 0 untried, 1 on, -1 off
     static APerformanceHintSession *session[2];
     static uint64_t target[2];
+    static uint32_t s_applied_resume_gen;
     // (API 35+: a work duration with the GPU's time - the governor then raises the GPU's clock too)
     static AWorkDuration *(*wd_create)(void);
     static void (*wd_start)(AWorkDuration *, int64_t), (*wd_total)(AWorkDuration *, int64_t), (*wd_cpu)(AWorkDuration *, int64_t),
         (*wd_gpu)(AWorkDuration *, int64_t);
     static int (*report2)(APerformanceHintSession *, AWorkDuration *);
     static AWorkDuration *wd;
+    uint32_t rgen = atomic_load_explicit(&g_adpf_resume_gen, memory_order_acquire);
+    if (rgen != s_applied_resume_gen && slot == 0) {
+        s_applied_resume_gen = rgen;
+        for (int i = 0; i < 2; i++) {
+            if (session[i] && close_session) close_session(session[i]);
+            session[i] = NULL;
+            if (state[i] > 0) state[i] = 0;
+            target[i] = 0;
+        }
+        s_pinned_present_tid = 0;
+        s_session_threads = 0;
+        s_recreated++;
+    }
     if (loaded < 0 || state[slot] < 0) return;
     if (!loaded) {
         if (getenv("LARECOMP_NO_ADPF")) { loaded = -2; return; }

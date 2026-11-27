@@ -1489,10 +1489,21 @@ void kernel_stop_threads(void (*idle)(void)) {
 static uint64_t g_aff_last_ns;
 static uint32_t g_aff_last_hash;
 static int32_t g_aff_self_pinned_tid;
+static uint32_t g_aff_last_epoch;
 
 void kernel_affinity_tick(void) {
     int mode = plat_cpu_affinity_mode();
     if (mode == 0) return;
+    uint32_t epoch = plat_cpu_affinity_epoch();
+    if (epoch != g_aff_last_epoch) {
+        g_aff_last_epoch = epoch;
+        g_aff_self_pinned_tid = 0;
+        g_aff_last_ns = 0;
+        g_aff_last_hash = 0;
+        pthread_mutex_lock(&g_klock);
+        for (KThread *t = g_threads; t; t = t->anext) t->aff_promoted = false;
+        pthread_mutex_unlock(&g_klock);
+    }
     uint64_t now = plat_now_ns();
     if (g_aff_last_ns && now - g_aff_last_ns < 1000000000ull) return;
     uint64_t dt_ns = g_aff_last_ns ? (now - g_aff_last_ns) : 0;

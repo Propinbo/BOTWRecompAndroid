@@ -120,6 +120,10 @@ enum {
 #endif
 int plat_cpu_affinity_mode(void);  // 0=off, 1=cluster (4-7 / 6-7), 2=split, 3=render+present & workers
 void plat_cpu_set_auto_affinity(int mode);  // sets default affinity mode when LARECOMP_CPU_AFFINITY env var is unset
+uint32_t plat_cpu_affinity_epoch(void);
+void plat_cpu_reapply_affinity(void);
+void plat_adpf_on_resume(void);
+void vk_android_on_resume(void);
 bool plat_cpu_is_dual_6plus2(void);
 bool plat_adpf_guests_enabled(void);  // true when hot guest tids should be added to ADPF session
 bool plat_worker_thread_pin(void);  // binds calling worker to worker_mask when mode != 0; returns true if pinned
