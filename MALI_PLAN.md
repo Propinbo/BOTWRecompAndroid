@@ -1,6 +1,6 @@
-# BOTWRecompAndroid Mali Contribution Plan
+# BOTWRecompAndroid Engineering & Upstream Contribution Plan
 
-Authoritative engineering roadmap for owner's hardware—Galaxy Tab S11 (SM-X730, Mali-G925) and OnePlus 13 (CPH2653, Adreno 830 + Turnip)—spanning graphics, performance, memory, display/UI, input, CPU/thermals, automated testing, and upstream contributions to `https://github.com/mamcjr/BOTWRecompAndroid`.
+Authoritative engineering roadmap for owner's hardware: **Rooted AYN Odin 3** (`SM8750`, Snapdragon 8 Elite Oryon `6+2` + Adreno 830 + Mesa Turnip `Gen8 V39 Patched`, **Primary Target**) and **Galaxy Tab S11** (`SM-X730`, Dimensity 9400+ / Mali-G925 `r49p1`, **Protected Non-Regression Tier**), plus OnePlus 13 (`CPH2653`) reference, targeting upstream contributions to `https://github.com/mamcjr/BOTWRecompAndroid`.
 
 ## 1. Governance & Workflow Contract
 
@@ -47,15 +47,16 @@ Full 83-row historical release-check polling log (2026-10-31 to 2026-11-16): `.m
 1. **MediaTek 13 MHz Native-Mode Clock Fix (`SM-X730` PASS):** `LARECOMP_NATIVE=1` on Dimensity 9400+ scales 13 MHz timer reads to 19.2 MHz cleanly (`30.0 fps`, `0` errors).
 2. **Mali Program Eviction (`#450`) & Reboot Free (`SM-X730` PASS):** `46` reboots freed up to `386` programs / `1,055` pipelines (`0` kept); `evict5m` freed `311` programs / `779` pipelines at flat `VmRSS ~3.50 GiB`.
 
-### C. Owner Master To-Do Roadmap (Galaxy Tab S11 + OnePlus 13 Turnip-Only)
-Covers owner-selected Spheres **1, 2, 3, 4, 5, 7, 8** ranked by comfortable gameplay impact (Sphere 6 audio/Amiibo intentionally excluded per owner).
+### C. Dual-Target Engineering Roadmap (Odin 3 Primary + SM-X730 Non-Regression)
 
-#### Active Ranked Queue
-1. **CPU/Thermals Optimization (Sphere 7 — #1 Active Priority on `SM-X730`):** **Phase 0–2 COMPLETE** on `feat/mali-cpu-thermals` (`0a89336`, `.mali/cpu-thermals-20261122/PHASE2_AB_REPORT.md`): `300 s` open-field `40.0 FPS` soak `PASS` (holds `min 40.0` through `68–301 s`, `-31.1 pts` late CPU load vs stock collapse, `+300 MHz` CPU cap, unthrottled GPU); ready for owner deploy approval and upstream PR slicing.
-2. **Background/HOME Survival & Memory Trimming (`12b–12d / 12f`, Sphere 3 — QUEUED, unfrozen per owner `2026-11-22`; do not start yet):** `12b` LMKD/FastClear `5/30/120/600s` HOME survival trials, `12c` safe owner-thread transient/staging trim on hide (zero per-frame `vkDeviceWaitIdle`, 20-cycle hide/resume stability), `12d` `compute_cache > 256` overflow fix (`.mali/memory-20261108/compute-cache-overflow.patch`), `12f` `<= 5%` `A/B` regression (`SM-X730` + `CPH2653` Turnip), and Mali 30-min freeze reports (`#401`, `#496`).
-3. **Graphics Accuracy & Visual Fixes (Sphere 1):** Distant low grass 50–130 m async mask write-back (`512² RGBA8` / `256² RG8`, `.mali/grass/AB.md`), real `SAMPLES_PASSED` occlusion queries (Kakariko fog / shrine rays `#486`), narrow 8/16-bit integer RT masks on Mali, `#244` Vulkan UB cleanup. *(Mali Grass Row Striping: **RESOLVED** per owner `2026-11-22` — already fixed.)*
-4. **Input/UX & Fullscreen/Tile-Local Follow-Through (Spheres 5, 4 & 2):** Launcher UX / RU i18n; **8BitDo Pro 2 / `hid-nintendo` Gyro FIXED & OPEN as PR `#545`** (`6f30e81`); **Fullscreen 16:10 (`#504`) & Mali Perf Pack Phase 1 (`#506`–`#508`) MERGED**; **Phase 2 Tile-Local Decals (`#518`) CLOSED in favor of `#534`** (`c1a29d9`, classic `VkRenderPass` default on Mali `r49+`).
-5. **Benchmarking & Automated QA (Sphere 8):** **`#480` MERGED**; next are `11c` metamorphic invariant checker (`0/1/125` `git bisect`) and `11d` native camera hooks (`fixes[]` in `runtime/native.c`, keeping `tools/patches.py` / `GAMELIB_ID` untouched) strictly for `SM-X730` & `CPH2653` (Turnip).
+- **Primary Daily-Play Profile (Rooted AYN Odin 3, `1080p @ 120.00 Hz` AMOLED):** **"Native `1080p` (`1920x1080`, `100%`, `1:1`) `40.00 FPS` Ultra + Low-Power (`< 6–7.5 W`) + `tu_autotune` GMEM R&D"** (`16px` sub-native `65/68/70/85%` `SGSR1` + `100%` native bypass, no `>100%` SSAA/bicubic, `nouboopt` stays OFF on `a8xx`, no custom Turnip driver builds).
+- **Protected Secondary Tier (`SM-X730` Mali-G925 `r49p1` + `CPH2653` Turnip):** Every shared change must preserve `100%` validated Mali-G925 behavior via vendor/capability gates; `PR-A` & `PR-B` split cleanly out of `feat/mali-40fps-opt` (`109f6d7`) atop `v0.5.0-beta` (`208746b`).
+
+#### Active Staged Queue (Owner Approved `2026-11-27`)
+1. **[COMPLETE] Stage A — `PR-A`, `PR-B` & Track `S1` (`Oryon 6+2`, Dynamic `ADPF`, `WC` Ring & `Native`):** `PR-A` (`0f75d15`) + `PR-B` (`3b45216`) + `S1` (`_Alignas(64)`, `-O3`, `WC` > `Cached`, `Native` wins `-1.9..-2.9 W`, `nouboopt` off guard on `a830`).
+2. **[COMPLETE] Stage B — Track `S3` (Pass Consolidation, Feedback-Loop & `LRZ`):** `PR #582` + `PR #586` generalization cut passes `183.4->161.96` (`perf 142.62`) -> `8.31/6.19/8.82 W`, `61.7 °C`; `S3.3` feedback barrier kept `=0` default.
+3. **[COMPLETE] Stage C — Track `S2` (`1080p Native Ultra` Visuals):** Locked `game_dynres=0`, `no_game_fxaa=1`+pre-HUD `SMAA`, `16x AF`, `IGN` dither, `OLED Black`, `2x` shadows & `1.5x` LOD Hard-Gate PASS (`40.00 FPS`, `0 >26ms`, Kakariko `p95 20.08–20.35<=20.5ms`, `9.16–9.40 W`, `<=62.1 °C`).
+4. **[COMPLETE] Stage D — Tracks `S4` + `S5` + Play-Ready Deploy (`6d3df97`):** Turnip GPL (`669–779` fast-links, `0` fallbacks, boot wait `1324–1374->20.5–30.5ms`, `945` prewarm pipes), `S5` Suspend/Resume triad (`0` faults), `14/14` Bionic + Python tests, signed APK installed (`adb install -r`) + live INI configured + `26/26` saves intact. Next: upstream PR audit/submission & parked `SM-X730` items (`12b–12d`, fog `SAMPLES_PASSED`, narrow integer RT masks, `11c`).
 
 ## 4. Completed Campaigns & Historical Index
 
