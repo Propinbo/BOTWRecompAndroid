@@ -67,6 +67,7 @@ static uint64_t stat_draws, stat_skipped, stat_passes, stat_dispatches, stat_wai
 static uint64_t stat_dchained;  // (dispatches with no barrier before them: dchain)
 static uint64_t stat_feedback_reads;  // (attachments sampled as they are: only read, resolve_feedback)
 static uint64_t stat_inplace_breaks;  // (passes ended so a draw reads a target the pass wrote: resolve_feedback)
+static uint64_t stat_inplace_barriers;
 static uint64_t stat_unaligned_render_area;
 static uint64_t stat_upload_bytes;
 static uint64_t stat_cb_bytes[2], stat_cb_n[2], stat_cb_copied, stat_cbwin;  // (LARECOMP_LOG_CBUF_BYTES: game constant buffers bound,
@@ -1998,6 +1999,12 @@ const char *renderer_stats(void) {
             n = strlen(stats_text);
             snprintf(stats_text + n, sizeof stats_text - n, " | tex unwritten %llu", (unsigned long long)prof_tex_watch_skips);
             prof_tex_watch_skips = 0;
+            if (stat_inplace_barriers) {
+                n = strlen(stats_text);
+                snprintf(stats_text + n, sizeof stats_text - n, " | fb_barriers %llu",
+                         (unsigned long long)stat_inplace_barriers);
+                stat_inplace_barriers = 0;
+            }
             if (stat_unaligned_render_area) {
                 n = strlen(stats_text);
                 snprintf(stats_text + n, sizeof stats_text - n, " | unaligned_ra %llu",
@@ -4965,6 +4972,7 @@ static void build_pipeline(void *arg) {
     }
 #ifdef __ANDROID__
     if (g_vk.exec_stats) pi.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
+    if (g_vk.turnip_fb_loop && k->ncolor > 0) pi.flags |= VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
     {   // LARECOMP_LOG_PIPE=1: each pipeline's shaders before the driver compiles them (a crash in its compiler: the
         // last line names the pair; their sources with LARECOMP_SAVE_MSL, build/glsl/<address>_vs|fs.glsl)
         static int logp = -1;
@@ -5527,7 +5535,33 @@ static void resolve_feedback(Prog *pr, uint32_t draw_written) {
                     int si = -1;
                     for (int k = 0; k < 8; k++) if (snap_tex[k] == t) si = k;
                     if (si < 0 || !snap_ok[si]) {
-                        if (in_pass && !st.rt_dirty && (pass_written & bit)) st.rt_dirty = true, stat_inplace_breaks++, prof_dirty[0]++;
+                        if (in_pass && !st.rt_dirty && (pass_written & bit)) {
+#ifdef __ANDROID__
+                            if (g_vk.turnip_fb_loop) {
+                                VkMemoryBarrier2 mb = {
+                                    .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+                                    .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                    .srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                                    .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                                    .dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                                };
+                                VkDependencyInfo dep = {
+                                    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                                    .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT | VK_DEPENDENCY_FEEDBACK_LOOP_BIT_EXT,
+                                    .memoryBarrierCount = 1,
+                                    .pMemoryBarriers = &mb,
+                                };
+                                vkCmdPipelineBarrier2(vk_cmd(), &dep);
+                                pass_written &= ~bit;
+                                stat_inplace_barriers++;
+                            } else
+#endif
+                            {
+                                st.rt_dirty = true;
+                                stat_inplace_breaks++;
+                                prof_dirty[0]++;
+                            }
+                        }
                         if (si < 0) { static int rr; si = rr++ & 7; snap_tex[si] = t; }
                         snap_ok[si] = true;
                         snap_fb_dirty[si] = false;
