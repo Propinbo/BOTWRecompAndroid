@@ -1326,11 +1326,13 @@ static void adpf_work_locked(int slot, uint64_t work_ns, uint64_t target_ns, uin
     if (!s_split) {
         if (slot == 0 && s_presenting_tid > 0 && s_presenting_tid != s_pinned_present_tid &&
             plat_cpu_affinity_mode() != 0 && g_cpu_topo.valid) {
-            bool ok = plat_thread_pin_role(0, PLAT_CPU_ROLE_PRESENT);
-            if (ok) {
+            uint64_t pmask = plat_cpu_topo_mask_for_role(&g_cpu_topo, plat_cpu_affinity_mode(), PLAT_CPU_ROLE_PRESENT);
+            if (!pmask) {
                 s_pinned_present_tid = s_presenting_tid;
-                LOG("[android] presenting thread (%d) pinned to big cluster 0x%llx (%d cores): ok\n",
-                    s_presenting_tid, (unsigned long long)g_cpu_topo.big_mask, g_cpu_topo.n_big);
+            } else if (plat_thread_pin_role(0, PLAT_CPU_ROLE_PRESENT)) {
+                s_pinned_present_tid = s_presenting_tid;
+                LOG("[android] presenting thread (%d) pinned to cluster 0x%llx (%d cores): ok\n",
+                    s_presenting_tid, (unsigned long long)pmask, plat_cpu_popcnt64(pmask));
             }
         }
         // --- Single session mode (presenting + render + up to 3 hot guest threads in session[0]) ---
