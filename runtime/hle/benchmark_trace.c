@@ -10,7 +10,10 @@
 // Cumulative snapshots and per-frame deltas follow SavageWindRecomp control_prof.c.
 // See third_party/licenses/SavageWindRecomp.txt.
 _Atomic uint64_t g_bench_perf[BP_COUNT];
-#define BUDGET (1000.0 / 30)
+static double g_bench_budget_ms = 1000.0 / 30;
+void bench_trace_set_target_fps(int fps) {
+    g_bench_budget_ms = fps > 0 ? 1000.0 / fps : 1000.0 / 30;
+}
 typedef struct {
     uint64_t asked, actual, c[BP_COUNT];
     uint32_t present_id;
@@ -64,7 +67,7 @@ void bench_trace_frame(const char *phase, bool window, double period, double cpu
     }
     TraceFrame *f = &trace[count++];
     *f = (TraceFrame){.asked = handoff, .phase = phase, .window = window, .ms = {period, cpu, game, render, gpu},
-                      .headroom = cpu >= 0 && gpu >= 0 ? BUDGET - fmax(cpu, gpu) : NAN, .display = NAN, .cause = -1};
+                      .headroom = cpu >= 0 && gpu >= 0 ? g_bench_budget_ms - fmax(cpu, gpu) : NAN, .display = NAN, .cause = -1};
     for (int i = 0; i < 256; i++) if (handoff && pending[i].asked == handoff && pending[i].actual) {
         f->actual = pending[i].actual; f->present_id = pending[i].id; break;
     }
@@ -89,7 +92,7 @@ static double low_fps(const double *sorted, int n, double share) {
 // Largest-stall selection follows SavageWindRecomp tools/perf_routes.py.
 // See third_party/licenses/SavageWindRecomp.txt.
 static int cause(const TraceFrame *f, double baseline_wait) {
-    if (f->ms[0] <= BUDGET) return -1;
+    if (f->ms[0] <= g_bench_budget_ms) return -1;
     double stalls[] = {f->c[BP_BUILD_WAIT_NS] / 1e6, fmax(0, f->c[BP_GPU_WAIT_NS] / 1e6 - baseline_wait),
                       (f->c[BP_BC_NS] + f->c[BP_ASTC_NS]) / 1e6,
                       fmax(0, ((double)f->c[BP_TEX_NS] - f->c[BP_BC_NS] - f->c[BP_ASTC_NS]) / 1e6), f->c[BP_FILE_NS] / 1e6,
@@ -97,7 +100,7 @@ static int cause(const TraceFrame *f, double baseline_wait) {
     int best = 0;
     for (int k = 1; k < (int)(sizeof stalls / sizeof stalls[0]); k++) if (stalls[k] > stalls[best]) best = k;
     // An absolute budget (not SW's 2x median). Ignore sub-ms jitter when selecting a likely cause.
-    if (stalls[best] >= fmax(0.1, (f->ms[0] - BUDGET) * .25)) return best;
+    if (stalls[best] >= fmax(0.1, (f->ms[0] - g_bench_budget_ms) * .25)) return best;
     return f->c[BP_BUILDS] ? 6 : 7; // background activity is correlation, not a measured stall
 }
 void bench_trace_finish(const char *dir, const char *scene, int repeat, BenchStats *stats) {
@@ -130,7 +133,7 @@ void bench_trace_finish(const char *dir, const char *scene, int repeat, BenchSta
     stats->display = pct(v, n);
     stats->display_fps = sum > 0 ? n * 1000 / sum : NAN;
     stats->display_low1 = low_fps(v, n, .01); stats->display_low01 = low_fps(v, n, .001);
-    for (int i = 0; i < n; i++) { stats->display_over_budget += v[i] > BUDGET; stats->display_over50 += v[i] > 50; }
+    for (int i = 0; i < n; i++) { stats->display_over_budget += v[i] > g_bench_budget_ms; stats->display_over50 += v[i] > 50; }
     free(v);
     char path[1200]; snprintf(path, sizeof path, "%s/frames.csv", dir);
     bool fresh = access(path, F_OK) != 0;
@@ -161,7 +164,7 @@ static void json_pct(FILE *f, const char *key, BenchPct p) {
     fputs(",\"p95\":", f); number(f, p.p95); fputs(",\"p99\":", f); number(f, p.p99); fputs("},", f);
 }
 void bench_trace_json(FILE *f, const BenchStats *s) {
-    fprintf(f, "\"budget_ms\":%.6f,\"over_budget\":%d,", BUDGET, s->long_frames);
+    fprintf(f, "\"budget_ms\":%.6f,\"over_budget\":%d,", g_bench_budget_ms, s->long_frames);
     json_pct(f, "headroom_ms", s->headroom);
     fputs("\"presentation\":{\"source\":\"VK_GOOGLE_display_timing\",", f);
     json_pct(f, "period_ms", s->display);

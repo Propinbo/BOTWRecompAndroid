@@ -1312,6 +1312,60 @@ public class BOTWRecompAndroidActivity extends SDLActivity {
         }
     }
 
+    // Pin or clear the activity window's preferredDisplayModeId at the current physical resolution
+    // so Android's SurfaceFlinger stays locked at e.g. 120.0 Hz for exact 1:3 (40 FPS) cadence.
+    public static boolean setPreferredDisplayHz(float targetHz) {
+        BOTWRecompAndroidActivity a = self;
+        if (a == null) return false;
+        try {
+            if (targetHz <= 0.0f) {
+                a.runOnUiThread(() -> {
+                    android.view.Window w = a.getWindow();
+                    if (w == null) return;
+                    android.view.WindowManager.LayoutParams lp = w.getAttributes();
+                    if (lp.preferredDisplayModeId != 0) {
+                        lp.preferredDisplayModeId = 0;
+                        w.setAttributes(lp);
+                        Log.i("BOTWRecompAndroid", "[vk] preferredDisplayModeId=0 (cleared)");
+                    }
+                });
+                return true;
+            }
+            android.view.Display d = a.getDisplay();
+            if (d == null) return false;
+            android.view.Display.Mode cur = d.getMode();
+            android.view.Display.Mode best = null;
+            float bestDiff = 2.0f;
+            for (android.view.Display.Mode m : d.getSupportedModes()) {
+                if (m.getPhysicalWidth() != cur.getPhysicalWidth() || m.getPhysicalHeight() != cur.getPhysicalHeight())
+                    continue;
+                float diff = Math.abs(m.getRefreshRate() - targetHz);
+                if (diff <= bestDiff) {
+                    best = m;
+                    bestDiff = diff;
+                }
+            }
+            if (best == null) return false;
+            final int modeId = best.getModeId();
+            final float chosenHz = best.getRefreshRate();
+            a.runOnUiThread(() -> {
+                android.view.Window w = a.getWindow();
+                if (w == null) return;
+                android.view.WindowManager.LayoutParams lp = w.getAttributes();
+                if (lp.preferredDisplayModeId != modeId) {
+                    lp.preferredDisplayModeId = modeId;
+                    w.setAttributes(lp);
+                    Log.i("BOTWRecompAndroid", String.format(java.util.Locale.US,
+                            "[vk] preferredDisplayModeId=%d (%.2f Hz)", modeId, chosenHz));
+                }
+            });
+            return true;
+        } catch (Throwable t) {
+            Log.w("BOTWRecompAndroid", "setPreferredDisplayHz: " + t);
+            return false;
+        }
+    }
+
     // The game's vibration on the phone's (or a handheld's) own motor, where the controller has none (hle/input.c
     // input_rumble_apply, Controls > Vibration): a one-shot of ms at amplitude 1-255 the native side renews while the
     // game keeps vibrating, so a stalled game stops it; 0 stops it now.

@@ -1495,11 +1495,20 @@ NVN(nvnWindowGetPresentInterval) { RET(WIN->interval); }
 // it stayed. Auto (0): the game's own measurement. Frame rate 20: at least 2.5 vsyncs, its 20 fps mode (interval 3)
 // where the game picks (1.0.0 / 1.6.0; 1.8.2 and 1.9.0 keep the pace by the runtime's clock, hle/framepace.c).
 int64_t rt_frame_ticks(int64_t ticks) {
-    if (!fps_mode_now()) return ticks;
-    if (fps_mode_now() == 4) {  // (Frame rate 40 / 45: its 25 / 22 ms frames picked the 30 fps mode, interval 2)
+    int env_fps = framepace_env_target_fps();
+    if (framepace_is_between_mode()) {  // (Frame rate 40 / 45: its 25 / 22 ms frames picked the 30 fps mode, interval 2)
         const int64_t cap = 19200000ll * 90 / 100 / 60;  // (0.9 vsyncs: interval 1)
         return ticks > cap ? cap : ticks;
     }
+    if (env_fps == 60 || env_fps == 0) {
+        const int64_t cap = 19200000ll * 185 / 100 / 60;
+        return ticks > cap ? cap : ticks;
+    }
+    if (env_fps > 0 && env_fps <= 20) {
+        const int64_t floor = 19200000ll * 25 / 10 / 60;
+        return ticks < floor ? floor : ticks;
+    }
+    if (!fps_mode_now()) return ticks;
     if (fps_mode_now() == 3) {
         const int64_t floor = 19200000ll * 25 / 10 / 60;  // (2.5 vsyncs)
         return ticks < floor ? floor : ticks;
@@ -1525,7 +1534,7 @@ NVN(nvnWindowSetPresentInterval) {
         uint32_t *max_iv = (uint32_t *)(uintptr_t)(c->x[19] + 0x234), top = twenty ? 3 : 2;
         if (*max_iv > top) *max_iv = top;
         if (force <= 0 && twenty) c->x[1] = 3;
-        else if (force <= 0 && fps_mode_now() == 4) c->x[1] = 1;  // (Frame rate 40 / 45: the clock's interval 1 too)
+        else if (force <= 0 && framepace_is_between_mode()) c->x[1] = 1;  // (Frame rate 40 / 45: the clock's interval 1 too)
         else if (force <= 0 && c->x[1] > 2) c->x[1] = 2;  // (out of it: not left at 3)
     }
     if ((int)A(1) != g_present_interval)
@@ -1610,6 +1619,18 @@ static void bg_wait(void) {
 }
 #endif
 
+static uint64_t pace_last, pace_last_vs;
+static int pace_steer;
+static int64_t pace_steered;
+static bool pace_stuck;
+
+RT_ON_RESET(objects_pace_reset) {
+    pace_last = pace_last_vs = 0;
+    pace_steer = 0;
+    pace_steered = 0;
+    pace_stuck = false;
+}
+
 NVN(nvnQueuePresentTexture) {
     NvnWindow *w = HOST(NvnWindow, A(1));
     int i = (int)A(2);
@@ -1626,26 +1647,25 @@ NVN(nvnQueuePresentTexture) {
         // tab's cap (Frame rate 30: 2, 60: 1; Auto: 2 for now). Without it the menus ran at ~200 fps and the world
         // ran fast whenever a frame came in under 33 ms. LARECOMP_PRESENT_WAIT=0: off.
         static int on = -1;
-        static uint64_t last_vs;
         if (on < 0) on = !getenv("LARECOMP_PRESENT_WAIT") || atoi(getenv("LARECOMP_PRESENT_WAIT"));
         extern volatile uint64_t g_vsync_count;
         extern __thread uint64_t g_blocked_ns;  // (kernel.c: the pacer counts this as idle, not frame work)
-        int cap = fps_mode_now() == 2 || fps_mode_now() == 4 ? 1 : fps_mode_now() == 3 ? 3 : 2;  // (20: 3; 45: 60's)
+        int env_fps = framepace_env_target_fps();
+        bool fast_cap = framepace_is_between_mode() || fps_mode_now() == 2 || env_fps == 60 || env_fps == 0;
+        bool twenty_cap = env_fps > 0 ? env_fps <= 20 : fps_mode_now() == 3;
+        int cap = fast_cap ? 1 : twenty_cap ? 3 : 2;  // (20: 3; 40/45: 60's)
         int n = w->interval > cap ? w->interval : cap;
         if (on && framepace_on()) {
             // BOTW 1.8.2 (runtime/hle/framepace.c): a steady grid at the chosen frame rate, whatever the interval;
             // after a long frame the grid starts again. framepace.c sets the game's clock from when it went out.
-            static uint64_t last;
-            static int steer;  // the grid moving back by small steps: 1 later, -1 earlier (the same way round)
-            static int64_t steered;  // ... this far so far; past a whole vsync it is not working: left until a restart
-            static bool stuck;
-            uint64_t period = framepace_period_ns(), target = last + period, t0 = plat_now_ns();
-            if (last && t0 < target) plat_sleep_until_ns(target);
+            uint64_t period = framepace_period_ns(), target = pace_last + period, t0 = plat_now_ns();
+            if (pace_last && t0 < target) plat_sleep_until_ns(target);
             uint64_t t1 = plat_now_ns();
             g_blocked_ns += t1 - t0;
-            bool on_grid = last && t1 < target + period;
-            last = on_grid ? target : t1;
-            framepace_presented(last, on_grid);
+            bool wants_120 = framepace_wants_120hz();
+            bool on_grid = pace_last && t1 < target + (wants_120 ? 4000000ull : period);
+            pace_last = on_grid ? target : t1;
+            framepace_presented(pace_last, on_grid);
             // The grid's phase against the display (vulkan/device.c backend_vsync_offset): the next frame queued half
             // a vsync before one - at once when the grid starts again (after a long frame, a hitch anyway), else by
             // 0.25 ms a frame once it is 0.5 ms off (the render thread's share of a frame changed, the grid drifted).
@@ -1653,32 +1673,32 @@ NVN(nvnQueuePresentTexture) {
             // reached from ~1.5 ms before a vsync to ~2.5 ms after one, so the phase is held close to the half.
             int64_t off;
             uint64_t vp;
-            if (backend_vsync_offset(last + period, period, &off, &vp)) {
-                if (!steer && !stuck && (off > 500000 || off < -500000)) steer = off > 0 ? 1 : -1, steered = 0;
+            if (!wants_120 && backend_vsync_offset(pace_last + period, period, &off, &vp)) {
+                if (!pace_steer && !pace_stuck && (off > 500000 || off < -500000)) pace_steer = off > 0 ? 1 : -1, pace_steered = 0;
                 if (!on_grid) {
                     static int logged;
                     if (logged++ < 20) LOG("[pace] the grid starts again %+.2f ms from the vsync's half\n", off / 1e6);
-                    last += off, steer = 0, stuck = false;
-                } else if (steer) {
+                    pace_last += off, pace_steer = 0, pace_stuck = false;
+                } else if (pace_steer) {
                     int64_t want = off, quarter = (int64_t)vp / 4;
-                    if (off && (off > 0) != (steer > 0))  // past the half (there), or round the far side (on)
-                        want = off < quarter && off > -quarter ? 0 : off + (steer > 0 ? (int64_t)vp : -(int64_t)vp);
+                    if (off && (off > 0) != (pace_steer > 0))  // past the half (there), or round the far side (on)
+                        want = off < quarter && off > -quarter ? 0 : off + (pace_steer > 0 ? (int64_t)vp : -(int64_t)vp);
                     int64_t step = want > 250000 ? 250000 : want < -250000 ? -250000 : want;
-                    last += step;
-                    steered += step < 0 ? -step : step;
-                    if (step == want) steer = 0;
-                    else if (steered > (int64_t)vp) {
+                    pace_last += step;
+                    pace_steered += step < 0 ? -step : step;
+                    if (step == want) pace_steer = 0;
+                    else if (pace_steered > (int64_t)vp) {
                         static int logged;
                         if (logged++ < 20) LOG("[pace] the grid's phase does not follow: left as it is\n");
-                        steer = 0, stuck = true;
+                        pace_steer = 0, pace_stuck = true;
                     }
                 }
             }
         } else if (on) {
-            uint64_t want = last_vs + (uint64_t)n, t0 = plat_now_ns();
+            uint64_t want = pace_last_vs + (uint64_t)n, t0 = plat_now_ns();
             while (__atomic_load_n(&g_vsync_count, __ATOMIC_RELAXED) < want) usleep(500);
             g_blocked_ns += plat_now_ns() - t0;
-            last_vs = __atomic_load_n(&g_vsync_count, __ATOMIC_RELAXED);
+            pace_last_vs = __atomic_load_n(&g_vsync_count, __ATOMIC_RELAXED);
         }
     }
     if (i >= 0 && i < w->num) backend_present(HOST(NvnTexture, w->textures[i]));

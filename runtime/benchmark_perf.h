@@ -47,6 +47,7 @@ static inline int bench_cooling_check(int limit, int status, double elapsed, int
     if (status <= limit) return 1;
     return elapsed >= timeout ? -2 : 0;
 }
+void bench_trace_set_target_fps(int fps);
 void bench_trace_begin(void);
 void bench_trace_frame(const char *phase, bool window, double period, double cpu, double game, double render, double gpu);
 void bench_trace_finish(const char *dir, const char *scene, int repeat, BenchStats *stats);

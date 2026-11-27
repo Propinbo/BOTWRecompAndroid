@@ -111,7 +111,7 @@ static void *render_main(void *arg) {
             __atomic_store_n(&last_frame_work, frame_work, __ATOMIC_RELAXED);
             extern void plat_render_work(uint64_t work_ns, uint64_t target_ns);
             __atomic_store_n(&last_frame_cpu, frame_cpu, __ATOMIC_RELAXED);
-            plat_render_work(frame_cpu, 16666667ull);  // (ADPF: clocks for 60 fps on this thread too)
+            plat_render_work(frame_cpu, vk_adpf_target_ns());  // mode-aware ADPF target matches exec thread
             frame_work = frame_cpu = 0;
         }
         pthread_mutex_lock(&q_lock);

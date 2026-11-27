@@ -106,6 +106,8 @@ typedef struct {
 } PlatAdpfStats;
 void plat_adpf_stats(PlatAdpfStats *out);
 #ifdef __ANDROID__
+// Request a preferred display refresh rate via Display.Mode (0 clears the preference).
+bool plat_set_preferred_display_hz(float hz);
 // A new thread back on every core: threads inherit the creating thread's affinity, and the presenting thread is
 // pinned to the fastest cores (platform/android.c)
 void plat_thread_unpin(void);

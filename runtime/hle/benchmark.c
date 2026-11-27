@@ -81,6 +81,13 @@
 #define TIME_DRIFT 0.01        // of the held time, at the window's end
 #define TARGET_FPS 30
 
+static int bench_target_fps(void) {
+    const char *e = getenv("LARECOMP_TARGET_FPS");
+    if (!e || !*e) e = getenv("LARECOMP_FPS");
+    int fps = (e && *e) ? atoi(e) : 0;
+    return fps > 0 ? fps : TARGET_FPS;
+}
+
 bool g_benchmark;
 
 typedef struct { char name[32]; float pos[3], time, yaw, pitch; int weather; } Scene;
@@ -475,7 +482,7 @@ void benchmark_init(void) {
     char buf[4096];
     for (size_t n; in && (n = fread(buf, 1, sizeof buf, in)) > 0;) fwrite(buf, 1, n, o);
     if (in) fclose(in);
-    fprintf(o, "\nframe_rate = 30\ntouch_controls = 0\nshow_fps = 0\naspect_asked = 1\nmenu_tip_seen = 1\n");  // (later lines win)
+    fprintf(o, "\nframe_rate = %d\ntouch_controls = 0\nshow_fps = 0\naspect_asked = 1\nmenu_tip_seen = 1\n", bench_target_fps());  // (later lines win)
     fclose(o);
     setenv("LARECOMP_SETTINGS", settings, 1);
     setenv("LARECOMP_LAUNCHER_AUTOPLAY", "1", 1);
@@ -538,6 +545,7 @@ void benchmark_boot(void) {
         next_or_exit();
     }
     LOG("[benchmark] scene %s, repeat %d: from a scratch copy of %s\n", scenes[cur_scene].name, cur_repeat, source);
+    bench_trace_set_target_fps(bench_target_fps());
     bench_trace_begin();
     previous_long = false;
     cooling_s = 0; cool_poll = 0; thermal_before = thermal_after = -1;
@@ -824,7 +832,7 @@ void benchmark_input(uint64_t *b, int32_t *lx, int32_t *ly, int32_t *rx, int32_t
         }
         break;
     case S_WINDOW: {
-        const char *bad = event ? "an event started" : !world ? "left the world" : framepace_target() != TARGET_FPS ? "the frame rate target isn't 30" : NULL;
+        const char *bad = event ? "an event started" : !world ? "left the world" : framepace_target() != bench_target_fps() ? "the frame rate target changed" : NULL;
         if (bad) end_scene(NULL, false, "window", bad);
         else if (since >= window_s) { win_on = false; state = S_MEASURED; phase_t = t; set_step("drain"); }
         break;
