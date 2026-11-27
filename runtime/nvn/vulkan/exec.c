@@ -31,6 +31,7 @@
 #include "vk.h"
 #ifdef __ANDROID__
 #include "mali_frame_pacer.h"
+#include "mali_shader_opt.h"
 #endif
 #define CBWIN_SPAN_TYPE
 typedef VkSpan CbwinSpan;
@@ -3283,6 +3284,11 @@ static uint32_t current_trans_flags(int stage) {
     if (api < VK_API_VERSION_1_2) tf |= MW_TF_API_11;
     else if (api < VK_API_VERSION_1_3) tf |= MW_TF_API_12;
     if ((unsigned)stage < 32u && ((trans_gmiss_stages >> stage) & 1u)) tf |= MW_TF_GMISS_STAGE;
+    if (g_vk.mali_spirv_cleanup && (stage == STAGE_FRAGMENT || stage == STAGE_COMPUTE)) tf |= MW_TF_MALI_CLEANUP;
+    if (g_vk.mali_discard_opt && stage == STAGE_FRAGMENT) {
+        tf |= MW_TF_MALI_DISCARD_OPT;
+        if (api >= VK_API_VERSION_1_3 && g_vk.shader_terminate) tf |= MW_TF_SHADER_TERMINATE;
+    }
 #else
     (void)stage;
 #endif
@@ -3438,13 +3444,21 @@ static void translate_program(void *arg) {
     maxwell_native_half = !getenv("LARECOMP_BITWISE_HALF");
     maxwell_fast_minmax = !getenv("LARECOMP_SAFE_MATH");
     maxwell_cb_window = cbwin_wanted();
+    maxwell_mali_cleanup = false;
+    maxwell_mali_discard_opt = false;
 #endif
     p->vi = maxwell_translate_bounded((const uint8_t *)(uintptr_t)p->code[0], p->cmax[0], p->const_bytes[0], STAGE_VERTEX, &p->vkey);
     if (p->vi->msl) {
         p->fkey.vs_out_mask = p->vi->out_mask;
+#ifdef __ANDROID__
+        maxwell_mali_cleanup = (fs_tf & MW_TF_MALI_CLEANUP) != 0;
+        maxwell_mali_discard_opt = (fs_tf & MW_TF_MALI_DISCARD_OPT) != 0;
+#endif
         p->fi = maxwell_translate_bounded((const uint8_t *)(uintptr_t)p->code[1], p->cmax[1], p->const_bytes[1], STAGE_FRAGMENT, &p->fkey);
         p->fs_out_mask = p->fi ? p->fi->out_mask : 0;
     }
+    maxwell_mali_cleanup = false;
+    maxwell_mali_discard_opt = false;
     pthread_mutex_unlock(&translate_lock);
     if (!p->vi->msl) {
         LOG("[shader] VS translate failed: %s (code %llx)\n", p->vi->error, (unsigned long long)p->code[0]);
@@ -4190,13 +4204,20 @@ static void build_pipeline(void *arg) {
         cba[i].colorWriteMask = k->write_mask[i];
         if ((k->blend_on >> i) & 1) {
             const uint8_t *b = k->blend[i];
+            VkBlendFactor sc = blend_factor(b[1]), dc = blend_factor(b[2]);
+            VkBlendFactor sa = blend_factor(b[3]), da = blend_factor(b[4]);
+            VkBlendOp cop = blend_op(b[5]), aop = blend_op(b[6]);
+#ifdef __ANDROID__
+            if (g_vk.noop_blend_opt && vk_blend_is_noop((uint8_t)cba[i].colorWriteMask, sc, dc, cop, sa, da, aop))
+                continue;
+#endif
             cba[i].blendEnable = VK_TRUE;
-            cba[i].srcColorBlendFactor = blend_factor(b[1]);
-            cba[i].dstColorBlendFactor = blend_factor(b[2]);
-            cba[i].srcAlphaBlendFactor = blend_factor(b[3]);
-            cba[i].dstAlphaBlendFactor = blend_factor(b[4]);
-            cba[i].colorBlendOp = blend_op(b[5]);
-            cba[i].alphaBlendOp = blend_op(b[6]);
+            cba[i].srcColorBlendFactor = sc;
+            cba[i].dstColorBlendFactor = dc;
+            cba[i].srcAlphaBlendFactor = sa;
+            cba[i].dstAlphaBlendFactor = da;
+            cba[i].colorBlendOp = cop;
+            cba[i].alphaBlendOp = aop;
         }
     }
     VkPipelineColorBlendStateCreateInfo cb = {.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
@@ -7717,8 +7738,12 @@ static CsProg *compute_program(NvnProgram *np, const ShaderKey *slk) {
         extern bool vk_driver_is_qualcomm(void);
         k.gmem_linear_lookup = vk_driver_is_qualcomm();
     }
+    maxwell_mali_cleanup = (current_trans_flags(STAGE_COMPUTE) & MW_TF_MALI_CLEANUP) != 0;
+    maxwell_mali_discard_opt = false;
 #endif
     cp->si = maxwell_translate((const uint8_t *)(uintptr_t)ss->code_addr, ss->const_offset ? ss->const_offset : 0x10000, STAGE_COMPUTE, &k);
+    maxwell_mali_cleanup = false;
+    maxwell_mali_discard_opt = false;
     pthread_mutex_unlock(&translate_lock);
     cp->p.vi = cp->si;
     if (!cp->si->msl) {
