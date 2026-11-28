@@ -416,7 +416,7 @@ static void test_spirv_negative_controls_and_bounds(void) {
             (1u << 16) | 253u,
             (1u << 16) | 56u,
         };
-        uint32_t compact[64];
+        uint32_t compact[128];
         size_t n_hdr = sizeof(mod_t) / 4 - 8;  // up to merge OpLabel inclusive
         for (size_t i = 0; i < n_hdr; i++) compact[i] = mod_t[i];
         size_t o = n_hdr;
