@@ -20,6 +20,9 @@
 #include "dyn_vi.h"
 #include "timing_trace.h"
 #include "device_compat.h"
+#ifdef __ANDROID__
+#include "mali_shader_opt.h"
+#endif
 #include "../output_scale.h"
 #include "../renderer.h"
 
@@ -936,6 +939,19 @@ static void create_device(void) {
         vids.pNext = f.pNext;
         f.pNext = &vids;
     }
+    bool has_bc = have.features.textureCompressionBC != VK_FALSE;
+    bool has_astc_ldr = have.features.textureCompressionASTC_LDR != VK_FALSE;
+    bool is_turnip = vk_driver_is_turnip();
+    g_vk.shader_terminate = h13.shaderTerminateInvocation != VK_FALSE;
+    const char *msc_why = NULL, *mdo_why = NULL, *nb_why = NULL;
+    g_vk.mali_spirv_cleanup = vk_mali_spirv_cleanup_want(
+        has_bc, has_astc_ldr, is_turnip, getenv("LARECOMP_MALI_SPIRV_CLEANUP"), &msc_why);
+    g_vk.mali_discard_opt = vk_mali_discard_opt_want(
+        has_bc, has_astc_ldr, is_turnip, getenv("LARECOMP_MALI_DISCARD_OPT"), &mdo_why);
+    g_vk.noop_blend_opt = vk_noop_blend_opt_want(is_turnip, getenv("LARECOMP_VK_NOOP_BLEND_OPT"), &nb_why);
+    LOG("[vk-cap] Mali SPIR-V cleanup: %s (%s)\n", g_vk.mali_spirv_cleanup ? "on" : "off", msc_why);
+    LOG("[vk-cap] Mali discard opt: %s (%s)\n", g_vk.mali_discard_opt ? "on" : "off", mdo_why);
+    LOG("[vk-cap] no-op blend opt: %s (%s)\n", g_vk.noop_blend_opt ? "on" : "off", nb_why);
 #endif
     float prio = 1.0f;
     VkDeviceQueueCreateInfo qi = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = g_vk.qfam,
