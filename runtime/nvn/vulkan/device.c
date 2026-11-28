@@ -13,6 +13,8 @@
 #endif
 
 #include "../../benchmark_perf.h"
+#include "../../framepace.h"
+#include "../../hle.h"
 #include "../../paths.h"
 #include "../../settings.h"
 #include "../../ui/menu.h"
@@ -20,6 +22,9 @@
 #include "dyn_vi.h"
 #include "timing_trace.h"
 #include "device_compat.h"
+#ifdef __ANDROID__
+#include "mali_frame_pacer.h"
+#endif
 #include "../output_scale.h"
 #include "../renderer.h"
 
@@ -1049,6 +1054,23 @@ void vk_pipeline_cache_save(void) {
 
 // ================================================================== swapchain
 static bool swapchain_readback = true;  // (Android: false where the surface can't be a transfer source)
+#ifdef __ANDROID__
+static MaliFramePacer g_mali_pacer;
+static bool g_mali_pacer_logged;
+static bool sc_for_120hz_fifo;
+static bool mali_40fps_pacer_active(void) {
+    static int env = -1;
+    if (env < 0) {
+        const char *e = getenv("LARECOMP_MALI_40FPS_PACER");
+        env = (!e || !*e) ? 1 : atoi(e) != 0;
+    }
+    return env > 0 && g_nmodules > 0 && g_game_version >= 182 && framepace_on() && framepace_wants_120hz();
+}
+RT_ON_RESET(mali_pacer_reboot_reset) {
+    mali_pacer_reset(&g_mali_pacer);
+    g_mali_pacer_logged = false;
+}
+#endif
 static VkPresentModeKHR present_mode(void) {
     // MAILBOX by default: the game paces itself (vi.c's emulated 60 Hz vsync), and with FIFO every submission
     // queued behind the one waiting for a window image, so the game's fence waits followed the presentation engine:
@@ -1062,7 +1084,9 @@ static VkPresentModeKHR present_mode(void) {
 #ifdef __ANDROID__
     if (!e) {
         extern bool vk_adreno_7xx(const char *name);
-        fifo = g_settings.present_fifo < 0 ? vk_adreno_7xx(g_vk.props.deviceName) : g_settings.present_fifo != 0;
+        bool want_120_fifo = framepace_wants_120hz();
+        fifo = g_settings.present_fifo < 0 ? (vk_adreno_7xx(g_vk.props.deviceName) || want_120_fifo)
+                                           : g_settings.present_fifo != 0;
     }
 #endif
     VkPresentModeKHR want = fifo ? VK_PRESENT_MODE_FIFO_KHR
@@ -1089,6 +1113,7 @@ static void swapchain_surface_lost(VkSwapchainKHR old) {
     if (old) vkDestroySwapchainKHR(g_vk.dev, old, NULL);
     g_vk.swapchain = VK_NULL_HANDLE;
     surface_lost = true;
+    mali_pacer_reset(&g_mali_pacer);
 }
 #endif
 
@@ -1138,6 +1163,10 @@ static void create_swapchain(void) {
     for (uint32_t i = 0; i < nf; i++)
         if (fmts[i].format == VK_FORMAT_B8G8R8A8_UNORM && fmts[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) { sf = fmts[i]; break; }
     uint32_t count = caps.minImageCount + 1;
+#ifdef __ANDROID__
+    bool wants_120 = framepace_wants_120hz();
+    if (wants_120 && count < 4) count = 4;
+#endif
     if (caps.maxImageCount && count > caps.maxImageCount) count = caps.maxImageCount;
     if (count > 8) count = 8;  // (asked for: the driver may make more, up to VK_MAX_SWAP_IMAGES)
     if (count < caps.minImageCount) count = caps.minImageCount;
@@ -1190,11 +1219,16 @@ static void create_swapchain(void) {
                                     .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
         VK_CHECK(vkCreateImageView(g_vk.dev, &vi, NULL, &g_vk.sc_views[i]));
     }
+#ifdef __ANDROID__
+    sc_for_120hz_fifo = wants_120;
+    LOG("[vk] swapchain ready: mode %d, asked %u, got %u images (wants120=%d)\n", ci.presentMode, count, g_vk.sc_count, wants_120);
+#endif
 }
 
 static void recreate_swapchain(void) {
 #ifdef __ANDROID__
     WdMark wd_mark = vk_wd_enter(WD_R_SWAPCHAIN, 0);  // (freeze watchdog: vkDeviceWaitIdle waits for all the GPU's work)
+    mali_pacer_reset(&g_mali_pacer);
 #endif
     vkDeviceWaitIdle(g_vk.dev);
     create_swapchain();
@@ -1225,6 +1259,7 @@ static void android_create_surface(struct ANativeWindow *aw) {
 static int between_for(float hz) { return hz > 110 ? 40 : hz > 80 ? 45 : hz > 50 ? 30 : 45; }
 
 int vk_between_fps(void) {
+    if (framepace_wants_120hz()) return 40;
     static int fps = 45;
     static uint64_t next;
     uint64_t now = SDL_GetTicksNS();
@@ -1243,12 +1278,14 @@ int vk_between_fps(void) {
 // one - HyperOS keeps a game at 60 Hz on a 120 Hz screen until it asks for more, so from the current rate 40 / 45 fell
 // to 30 and never asked (POCO F7 Pro, 2026-11-15). The frame rate itself still follows the screen's rate
 // (vk_between_fps): 30 until the system switches, and on a system that won't.
-static int vk_between_target(void) {
-    static int fps;
+int vk_between_target(void) {
+    static int s_fps;
+    int fps = __atomic_load_n(&s_fps, __ATOMIC_RELAXED);
     if (!fps) {
         extern float plat_max_refresh_hz(void);
         float hz = plat_max_refresh_hz();
         fps = hz > 0 ? between_for(hz) : -1;
+        __atomic_store_n(&s_fps, fps, __ATOMIC_RELAXED);
         LOG("[vk] Frame rate 40 / 45: the screen offers up to %.0f Hz\n", hz);
     }
     return fps > 0 ? fps : vk_between_fps();
@@ -1266,7 +1303,10 @@ double vk_display_hz(void) {
 static void android_frame_rate(struct ANativeWindow *aw) {
     static struct ANativeWindow *asked_aw;
     static float asked = -1;
-    float want = fps_mode_now() == 4 && vk_between_target() != 30 ? (float)vk_between_target() : 0.0f;
+    static float asked_pref_hz = -1;
+    bool wants_120 = framepace_wants_120hz();
+    float want = wants_120 ? 120.0f
+               : (fps_mode_now() == 4 && vk_between_target() != 30) ? (float)vk_between_target() : 0.0f;
     bool fg = false;
     {   // Frame generation on: room on the screen for the frames it makes - the chosen frame rate times its multiplier
         // (60 fps x 2: 120 Hz). Android leaves a game at 60 Hz unless asked, and then a 40-50 fps game left no refresh
@@ -1281,6 +1321,15 @@ static void android_frame_rate(struct ANativeWindow *aw) {
             want = (float)(base * mult), fg = true;
         }
     }
+    if (wants_120 && !fg) {
+        if (aw != asked_aw || asked_pref_hz != 120.0f) {
+            plat_set_preferred_display_hz(120.0f);
+            asked_pref_hz = 120.0f;
+        }
+    } else if (asked_pref_hz > 0.0f) {
+        plat_set_preferred_display_hz(0.0f);
+        asked_pref_hz = 0.0f;
+    }
     if (aw == asked_aw && want == asked) return;
     // (libnativewindow's, looked up, not linked. Android 12+: with the change strategy ALWAYS - the plain call changes
     // the refresh only when it's seamless, and 120 -> 90 Hz isn't on the POCO F7 Ultra: it stayed at 120)
@@ -1293,11 +1342,11 @@ static void android_frame_rate(struct ANativeWindow *aw) {
         set_rate = lib ? (int (*)(struct ANativeWindow *, float, int8_t))dlsym(lib, "ANativeWindow_setFrameRate") : NULL;
         set_rate2 = lib ? (int (*)(struct ANativeWindow *, float, int8_t, int8_t))dlsym(lib, "ANativeWindow_setFrameRateWithChangeStrategy") : NULL;
     }
-    int8_t compat = want > 0 && !fg ? ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_FIXED_SOURCE  // (generated: at least that rate)
-                                    : ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_DEFAULT;
+    int8_t compat = want > 0 && !fg && !wants_120 ? ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_FIXED_SOURCE
+                                                  : ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_DEFAULT;
     int r = set_rate2 ? set_rate2(aw, want, compat, 1 /* ANATIVEWINDOW_CHANGE_FRAME_RATE_ALWAYS */)
           : set_rate ? set_rate(aw, want, compat) : -1;
-    if (want != asked) LOG("[vk] the window asks for %.0f fps content (%d)\n", want, r);
+    if (want != asked) LOG("[vk] the window asks for %.0f fps content (compat %d, rc %d)\n", want, compat, r);
     asked_aw = aw, asked = want;
 }
 
@@ -1307,6 +1356,7 @@ static bool android_surface_ready(void) {  // false: no window to draw into now
     android_frame_rate(aw);
     if (aw == surface_aw && !surface_lost) return true;
     WdMark wd_mark = vk_wd_enter(WD_R_SWAPCHAIN, 1);  // (freeze watchdog)
+    mali_pacer_reset(&g_mali_pacer);
     vkDeviceWaitIdle(g_vk.dev);
     for (uint32_t i = 0; i < g_vk.sc_count; i++) vk_rp_forget_view(g_vk.sc_views[i]), vkDestroyImageView(g_vk.dev, g_vk.sc_views[i], NULL);
     g_vk.sc_count = 0;
@@ -1324,7 +1374,7 @@ static bool android_surface_ready(void) {  // false: no window to draw into now
 
 // ================================================================== frames (start screen and game)
 // Acquire semaphores rotate per frame in flight; a slot is reused once the submission that waited on it is done.
-#define FRAMES 3
+#define FRAMES 4
 static VkSemaphore acquire_sem[FRAMES], done_sem[VK_MAX_SWAP_IMAGES];
 static uint64_t slot_seq[FRAMES];
 static int slot;
@@ -1361,6 +1411,10 @@ bool vk_frame_begin(const float clear[4]) {
     if (!w || !h) return false;  // minimised
 #ifdef __ANDROID__
     if (!android_surface_ready()) return false;
+    bool want_120_sc = framepace_wants_120hz();
+    if (g_vk.swapchain && want_120_sc != sc_for_120hz_fifo &&
+        !getenv("LARECOMP_VK_PRESENT") && g_settings.present_fifo < 0)
+        recreate_swapchain();
 #endif
     if (!g_vk.swapchain || (uint32_t)w != g_vk.sc_extent.width || (uint32_t)h != g_vk.sc_extent.height) recreate_swapchain();
     if (!g_vk.swapchain) return false;
@@ -1477,6 +1531,28 @@ static bool vs_fit;
 static uint32_t present_id;
 static uint64_t present_asked;  // when the game's thread handed over the frame being presented (vk_present_now)
 
+static void poll_past_presents(uint64_t p) {
+    VkPastPresentationTimingGOOGLE past[8];
+    uint32_t n = 8;
+    if (vkGetPastPresentationTimingGOOGLE(g_vk.dev, g_vk.swapchain, &n, past) < 0) n = 0;  // (INCOMPLETE: the newest 8)
+    if (g_benchmark) for (uint32_t i = 0; i < n; i++) bench_present_actual(past[i].presentID, past[i].actualPresentTime);
+    uint64_t a = 0;
+    uint32_t a_id = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        if (past[i].actualPresentTime > a) {
+            a = past[i].actualPresentTime;
+            a_id = past[i].presentID;
+        }
+    }
+    if (a <= vs_anchor) return;
+    mali_pacer_observe_present(&g_mali_pacer, a_id, a, p, framepace_wants_120hz());
+    if (vs_anchor && p) {
+        uint64_t r = (a - vs_anchor) % p;
+        __atomic_store_n(&vs_fit, (r < p - r ? r : p - r) < p / 8, __ATOMIC_RELAXED);
+    }
+    __atomic_store_n(&vs_anchor, a, __ATOMIC_RELAXED);
+}
+
 static void vsync_update(uint64_t queued) {
     uint64_t asked = present_asked, d = asked && queued > asked ? queued - asked : 0;
     present_asked = 0;
@@ -1502,18 +1578,7 @@ static void vsync_update(uint64_t queued) {
         if (!p != !was || (p > was ? p - was : was - p) > was / 100) LOG("[pace] display vsync %.3f ms\n", p / 1e6);
         __atomic_store_n(&vs_period, p, __ATOMIC_RELAXED);
     }
-    VkPastPresentationTimingGOOGLE past[8];
-    uint32_t n = 8;
-    if (vkGetPastPresentationTimingGOOGLE(g_vk.dev, g_vk.swapchain, &n, past) < 0) n = 0;  // (INCOMPLETE: the newest 8)
-    if (g_benchmark) for (uint32_t i = 0; i < n; i++) bench_present_actual(past[i].presentID, past[i].actualPresentTime);
-    uint64_t a = 0;
-    for (uint32_t i = 0; i < n; i++) if (past[i].actualPresentTime > a) a = past[i].actualPresentTime;
-    if (a <= vs_anchor) return;
-    if (vs_anchor && p) {
-        uint64_t r = (a - vs_anchor) % p;
-        __atomic_store_n(&vs_fit, (r < p - r ? r : p - r) < p / 8, __ATOMIC_RELAXED);
-    }
-    __atomic_store_n(&vs_anchor, a, __ATOMIC_RELAXED);
+    poll_past_presents(p);
 }
 
 bool backend_vsync_offset(uint64_t t, uint64_t grid, int64_t *off, uint64_t *period) {
@@ -1575,6 +1640,25 @@ void vk_frame_end(const char *shot_path) {
         if (display_timing) when.desiredPresentTime = g_present_at;
         else if (g_present_at > plat_now_ns()) plat_sleep_until_ns(g_present_at);
         g_present_at = 0;
+    } else if (mali_40fps_pacer_active()) {
+        uint64_t vp = __atomic_load_n(&vs_period, __ATOMIC_RELAXED);
+        if (display_timing) poll_past_presents(vp);
+        uint64_t desired = mali_pacer_next_present_ex(&g_mali_pacer, plat_now_ns(), vp, framepace_target(),
+                                                      display_timing, when.presentID, framepace_wants_120hz());
+        if (!g_mali_pacer_logged) {
+            g_mali_pacer_logged = true;
+            LOG("[pace] mali 120Hz 1:3/1:4 pacer active (display_timing=%d, vsync=%.3f ms, div=%u)\n",
+                display_timing, g_mali_pacer.vsync_period_ns / 1e6, g_mali_pacer.last_divisor);
+        }
+        if (desired) {
+            if (display_timing) {
+                when.desiredPresentTime = desired;
+            } else if (desired > plat_now_ns()) {
+                WdMark sleep_wd = vk_wd_enter(WD_R_QUEUE_PRESENT, present_id);
+                plat_sleep_until_ns(desired);
+                vk_wd_leave(sleep_wd);
+            }
+        }
     }
     uint64_t queued = plat_now_ns();
 #endif
@@ -1775,10 +1859,11 @@ void backend_present(NvnTexture *t) {
             uint64_t now = plat_now_ns();
             if (now - matrix_last >= 2000000000ull) {
                 matrix_last = now;
-                LOG("[matrix-scale] monotonic-ns %llu frame %llu res %d upscale %d aa %d aspect %d render %.0fx%.0f dynamic %.2f\n",
+                LOG("[matrix-scale] monotonic-ns %llu frame %llu res %d upscale %d aa %d aspect %d render %.0fx%.0f scene %.0fx%.0f dynamic %.2f\n",
                     (unsigned long long)now, (unsigned long long)total_frames, g_settings.res_mode,
                     g_settings.upscaler, g_settings.antialias, g_settings.aspect,
-                    os.sx * 1920.0, os.sy * 1080.0, output_scale_dynamic_factor());
+                    os.sx * 1920.0, os.sy * 1080.0, os.scene_sx * 1600.0, os.scene_sy * 900.0,
+                    output_scale_dynamic_factor());
             }
         }
 #endif

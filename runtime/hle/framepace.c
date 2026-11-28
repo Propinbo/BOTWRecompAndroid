@@ -73,11 +73,11 @@ static bool in_menu(void) {
 }
 
 // (widescreen.c: the HUD stays in place in the menus)
-bool framepace_in_menu(void) { return g_game_version >= 182 && in_menu(); }
+bool framepace_in_menu(void) { return g_nmodules > 0 && g_game_version >= 182 && in_menu(); }
 
 // (widescreen.c) the title screen's menu is up - screen 1 in the UI screen manager, as in_menu - and the game isn't paused
 bool framepace_on_title(void) {
-    if (g_game_version < 182) return false;
+    if (g_nmodules <= 0 || g_game_version < 182) return false;
     uint64_t holder = *(uint64_t *)(uintptr_t)UI_SCREENS;
     uint64_t mgr = holder ? *(uint64_t *)(uintptr_t)holder : 0;
     bool on = mgr && !*(uint32_t *)(uintptr_t)PAUSE_STATE && VF(uint32_t, mgr, 0x28) > 1 && VF(uint64_t, mgr, 0x30) &&
@@ -97,7 +97,7 @@ static bool in_event(void) {
     return evt && *(uint64_t *)(uintptr_t)(evt + 0x1d2b8);
 }
 
-bool framepace_in_event(void) { return g_game_version >= 182 && in_event(); }  // (hle/benchmark.c)
+bool framepace_in_event(void) { return g_nmodules > 0 && g_game_version >= 182 && in_event(); }  // (hle/benchmark.c)
 
 // ---- thermal cap (Video > "30 fps when the phone overheats", g_settings.thermal_cap; after totk-android's
 // thermal_step, MIT): at 60 fps a phone heats until Android lowers its clocks, and the frame rate then jumps between 60
@@ -153,9 +153,39 @@ int fps_mode_now(void) {
 }
 bool framepace_thermal_capped(void) { return g_thermal_hot && thermal_cap_on() && (g_settings.fps_mode == 2 || g_settings.fps_mode == 4); }
 
+int framepace_env_target_fps(void) {
+    static int env_init;
+    static int forced = -1;
+    if (!env_init) {
+        env_init = 1;
+        const char *e = getenv("LARECOMP_TARGET_FPS");
+        if (!e || !*e) e = getenv("LARECOMP_FPS");
+        forced = (e && *e) ? atoi(e) : -1;
+    }
+    return forced;
+}
+
+bool framepace_is_between_mode(void) {
+    int env_fps = framepace_env_target_fps();
+    if (env_fps >= 0) return env_fps >= 35 && env_fps <= 50;
+    return fps_mode_now() == 4;
+}
+
+bool framepace_wants_120hz(void) {
+#ifdef __ANDROID__
+    int env_fps = framepace_env_target_fps();
+    if (env_fps >= 0) return env_fps == 40;
+    if (fps_mode_now() != 4) return false;
+    extern int vk_between_target(void);
+    return vk_between_target() == 40;
+#else
+    return false;
+#endif
+}
+
 int framepace_target(void) {
-    static int forced = -2, movie = -2, menu = -2, event = -2;
-    if (forced == -2) forced = env_int("LARECOMP_FPS", -1);
+    static int movie = -2, menu = -2, event = -2;
+    int forced = framepace_env_target_fps();
     if (movie == -2) movie = env_int("LARECOMP_MOVIE_FPS", 30);
     if (menu == -2) menu = env_int("LARECOMP_MENU_FPS", 30);
     if (event == -2) event = env_int("LARECOMP_EVENT_FPS", -1);  // (-1: the setting - Cutscenes at 60 fps, else 30)
@@ -165,9 +195,9 @@ int framepace_target(void) {
     int fps = forced >= 0 ? forced : fps_mode_now() == 1 ? 30 : fps_mode_now() == 3 ? 20
             : fps_mode_now() == 4 ? vk_between_fps() : 60;
     if (movie > 0 && __atomic_load_n(&g_movie_playing, __ATOMIC_RELAXED) > 0 && (fps == 0 || fps > movie)) fps = movie;
-    if (menu > 0 && (fps == 0 || fps > menu) && in_menu()) fps = menu;
+    if (menu > 0 && (fps == 0 || fps > menu) && framepace_in_menu()) fps = menu;
     int ev = event >= 0 ? event : g_settings.event_fps_unlock ? 0 : 30;
-    if (ev > 0 && (fps == 0 || fps > ev) && in_event()) fps = ev;
+    if (ev > 0 && (fps == 0 || fps > ev) && framepace_in_event()) fps = ev;
     return fps;
 }
 
@@ -198,16 +228,16 @@ void rt_stale_actor(void) {
 #define CONTROLLER_STEP GV(0x7001c4ba40ull, 0x7001dad0e0ull)
 static float g_step = 1;   // the last frame's length between presents, in console frames
 static int g_grid_streak;  // presents in a row that kept the pace
+static uint64_t g_pres_prev;
+static double g_pres_smooth;
 
 void framepace_presented(uint64_t t, bool on_grid) {
     if (!framepace_on()) return;
-    static uint64_t prev;
-    static double smooth;
-    double s = prev && t > prev ? (t - prev) / 1e9 : 1.0 / 30;
-    prev = t;
+    double s = g_pres_prev && t > g_pres_prev ? (t - g_pres_prev) / 1e9 : 1.0 / 30;
+    g_pres_prev = t;
     if (s > 0.25) s = 0.25;
-    smooth = smooth > 0 ? smooth + (s - smooth) * 0.25 : s;
-    float step = (float)((on_grid ? s : smooth) * 30);
+    g_pres_smooth = g_pres_smooth > 0 ? g_pres_smooth + (s - g_pres_smooth) * 0.25 : s;
+    float step = (float)((on_grid ? s : g_pres_smooth) * 30);
     g_step = step < 0.1f ? 0.1f : step > 1.5f ? 1.5f : step;
     g_grid_streak = on_grid ? g_grid_streak + 1 : 0;
     static int fixed = -1;
@@ -227,6 +257,28 @@ void framepace_presented(uint64_t t, bool on_grid) {
 // The clock's interval (1 / 2 / 3: its 60 / 30 / 20 fps ways), as last set: the frame loop's follows it at 3
 // (nvn/objects.c nvnWindowSetPresentInterval)
 static uint32_t g_vfr_iv = 2;
+static uint64_t g_vfr_last_t, g_vfr_at3_since, g_vfr_tried_at, g_vfr_wait_ns = 4000000000ull;
+static double g_vfr_real, g_vfr_given, g_vfr_smooth, g_vfr_last_step, g_vfr_slow = 1.0;
+static int g_vfr_last_target = -1, g_vfr_last_mode = -1, g_vfr_fits;
+static uint32_t g_vfr_last_iv;
+static uint64_t g_vfr_nframe;
+
+RT_ON_RESET(framepace_reset) {
+    g_step = 1.0f;
+    g_grid_streak = 0;
+    g_pres_prev = 0;
+    g_pres_smooth = 0.0;
+    g_vfr_iv = 2;
+    g_vfr_last_t = g_vfr_at3_since = g_vfr_tried_at = 0;
+    g_vfr_wait_ns = 4000000000ull;
+    g_vfr_real = g_vfr_given = g_vfr_smooth = g_vfr_last_step = 0.0;
+    g_vfr_slow = 1.0;
+    g_vfr_last_target = g_vfr_last_mode = -1;
+    g_vfr_fits = 0;
+    g_vfr_last_iv = 0;
+    g_vfr_nframe = 0;
+}
+
 uint32_t framepace_interval(void) { return g_vfr_iv; }
 
 void rt_vfr_update(uint64_t vfr) {
@@ -234,62 +286,53 @@ void rt_vfr_update(uint64_t vfr) {
     extern void benchmark_vfr(void);
     if (g_benchmark) benchmark_vfr();  // (its held time and weather)
     if (!framepace_on()) return;
-    static uint64_t last_t;
-    static double real, given;  // seconds of real time and of game time handed out (only their gap matters)
-    static double smooth;       // seconds between updates, averaged over about 20
-    static double last_step;    // the step handed out last, seconds (0: none yet)
-    static int last_target = -1;
-    static double slow = 1;     // the step in console frames, averaged over about 20 (the interval follows it)
-    static uint32_t last_iv;
     static int log_every = -1;
-    static uint64_t nframe;
     if (log_every < 0) log_every = env_int("LARECOMP_LOG_FRAMEPACE", 0);
     uint64_t now = plat_now_ns();
-    double s = last_t && now > last_t ? (now - last_t) / 1e9 : 1.0 / 30;
-    last_t = now;
+    double s = g_vfr_last_t && now > g_vfr_last_t ? (now - g_vfr_last_t) / 1e9 : 1.0 / 30;
+    g_vfr_last_t = now;
     float ratio;
     bool paused = *(uint32_t *)(uintptr_t)PAUSE_STATE != 0;
     if (paused) {
         // paused (it updates twice a frame): the frame's length between presents, nothing owed
         ratio = g_step;
-        real = given = 0;
-        last_target = -1;
+        g_vfr_real = g_vfr_given = 0;
+        g_vfr_last_target = -1;
     } else {
         if (s > 0.25) s = 0.25;  // (a load: not owed)
         double period = framepace_period_ns() / 1e9;
         int target = framepace_target();
-        if (target != last_target) smooth = period, last_step = 0;  // (a new pace: start from it)
-        last_target = target;
+        if (target != g_vfr_last_target) g_vfr_smooth = period, g_vfr_last_step = 0;  // (a new pace: start from it)
+        g_vfr_last_target = target;
         // Frame rate changed in the menu: the interval goes to the new one at once - its average took dozens of frames,
         // the frame loop's interval (nvn/objects.c, following this one) and the clock's ratio not matching meanwhile,
         // and Link sank into the ground going from 20 to 30 fps (2026-11-02)
-        static int last_mode = -1;
-        if (fps_mode_now() != last_mode) {
-            if (last_mode >= 0) slow = period * 30;
-            last_mode = fps_mode_now();
+        if (fps_mode_now() != g_vfr_last_mode) {
+            if (g_vfr_last_mode >= 0) g_vfr_slow = period * 30;
+            g_vfr_last_mode = fps_mode_now();
         }
-        smooth += (s - smooth) * 0.05;
-        real += s;
+        g_vfr_smooth += (s - g_vfr_smooth) * 0.05;
+        g_vfr_real += s;
         // The step changes slowly: the game reads some deltas a frame late, and a step that jumps between frames
         // moves the camera and Link apart. One period once the presents have kept the pace for half a second, else
         // the average of ~20 frames; plus a fiftieth of what is owed; and at most 3% away from the last step.
-        double step = (g_grid_streak >= 30 ? period : smooth) + (real - given) * 0.02;
-        if (last_step > 0 && step > last_step * 1.03) step = last_step * 1.03;
-        if (last_step > 0 && step < last_step * 0.97) step = last_step * 0.97;
+        double step = (g_grid_streak >= 30 ? period : g_vfr_smooth) + (g_vfr_real - g_vfr_given) * 0.02;
+        if (g_vfr_last_step > 0 && step > g_vfr_last_step * 1.03) step = g_vfr_last_step * 1.03;
+        if (g_vfr_last_step > 0 && step < g_vfr_last_step * 0.97) step = g_vfr_last_step * 0.97;
         if (step < 1.0 / FPS_CEILING) step = 1.0 / FPS_CEILING;
         if (step > 0.05) step = 0.05;
-        last_step = step;
+        g_vfr_last_step = step;
         ratio = (float)(step * 30);
     }
     bool held = VF(uint8_t, vfr, VFR_OVERRIDE) && ratio > 1;  // (stage loading: the game asks for single steps)
     if (held) ratio = 1;
     if (!paused) {
-        given += ratio / 30.0;
-        if (held || fabs(real - given) > 0.25) real = given;  // (nothing owed for a deliberate slow down)
+        g_vfr_given += ratio / 30.0;
+        if (held || fabs(g_vfr_real - g_vfr_given) > 0.25) g_vfr_real = g_vfr_given;  // (nothing owed for a deliberate slow down)
     }
     // The interval switches some of the game's code between its 60 fps and 30 fps ways: only on a lasting change of
     // the frame rate, never back and forth from one frame to the next.
-    slow += (ratio - slow) * 0.05;
+    g_vfr_slow += (ratio - g_vfr_slow) * 0.05;
     uint32_t iv = g_vfr_iv;
     // (Frame rate 40 / 45: the game's 60 fps way, interval 1, whatever the ratio - at 40 (0.75) the rule below kept 2
     // while the frame loop ran at 1 (nvn/objects.c), the mismatch that sank Link at 20 fps)
@@ -303,34 +346,32 @@ void rt_vfr_update(uint64_t vfr) {
     static int old_rules = -1;  // (LARECOMP_INTERVAL_OLD=1: 0.4.3's - no hitch check, no tries at 30; a test)
     if (old_rules < 0) old_rules = env_int("LARECOMP_INTERVAL_OLD", 0);
     bool hitch_only = !old_rules && w > 0 && w < 30.0;
-    if (fps_mode_now() == 4) iv = 1, slow = ratio;
-    else if (iv == 1 && slow > 0.85) iv = 2;
-    else if (iv == 2 && slow < 0.7) iv = 1;
-    else if (iv == 2 && slow > 1.3 && !hitch_only) iv = 3;
-    else if (iv == 3 && slow < 1.15) iv = 2;
+    if (framepace_is_between_mode()) iv = 1, g_vfr_slow = ratio;
+    else if (iv == 1 && g_vfr_slow > 0.85) iv = 2;
+    else if (iv == 2 && g_vfr_slow < 0.7) iv = 1;
+    else if (iv == 2 && g_vfr_slow > 1.3 && !hitch_only) iv = 3;
+    else if (iv == 3 && g_vfr_slow < 1.15) iv = 2;
     {   // Back from a slower interval once the work fits the faster one for 2 s. At interval 3 the game presents every
         // third refresh, so its ratio stays ~1.5 however light the frames get (at 2 in the 60 fps mode, 1): the rules
         // above never let it go, and a hitch (a save, a menu, a load) left the game at 20 fps (or 30) for good (#339
         // #374). Not in the 20 fps mode. LARECOMP_NO_INTERVAL_ESCAPE=1: as before.
-        static int fits;
         bool can = (iv == 3 && fps_mode_now() != 3 && w > 0 && w < 26.0) ||
                    (iv == 2 && fps_mode_now() == 2 && w > 0 && w < 13.0);
-        fits = can ? fits + 1 : 0;
-        if (fits > 60) iv--, slow = iv == 1 ? 0.5f : 1.0f, fits = 0;
+        g_vfr_fits = can ? g_vfr_fits + 1 : 0;
+        if (g_vfr_fits > 60) iv--, g_vfr_slow = iv == 1 ? 0.5f : 1.0f, g_vfr_fits = 0;
     }
     {   // ... and a try at 30 fps every few seconds at 20: there the GPU has room, its governor lowers the clock until
         // the frame fills it, and the work measured at 20 (27-40 ms) never fell under the 26 above although at 30 the
         // same frames fit (#374: ~15 s at 20 after each menu). A try that falls back within 5 s doubles the wait (4 s
         // up to 32 s); 10 s kept at 30 brings it back to 4.
-        static uint64_t at3_since, tried_at, wait_ns = 4000000000ull;
-        if (iv == 3 && g_vfr_iv != 3) at3_since = now;
-        if (iv == 3 && tried_at && now - tried_at < 5000000000ull && g_vfr_iv == 2) {
-            if (wait_ns < 32000000000ull) wait_ns *= 2;
-            tried_at = 0;
+        if (iv == 3 && g_vfr_iv != 3) g_vfr_at3_since = now;
+        if (iv == 3 && g_vfr_tried_at && now - g_vfr_tried_at < 5000000000ull && g_vfr_iv == 2) {
+            if (g_vfr_wait_ns < 32000000000ull) g_vfr_wait_ns *= 2;
+            g_vfr_tried_at = 0;
         }
-        if (iv == 2 && tried_at && now - tried_at > 10000000000ull) wait_ns = 4000000000ull, tried_at = 0;
-        if (iv == 3 && g_vfr_iv == 3 && fps_mode_now() != 3 && !no_escape && !old_rules && at3_since &&
-            now - at3_since > wait_ns && w > 0 && w < 45.0) {
+        if (iv == 2 && g_vfr_tried_at && now - g_vfr_tried_at > 10000000000ull) g_vfr_wait_ns = 4000000000ull, g_vfr_tried_at = 0;
+        if (iv == 3 && g_vfr_iv == 3 && fps_mode_now() != 3 && !no_escape && !old_rules && g_vfr_at3_since &&
+            now - g_vfr_at3_since > g_vfr_wait_ns && w > 0 && w < 45.0) {
             char clk[48] = "";
 #ifdef __ANDROID__
             {   // (the GPU's clock and cap there, when the system lets the app read them: platform/android.c)
@@ -340,17 +381,32 @@ void rt_vfr_update(uint64_t vfr) {
                 if (g > 0) snprintf(clk, sizeof clk, ", GPU %d MHz (cap %d)", g, cap);
             }
 #endif
-            LOG("[framepace] 20 fps for %.0f s, work %.1f ms%s: trying 30 again\n", (now - at3_since) / 1e9, w, clk);
-            iv = 2, slow = 1.0f, tried_at = now, at3_since = 0;
+            LOG("[framepace] 20 fps for %.0f s, work %.1f ms%s: trying 30 again\n", (now - g_vfr_at3_since) / 1e9, w, clk);
+            iv = 2, g_vfr_slow = 1.0f, g_vfr_tried_at = now, g_vfr_at3_since = 0;
         }
     }
     VF(float, vfr, VFR_RATIO) = ratio;
     VF(float, vfr, VFR_NEW_RATIO) = ratio;
     VF(uint32_t, vfr, VFR_INTERVAL) = iv;
-    VF(uint8_t, vfr, VFR_CHANGED) = last_iv && iv != last_iv;
-    last_iv = g_vfr_iv = iv;
-    if (log_every > 0 && nframe++ % (uint64_t)log_every == 0)
+    VF(uint8_t, vfr, VFR_CHANGED) = g_vfr_last_iv && iv != g_vfr_last_iv;
+    g_vfr_last_iv = g_vfr_iv = iv;
+    if (log_every > 0 && g_vfr_nframe++ % (uint64_t)log_every == 0) {
+        float tod = -1.0f;
+        if (g_game_version == 190 && g_nmodules > 0) {
+            uint64_t wm = *(const uint64_t *)(uintptr_t)GA(0x7001e57580ull);
+            if (wm >= GUEST_LO && wm + 0x600 < GUEST_HI && !(wm & 7)) {
+                uint32_t nmgrs = *(const uint32_t *)(uintptr_t)(wm + 0x5c0);
+                uint64_t arr = nmgrs ? *(const uint64_t *)(uintptr_t)(wm + 0x5c0 + 8) : 0;
+                if (arr >= GUEST_LO && arr + 8 < GUEST_HI && !(arr & 7)) {
+                    uint64_t tm = *(const uint64_t *)(uintptr_t)arr;
+                    if (tm >= GUEST_LO && tm + 0xc0 < GUEST_HI && !(tm & 7))
+                        tod = *(const float *)(uintptr_t)(tm + 0xb8);
+                }
+            }
+        }
         LOG("[framepace] target %d fps, %.2f ms since the last update (avg %.2f), ratio %.3f, interval %u, owed "
-            "%.2f ms%s%s\n", framepace_target(), s * 1e3, smooth * 1e3, ratio, iv, (real - given) * 1e3,
+            "%.2f ms, t %.3f, tod %.3f%s%s\n", framepace_target(), s * 1e3, g_vfr_smooth * 1e3, ratio, iv,
+            (g_vfr_real - g_vfr_given) * 1e3, now / 1e9, tod,
             paused ? ", paused" : "", g_movie_playing > 0 ? ", movie" : "");
+    }
 }

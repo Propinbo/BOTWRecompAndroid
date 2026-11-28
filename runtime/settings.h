@@ -6,7 +6,8 @@ enum { OVERLAY_FPS = 1, OVERLAY_THROTTLE = 2, OVERLAY_GPU = 4, OVERLAY_CPU = 8, 
 #include <stdbool.h>
 
 enum { ASPECT_UNLOCKED = 0, ASPECT_ORIGINAL = 1 };
-enum { RES_MATCH = 0, /* 1..8 = 1x..8x */ RES_DYNAMIC = 9, RES_Q75 = 10, RES_Q25 = 11, RES_Q50 = 12 };
+enum { RES_MATCH = 0, /* 1..8 = 1x..8x */ RES_DYNAMIC = 9, RES_Q75 = 10, RES_Q25 = 11, RES_Q50 = 12,
+       RES_Q65 = 13, RES_Q68 = 14, RES_Q70 = 15, RES_Q85 = 16 };
 // (11 was 67% of the display: larecomp.ini "67%" now loads as RES_Q75)
 enum { OUT_AUTO = -1 };  // (Settings.out_lines)
 enum { UPSCALE_BILINEAR = 0, UPSCALE_METALFX = 1 /* macOS */, UPSCALE_FSR1 = 2 /* AMD FSR 1 */,

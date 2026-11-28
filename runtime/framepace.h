@@ -3,6 +3,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+// The frame rate override from LARECOMP_TARGET_FPS (then LARECOMP_FPS), or -1 if unset (0: no limit).
+int framepace_env_target_fps(void);
+// true when 40 / 45 mode is active (settings fps_mode == 4 without env override, or explicit 35..50 FPS target).
+bool framepace_is_between_mode(void);
+// true when 40 FPS mode on Android wants the physical display locked at 120.0 Hz (even during 30 FPS menus/movies).
+bool framepace_wants_120hz(void);
 // The frame rate the runtime paces to now, frames per second (0: no limit): the setting (Video > Frame rate), 30
 // in the menus, the events and while a movie plays.
 int framepace_target(void);

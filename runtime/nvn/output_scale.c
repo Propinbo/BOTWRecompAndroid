@@ -38,7 +38,8 @@ static void dyn_update(double now, double gpu_ms) {
 #ifdef __ANDROID__
     // the frame rate it keeps: 60 with Frame rate at 60 fps, else 30 - Auto's 60 comes by itself where the GPU has room.
     // (Aiming at Auto's tries for 60 took the scale to its floor while the game stayed at 30: POCO F7 Ultra, 2026-10-25)
-    want = fps_mode_now() == 2 || fps_mode_now() == 4 ? want : fps_mode_now() == 3 ? 1000.0 / 20 : 1000.0 / 30;  // (45: its 22 ms)
+    int env_fps = framepace_env_target_fps();
+    want = (env_fps > 0 || fps_mode_now() == 2 || fps_mode_now() == 4) ? want : fps_mode_now() == 3 ? 1000.0 / 20 : 1000.0 / 30;  // (40 / 45: its 25 / 22 ms)
 #endif
     g_dyn_dt_sum += dt;
     g_dyn_n++;
@@ -82,11 +83,12 @@ void output_scale(double dw, double dh, bool reshape_allowed, double now, double
     }
     double fit = fmin(dw / 1920.0, dh / 1080.0);
     static bool env_init;
-    static double forced, wide_test;
+    static double forced, wide_test, render_scale;
     if (!env_init) {
         env_init = true;
         forced = getenv("LARECOMP_SCALE") ? atof(getenv("LARECOMP_SCALE")) : 0;
         if (!isfinite(forced) || forced <= 0) forced = 0;
+        render_scale = output_scale_parse_render_scale(getenv("LARECOMP_RENDER_SCALE"));
         wide_test = getenv("LARECOMP_WIDE_TEST") ? atof(getenv("LARECOMP_WIDE_TEST")) : 0;
         if (!isfinite(wide_test) || wide_test <= 0 || wide_test > 16.0) wide_test = 0;
     }
@@ -127,22 +129,33 @@ void output_scale(double dw, double dh, bool reshape_allowed, double now, double
     // the 3D scene, in units of its own 900 lines: the size it takes in the final image (Match display), or N times
     // the Switch's
     double hs;
+    bool snap16 = false;
     int mode = g_settings.res_mode;
     if (forced > 0) hs = forced;
-    else if (mode >= 1 && mode <= 8) hs = mode;
+    else if (render_scale > 0.0) {
+        hs = h * 1080.0 / SCENE_LINES;
+        double base = out_auto ? h_screen * 1080.0 / SCENE_LINES : hs;
+        hs = fmin(base * render_scale, hs);
+        snap16 = true;
+    } else if (mode >= 1 && mode <= 8) hs = mode;
     else {
         hs = h * 1080.0 / SCENE_LINES;  // Match display
         // (Auto output: the shares below are of the screen's lines, as they were before it - only the final image is
         // smaller - and at most the scene's size in it: 50% on a 1440-line screen stays 720 lines, 75% is 1080)
         double base = out_auto ? h_screen * 1080.0 / SCENE_LINES : hs, share = 1.0;
         if (mode == RES_DYNAMIC) { dyn_update(now, gpu_ms); share = g_dyn; }
+        else if (mode == RES_Q85) { share = 0.85; snap16 = true; }
         else if (mode == RES_Q75) share = 0.75;
+        else if (mode == RES_Q70) { share = 0.70; snap16 = true; }
+        else if (mode == RES_Q68) { share = 0.68; snap16 = true; }
+        else if (mode == RES_Q65) { share = 0.65; snap16 = true; }
         else if (mode == RES_Q25) share = 0.25;
         else if (mode == RES_Q50) share = 0.5;
         if (mode != RES_MATCH) hs = fmin(base * share, hs);
     }
     hs = fmax(hs, 0.1);
     o->scene_sx = hs * shape; o->scene_sy = hs;
+    if (snap16) output_scale_snap_scene_16(&o->scene_sx, &o->scene_sy);
     double scap = fmin(MAX_TEX / (1920.0 * o->scene_sx), MAX_TEX / (1080.0 * o->scene_sy));
     if (scap < 1.0) { o->scene_sx *= scap; o->scene_sy *= scap; }
     // where the image goes in the window: fills it when reshaped, else a fitted 16:9 box

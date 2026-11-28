@@ -312,7 +312,7 @@ void settings_load(void) {
         else if (!strcmp(key, "touch_controls")) g_settings.touch_controls = atoi(val) != 0;
         else if (!strcmp(key, "cutscenes_60")) g_settings.event_fps_unlock = atoi(val) != 0;
         else if (!strcmp(key, "thermal_cap")) g_settings.thermal_cap = atoi(val) != 0;
-        else if (!strcmp(key, "frame_rate")) g_settings.fps_mode = !strcmp(val, "30") ? 1 : !strcmp(val, "60") ? 2 : !strcmp(val, "20") ? 3 : !strcmp(val, "45") ? 4 : 0;
+        else if (!strcmp(key, "frame_rate")) g_settings.fps_mode = !strcmp(val, "30") ? 1 : !strcmp(val, "60") ? 2 : !strcmp(val, "20") ? 3 : (!strcmp(val, "40") || !strcmp(val, "45")) ? 4 : 0;
         else if (!strcmp(key, "shader_int32")) g_settings.shader_int32 = atoi(val) != 0;
         else if (!strcmp(key, "sync_lag")) g_settings.sync_lag = atoi(val) != 0;
         else if (!strcmp(key, "native_code")) g_settings.native_code = atoi(val) != 0;
@@ -371,7 +371,9 @@ void settings_load(void) {
 #endif
         else if (!strcmp(key, "resolution")) {
             int n = atoi(val);
-            g_settings.res_mode = !strcmp(val, "dynamic") ? RES_DYNAMIC : (!strcmp(val, "75%") || !strcmp(val, "67%")) ? RES_Q75 :
+            g_settings.res_mode = !strcmp(val, "dynamic") ? RES_DYNAMIC : !strcmp(val, "85%") ? RES_Q85 :
+                                  (!strcmp(val, "75%") || !strcmp(val, "67%")) ? RES_Q75 :
+                                  !strcmp(val, "70%") ? RES_Q70 : !strcmp(val, "68%") ? RES_Q68 : !strcmp(val, "65%") ? RES_Q65 :
                                   !strcmp(val, "50%") ? RES_Q50 : !strcmp(val, "25%") ? RES_Q25 :
                                   (n >= 1 && n <= 4) ? n : n > 4 ? 4 : RES_MATCH;  // (5x-8x were removed)
         }
@@ -487,7 +489,11 @@ static void settings_save_locked(void) {
     fprintf(f, "antialias = %s\n", g_settings.antialias == AA_SMAA ? "smaa" : g_settings.antialias == AA_FXAA ? "fxaa" : "off");
     fprintf(f, "shadows = %d\n", g_settings.shadows ? 1 : 0);
     if (g_settings.res_mode == RES_DYNAMIC) fprintf(f, "resolution = dynamic\n");
+    else if (g_settings.res_mode == RES_Q85) fprintf(f, "resolution = 85%%\n");
     else if (g_settings.res_mode == RES_Q75) fprintf(f, "resolution = 75%%\n");
+    else if (g_settings.res_mode == RES_Q70) fprintf(f, "resolution = 70%%\n");
+    else if (g_settings.res_mode == RES_Q68) fprintf(f, "resolution = 68%%\n");
+    else if (g_settings.res_mode == RES_Q65) fprintf(f, "resolution = 65%%\n");
     else if (g_settings.res_mode == RES_Q25) fprintf(f, "resolution = 25%%\n");
     else if (g_settings.res_mode == RES_Q50) fprintf(f, "resolution = 50%%\n");
     else if (g_settings.res_mode >= 1 && g_settings.res_mode <= 8) fprintf(f, "resolution = %dx\n", g_settings.res_mode);

@@ -21,12 +21,16 @@
 #endif
 
 #include "../../benchmark_perf.h"
+#include "../../framepace.h"
 #include "job_queue.h"
 #include "../../hle.h"
 #include "../../kernel.h"
 #include "shaders.h"
 #include "shader_meta_cache.h"
 #include "vk.h"
+#ifdef __ANDROID__
+#include "mali_frame_pacer.h"
+#endif
 #define CBWIN_SPAN_TYPE
 typedef VkSpan CbwinSpan;
 #include "cbwin_snap.h"
@@ -491,6 +495,25 @@ static _Atomic bool pace_slow;
 static uint64_t stat_pace_over;
 static _Atomic int pace_on = -1;
 
+#ifdef __ANDROID__
+static _Atomic uint64_t g_adpf_target_ns = 16666667ull;
+RT_ON_RESET(vk_adpf_target_reset) {
+    atomic_store_explicit(&g_adpf_target_ns, 16666667ull, memory_order_relaxed);
+}
+static uint64_t vk_adpf_compute_ns(void) {
+    static int follow = -1;
+    static double budget30 = -1.0;
+    if (follow < 0) follow = getenv("LARECOMP_ADPF_FOLLOW") != NULL;
+    if (budget30 < 0.0) budget30 = getenv("LARECOMP_ADPF30_MS") ? atof(getenv("LARECOMP_ADPF30_MS")) : 0.0;
+    bool slow = atomic_load_explicit(&pace_slow, memory_order_relaxed);
+    return mali_pacer_adpf_target_ns(framepace_target(), fps_mode_now(), framepace_env_target_fps(), slow,
+                                       follow != 0, AB("adpf30") == 1, vk_driver_is_mali(), budget30);
+}
+uint64_t vk_adpf_target_ns(void) {
+    return atomic_load_explicit(&g_adpf_target_ns, memory_order_relaxed);
+}
+#endif
+
 // A frame's work in ms (the longest of the game's thread, the render thread and the GPU; smoothed), -1 unknown
 static double g_work_ms;
 double vk_frame_work_ms(void) { return g_work_ms > 0 ? g_work_ms : -1; }
@@ -524,14 +547,17 @@ void vk_pace_frame(void) {
     last_mode = fps_mode_now();
     last_resolution = g_settings.res_mode;
     if (changed) {
+        int env_fps = framepace_env_target_fps();
         memset(over, 0, sizeof over);
         idx = nover = calm = 0;
         avg = 0;
         slow_since = probe_at = 0;
         probe_wait = 10000000000ull;
-        pace_slow = pace_on && (fps_mode_now() == 1 || fps_mode_now() == 3);
+        pace_slow = pace_on && (env_fps >= 0 ? (env_fps > 0 && env_fps <= 30)
+                                             : (fps_mode_now() == 1 || fps_mode_now() == 3));
         last = 0;  // discard the transition frame's timing, including menu time and resource reallocation
-        LOG("[pace] settings changed: fresh %s pacing history\n", fps_mode_now() ? "fixed" : "auto");
+        atomic_store_explicit(&g_adpf_target_ns, vk_adpf_compute_ns(), memory_order_relaxed);
+        LOG("[pace] settings changed: fresh %s pacing history\n", (env_fps >= 0 || fps_mode_now()) ? "fixed" : "auto");
     }
 #endif
     uint64_t now = plat_now_ns(), w = g_blocked_ns;
@@ -552,10 +578,6 @@ void vk_pace_frame(void) {
     if (render_busy > busy) busy = render_busy;
 #endif
 #ifdef __ANDROID__
-    // (ADPF: clocks for 60 fps even in the 30 fps mode - with that mode's 33 ms as the target, a 21 ms frame looked
-    // comfortable, the clocks stayed low and so did the mode)
-    static int follow = -1;  // LARECOMP_ADPF_FOLLOW=1: the old target (the mode's own)
-    if (follow < 0) follow = getenv("LARECOMP_ADPF_FOLLOW") != NULL;
     {   // LARECOMP_ADPF_GPU=1 (a test): the GPU's time too (API 35+), so its governor would raise its clock for 60 fps
         // as well. Accepted on the Snapdragon 8 Elite (2026-10-16) but nothing measurable changed: off by default.
         static int no_gpu = -1;
@@ -564,26 +586,14 @@ void vk_pace_frame(void) {
         uint64_t total = gpu_busy_total, gpu = total - last_busy;
         last_busy = total;
         g_pace_gpu_ms = gpu / 1e6;
-        // (per presented frame, against 60 fps's budget in either mode: a 30 fps frame renders one image too - its GPU
-        // time is what a 60 fps frame would take, and halved it looked comfortable: the clock stayed low)
         // The render hint defaults to the established wall-time signal; CPU-only timing is opt-in.
         extern uint64_t vk_async_frame_cpu_ns(void);
         double hint_busy = game_busy;
         double render_cpu = vk_async_on() ? vk_async_frame_cpu_ns() / 1e6 : 0;
         if (render_cpu > hint_busy) hint_busy = render_cpu;
-        // (Frame rate 30, fixed: no 60 fps trial to make room for - the budget is 30 fps's, so the governor stops
-        // running the threads at clocks that would finish them in 13 ms of their 33. LARECOMP_AB=<n>:adpf30: the 60
-        // fps budget on side B)
-        // Three quarters of the frame, not all of it: the governor lowers the clocks until the work just fits its
-        // target, and a phone whose frames weigh near 33 ms then went over it every few frames - each a vsync late, 50
-        // ms: 17-20 fps at any quality where 0.2.6 held 30 (Mali-G925, #89; 0.2.9 brought the 33 ms budget)
-        bool fixed30 = fps_mode_now() == 1 && AB("adpf30") != 1;
-        uint64_t budget = fps_mode_now() == 3 ? 37500000ull  // (Frame rate 20: 20 fps's, three quarters)
-                          : (follow && pace_slow) || fixed30 ? 25000000ull : 16666667ull;
-        static double budget30 = -1;  // (LARECOMP_ADPF30_MS=<ms>, a test: the 30 fps budget instead of 25 ms)
-        if (budget30 < 0) budget30 = getenv("LARECOMP_ADPF30_MS") ? atof(getenv("LARECOMP_ADPF30_MS")) : 0;
-        if (budget30 > 0 && budget == 25000000ull) budget = (uint64_t)(budget30 * 1e6);
-        plat_frame_work_gpu((uint64_t)(hint_busy * 1e6), no_gpu ? 0 : gpu, budget, (uint64_t)(game_busy * 1e6));
+        uint64_t adpf_budget = vk_adpf_compute_ns();
+        atomic_store_explicit(&g_adpf_target_ns, adpf_budget, memory_order_relaxed);
+        plat_frame_work_gpu((uint64_t)(hint_busy * 1e6), no_gpu ? 0 : gpu, adpf_budget, (uint64_t)(game_busy * 1e6));
     }
 #endif
 #ifdef __ANDROID__
@@ -628,7 +638,11 @@ void vk_pace_frame(void) {
 #ifdef __ANDROID__
     // (or one that missed its vsync, whatever held it: with the render thread both halves can fit and the frame still
     // take two vsyncs - slow motion all the same)
-    int o = steps == 1 && (busy > 16.2 || p > 20000000ull);
+    int target_fps = framepace_target();
+    bool between = framepace_is_between_mode() && target_fps >= 35 && target_fps <= 50;
+    double over_busy_ms = between ? (980.0 / (double)target_fps) : 16.2;
+    uint64_t over_period_ns = between ? (1000000000ull / (uint64_t)target_fps + 3500000ull) : 20000000ull;
+    int o = steps == 1 && (busy > over_busy_ms || p > over_period_ns);
     // Low-volume diagnostics: distinguish real work from a late presentation without per-frame logcat traffic.
     // Deliberately independent of ADPF and of the decision below.
     static int trace = -1;
@@ -662,6 +676,15 @@ void vk_pace_frame(void) {
     idx = (idx + 1) % 60;
     if (!pace_on) return;  // (measured and counted all the same: LARECOMP_LOG_PACE, the stats)
 #ifdef __ANDROID__
+    {
+        int env_fps = framepace_env_target_fps();
+        if (env_fps >= 0) {
+            bool slow = env_fps > 0 && env_fps <= 30;
+            if (slow != pace_slow) LOG("[pace] frame rate overridden to %d fps\n", env_fps);
+            pace_slow = slow;
+            return;
+        }
+    }
     if (fps_mode_now()) {  // (Video: Frame rate 20 / 30 / 40-45 / 60) fixed: no measuring, no trials
         extern int vk_between_fps(void);
         bool slow = fps_mode_now() == 1 || fps_mode_now() == 3;
@@ -1942,8 +1965,11 @@ const char *renderer_stats(void) {
             if (prof_end_line[l] > 20) { n = strlen(stats_text); snprintf(stats_text + n, sizeof stats_text - n, " %d:%u", l, prof_end_line[l]); }
         memset(prof_end_line, 0, sizeof prof_end_line);
         n = strlen(stats_text);
-        snprintf(stats_text + n, sizeof stats_text - n, " | views created %llu | counters gpu %llu | pace %s, %llu frames over", (unsigned long long)prof_views_created,
-                 (unsigned long long)stat_counters_gpu, pace_slow ? "30" : "60", (unsigned long long)stat_pace_over);
+        int cur_pace = pace_slow ? 30
+                     : (framepace_is_between_mode() && framepace_target() > 0 ? framepace_target() : 60);
+        snprintf(stats_text + n, sizeof stats_text - n, " | views created %llu | counters gpu %llu | pace %d, %llu frames over",
+                 (unsigned long long)prof_views_created, (unsigned long long)stat_counters_gpu, cur_pace,
+                 (unsigned long long)stat_pace_over);
         stat_counters_gpu = stat_pace_over = 0;
         {
             extern uint64_t prof_vc_hits, prof_vc_bypass, prof_vc_copied, prof_vc_queries, prof_vc_scan_pages, prof_vc_scan_ns;

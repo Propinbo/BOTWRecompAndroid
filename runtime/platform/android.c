@@ -99,6 +99,20 @@ float plat_max_refresh_hz(void) {
     return hz;
 }
 
+bool plat_set_preferred_display_hz(float hz) {
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject act = (jobject)SDL_GetAndroidActivity();
+    if (!env || !act) return false;
+    bool ok = false;
+    jclass c = (*env)->GetObjectClass(env, act);
+    jmethodID m = (*env)->GetStaticMethodID(env, c, "setPreferredDisplayHz", "(F)Z");
+    if (m) ok = (*env)->CallStaticBooleanMethod(env, c, m, (jfloat)hz);
+    if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); ok = false; }
+    (*env)->DeleteLocalRef(env, c);
+    (*env)->DeleteLocalRef(env, act);
+    return ok;
+}
+
 static int picked_folder_log(bool first) {  // BOTWRecompAndroidActivity.openLog: a descriptor, -1 without a usable folder
     JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
     jobject act = (jobject)SDL_GetAndroidActivity();

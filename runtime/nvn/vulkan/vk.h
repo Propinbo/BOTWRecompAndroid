@@ -209,4 +209,5 @@ static inline uint16_t vk_depth16_in(uint32_t u, VkFormat f) {  // the wide texe
     return (uint16_t)(d * 65535.0f + 0.5f);
 }
 bool vk_slot_async_default(void);
+uint64_t vk_adpf_target_ns(void);
 #endif
