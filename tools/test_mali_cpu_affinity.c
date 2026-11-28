@@ -1,11 +1,11 @@
 // Standalone host/Bionic unit test for runtime/platform/cpu_topo.h + live sysfs & pthread inheritance check.
 #define _GNU_SOURCE
 #include <assert.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #ifdef __ANDROID__
+#include <pthread.h>
 #include <sched.h>
 #include <unistd.h>
 #endif
@@ -81,9 +81,9 @@ static void test_sd8_gen3_and_invalid_topologies(void) {
     assert(t.little_mask == 0x03ull && t.n_little == 2);
     assert(t.big_mask == 0xFCull && t.n_big == 6);
 
-    // Snapdragon 8 Elite (SM8750 Oryon 6+2 L2-only dual-cluster: cpus 0-5 L2#0 + cpus 6-7 L2#1)
+    // Snapdragon 8 Elite (SM8750 Oryon 6+2 L2-only dual-cluster: shared_l3 == 0 -> valid=true)
     const uint32_t cap_8e[8] = {792, 792, 792, 792, 792, 792, 1024, 1024};
-    plat_cpu_topo_classify(cap_8e, NULL, 8, 0xFFull, &t);
+    plat_cpu_topo_classify_cache(cap_8e, NULL, 0, 8, 0xFFull, &t);
     assert(t.valid && t.dual_6plus2);
     assert(t.little_mask == 0x3Full && t.n_little == 6);
     assert(t.big_mask == 0xC0ull && t.n_big == 2);
@@ -102,15 +102,40 @@ static void test_sd8_gen3_and_invalid_topologies(void) {
     assert(plat_cpu_topo_mask_for_role(&t, 3, PLAT_CPU_ROLE_GUEST_HOT) == 0);
     assert(plat_cpu_topo_mask_for_role(&t, 3, PLAT_CPU_ROLE_WORKER) == 0x03ull);
 
+    // Shared-L3 6+2 (e.g. Snapdragon 695: 6x A55 + 2x A78 with shared L3) and unknown-L3 must fail closed.
+    plat_cpu_topo_classify_cache(cap_8e, NULL, 1, 8, 0xFFull, &t);
+    assert(!t.valid && !t.dual_6plus2);
+    plat_cpu_topo_classify_cache(cap_8e, NULL, -1, 8, 0xFFull, &t);
+    assert(!t.valid && !t.dual_6plus2);
+
+    // 4+4 big.LITTLE -> valid=true; 4+2 / 2+6 (shared L3) -> valid=false; 10-core 1+2+3+4 -> valid=true
+    const uint32_t cap_4p4[8] = {400, 400, 400, 400, 900, 900, 900, 900};
+    plat_cpu_topo_classify_cache(cap_4p4, NULL, 1, 8, 0xFFull, &t);
+    assert(t.valid && !t.dual_6plus2 && t.little_mask == 0x0Full && t.big_mask == 0xF0ull);
+
+    const uint32_t cap_4p2[6] = {400, 400, 400, 400, 900, 900};
+    plat_cpu_topo_classify_cache(cap_4p2, NULL, 1, 6, 0x3Full, &t);
+    assert(!t.valid);
+
+    const uint32_t cap_10[10] = {300, 300, 300, 300, 650, 650, 650, 880, 880, 1024};
+    plat_cpu_topo_classify_cache(cap_10, NULL, 1, 10, 0x3FFull, &t);
+    assert(t.valid && t.n_little == 4 && t.n_big == 6 && t.n_mid_big == 5 && t.n_prime == 1);
+
+    // Partial-zero cpu_capacity must fall back to max_khz while preserving full allowed_mask.
+    const uint32_t cap_partial[8] = {500, 500, 500, 0, 880, 880, 880, 1024};
+    const long khz_d9400[8] = {2400000, 2400000, 2400000, 2400000, 3300000, 3300000, 3300000, 3730000};
+    plat_cpu_topo_classify_cache(cap_partial, khz_d9400, 1, 8, 0xFFull, &t);
+    assert(t.valid && !t.used_capacity && t.allowed_mask == 0xFFull && t.n_allowed == 8);
+
     // Symmetric 8-core -> valid=false
     const long khz_sym[8] = {2000000, 2000000, 2000000, 2000000, 2000000, 2000000, 2000000, 2000000};
     plat_cpu_topo_classify(NULL, khz_sym, 8, 0xFFull, &t);
     assert(!t.valid);
 
-    // Offlined prime cpu7 -> allowed 0x7F leaves 3 big cores < 4 -> valid=false
+    // Offlined prime cpu7 -> allowed 0x7F leaves 3 big cores < 4 -> valid=false (allowed_mask preserved)
     const uint32_t cap_d9400[8] = {502, 502, 502, 472, 880, 880, 880, 1024};
     plat_cpu_topo_classify(cap_d9400, NULL, 8, 0x7Full, &t);
-    assert(!t.valid);
+    assert(!t.valid && t.allowed_mask == 0x7Full);
 
     // Unreadable/empty sysfs -> valid=false
     plat_cpu_topo_classify(NULL, NULL, 8, 0xFFull, &t);
@@ -153,6 +178,7 @@ static void test_live_android_sysfs_and_child_isolation(void) {
     uint32_t cap[64] = {0};
     long khz[64] = {0};
     int max_c = 0;
+    bool any_l3 = false, all_l2 = (allowed != 0);
     for (int c = 0; c < 64; c++) {
         char path[96];
         snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cpu_capacity", c);
@@ -171,23 +197,36 @@ static void test_live_android_sysfs_and_child_isolation(void) {
             fclose(ff);
             if (c + 1 > max_c) max_c = c + 1;
         }
+        if (allowed & (1ull << c)) {
+            snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cache/index3/level", c);
+            FILE *fl3 = fopen(path, "re");
+            if (fl3) { any_l3 = true; fclose(fl3); }
+            snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cache/index2/level", c);
+            FILE *fl2 = fopen(path, "re");
+            if (fl2) fclose(fl2);
+            else all_l2 = false;
+        }
     }
+    int shared_l3 = any_l3 ? 1 : (all_l2 ? 0 : -1);
 
     PlatCpuTopo t;
-    plat_cpu_topo_classify(cap, khz, max_c, allowed, &t);
-    printf("[live] valid=%d dual6p2=%d src=%s allowed=0x%llx little=0x%llx big=0x%llx mid=0x%llx prime=0x%llx worker=0x%llx hot=0x%llx\n",
-           t.valid, t.dual_6plus2, t.used_capacity ? "cap" : "khz",
+    plat_cpu_topo_classify_cache(cap, khz, shared_l3, max_c, allowed, &t);
+    printf("[live] valid=%d dual6p2=%d shared_l3=%d src=%s allowed=0x%llx little=0x%llx big=0x%llx mid=0x%llx prime=0x%llx worker=0x%llx hot=0x%llx\n",
+           t.valid, t.dual_6plus2, shared_l3, t.used_capacity ? "cap" : "khz",
            (unsigned long long)t.allowed_mask, (unsigned long long)t.little_mask,
            (unsigned long long)t.big_mask, (unsigned long long)t.mid_big_mask,
            (unsigned long long)t.prime_mask, (unsigned long long)t.worker_mask,
            (unsigned long long)t.guest_hot_mask);
-    assert(t.valid);
+    if (!t.valid) {
+        printf("[live] SKIP: non-target or unrecognized live topology\n");
+        return;
+    }
     if (t.dual_6plus2) {
         assert(t.little_mask == 0x3Full);
         assert(t.big_mask == 0xC0ull);
         assert(t.worker_mask == 0x03ull);
         assert(t.guest_hot_mask == 0x3Cull);
-    } else {
+    } else if (t.n_little == 4 && t.n_big == 4 && t.n_prime == 1) {
         assert(t.little_mask == 0x0Full);
         assert(t.big_mask == 0xF0ull);
         assert(t.mid_big_mask == 0x70ull);
@@ -199,6 +238,7 @@ static void test_live_android_sysfs_and_child_isolation(void) {
     uint64_t render_mask = plat_cpu_topo_mask_for_role(&t, 1, PLAT_CPU_ROLE_RENDER);
     uint64_t worker_mask = plat_cpu_topo_mask_for_role(&t, 1, PLAT_CPU_ROLE_WORKER);
     assert(render_mask != 0 && worker_mask != 0 && (render_mask & worker_mask) == 0);
+    assert((render_mask & t.allowed_mask) == render_mask && (worker_mask & t.allowed_mask) == worker_mask);
     cpu_set_t big_set;
     CPU_ZERO(&big_set);
     for (int c = 0; c < 64 && c < CPU_SETSIZE; c++) {

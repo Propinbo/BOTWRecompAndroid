@@ -627,8 +627,9 @@ static void thread_start(KThread *t) {
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, 256ull << 20);  // guest recursion runs on the host stack
-    t->started = true;
-    pthread_create(&t->host, &attr, thread_main, t);
+    pthread_mutex_lock(&g_klock);
+    if (pthread_create(&t->host, &attr, thread_main, t) == 0) t->started = true;
+    pthread_mutex_unlock(&g_klock);
     pthread_attr_destroy(&attr);
 }
 
@@ -1489,18 +1490,55 @@ void kernel_stop_threads(void (*idle)(void)) {
 static uint64_t g_aff_last_ns;
 static uint32_t g_aff_last_hash;
 static int32_t g_aff_self_pinned_tid;
+static int g_aff_self_pinned_mode;
+static int g_aff_last_mode;
+
+static void kernel_aff_demote_guests_locked(void) {
+    for (KThread *t = g_threads; t; t = t->anext) {
+        if (!t->aff_promoted) continue;
+        int32_t tid = __atomic_load_n(&t->host_tid, __ATOMIC_ACQUIRE);
+        if (tid > 0 && !t->finished) plat_thread_pin_role(tid, PLAT_CPU_ROLE_ALL);
+        t->aff_promoted = false;
+    }
+}
 
 void kernel_affinity_tick(void) {
     int mode = plat_cpu_affinity_mode();
-    if (mode == 0) return;
+    if (mode == 0 && g_aff_last_mode == 0) return;
+    if (mode == 0 || (mode == 3 && g_aff_last_mode != 0 && g_aff_last_mode != 3)) {
+        pthread_mutex_lock(&g_klock);
+        kernel_aff_demote_guests_locked();
+        pthread_mutex_unlock(&g_klock);
+        if (mode == 0 && g_aff_self_pinned_tid > 0 && g_aff_self_pinned_mode != 0 && g_aff_self_pinned_mode != 3)
+            plat_thread_pin_role(0, PLAT_CPU_ROLE_ALL);
+        if (mode == 0) {
+            g_aff_self_pinned_tid = 0;
+            g_aff_self_pinned_mode = 0;
+        }
+        plat_adpf_set_guest_tids(NULL, 0);
+        g_aff_last_hash = 0;
+        g_aff_last_ns = 0;
+        g_aff_last_mode = mode;
+        if (mode == 0) return;
+    }
+    g_aff_last_mode = mode;
+
     uint64_t now = plat_now_ns();
     if (g_aff_last_ns && now - g_aff_last_ns < 1000000000ull) return;
     uint64_t dt_ns = g_aff_last_ns ? (now - g_aff_last_ns) : 0;
     g_aff_last_ns = now;
 
     int32_t self_tid = (int32_t)syscall(__NR_gettid);
-    if (self_tid > 0 && self_tid != g_aff_self_pinned_tid) {
-        if (plat_thread_pin_role(0, PLAT_CPU_ROLE_PRESENT) || mode == 3) g_aff_self_pinned_tid = self_tid;
+    if (self_tid > 0 && (self_tid != g_aff_self_pinned_tid || mode != g_aff_self_pinned_mode)) {
+        if (mode == 3) {
+            if (g_aff_self_pinned_mode != 0 && g_aff_self_pinned_mode != 3)
+                plat_thread_pin_role(0, PLAT_CPU_ROLE_ALL);
+            g_aff_self_pinned_tid = self_tid;
+            g_aff_self_pinned_mode = mode;
+        } else if (plat_thread_pin_role(0, PLAT_CPU_ROLE_PRESENT)) {
+            g_aff_self_pinned_tid = self_tid;
+            g_aff_self_pinned_mode = mode;
+        }
     }
     if (mode == 3) return;  // render+present & workers only: keep guest threads unpinned on 0-7
 
@@ -1511,7 +1549,8 @@ void kernel_affinity_tick(void) {
     pthread_mutex_lock(&g_klock);
     if (dt_ns == 0) {
         for (KThread *t = g_threads; t; t = t->anext) {
-            if (!t->started || t->finished) continue;
+            int32_t tid = __atomic_load_n(&t->host_tid, __ATOMIC_ACQUIRE);
+            if (!t->started || t->finished || tid <= 0) continue;
             clockid_t cid;
             struct timespec ts;
             if (pthread_getcpuclockid(t->host, &cid) == 0 && clock_gettime(cid, &ts) == 0)
@@ -1522,6 +1561,7 @@ void kernel_affinity_tick(void) {
     }
 
     KThread *top[3] = {NULL, NULL, NULL};
+    int32_t top_tid[3] = {0, 0, 0};
     uint64_t top_score[3] = {0, 0, 0};
     double top_pct[3] = {0, 0, 0};
     uint64_t min_delta = dt_ns / 20;  // >= 5% of 1 core
@@ -1542,10 +1582,12 @@ void kernel_affinity_tick(void) {
             if (score > top_score[i]) {
                 for (int j = 2; j > i; j--) {
                     top[j] = top[j - 1];
+                    top_tid[j] = top_tid[j - 1];
                     top_score[j] = top_score[j - 1];
                     top_pct[j] = top_pct[j - 1];
                 }
                 top[i] = t;
+                top_tid[i] = tid;
                 top_score[i] = score;
                 top_pct[i] = pct;
                 break;
@@ -1564,8 +1606,8 @@ void kernel_affinity_tick(void) {
         }
     }
     for (int i = 0; i < 3; i++) {
-        if (top[i] && top[i]->aff_promoted) {
-            hot_tids[nhot] = top[i]->host_tid;
+        if (top[i] && top[i]->aff_promoted && top_tid[i] > 0) {
+            hot_tids[nhot] = top_tid[i];
             hot_pct[nhot] = top_pct[i];
             nhot++;
         }
@@ -1603,6 +1645,8 @@ void kernel_reset(void) {
     g_aff_last_ns = 0;
     g_aff_last_hash = 0;
     g_aff_self_pinned_tid = 0;
+    g_aff_self_pinned_mode = 0;
+    g_aff_last_mode = 0;
     plat_adpf_set_guest_tids(NULL, 0);
     pthread_mutex_lock(&c0_m);
     memset(cq, 0, sizeof cq);

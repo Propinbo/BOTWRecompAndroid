@@ -13,6 +13,7 @@
 #endif
 
 #include "../../benchmark_perf.h"
+#include "../../framepace.h"
 #include "../../paths.h"
 #include "../../settings.h"
 #include "../../ui/menu.h"
@@ -1263,7 +1264,16 @@ double vk_display_hz(void) {
 // ... and while it's set the window says so (40 or 45 fps content): a system that can switch to a rate where it's even
 // may (a 120 Hz screen that offers 90 for 45); otherwise the system's own choice again. Asked again for a new window
 // (from the background).
+static void android_update_auto_affinity(void) {
+    if (!g_vk.phys) return;
+    extern bool vk_adreno_8xx(const char *name);
+    bool mali_40 = vk_driver_is_mali() && (fps_mode_now() == 4 || framepace_target() == 40);
+    bool oryon_turnip = vk_driver_is_turnip() && plat_cpu_is_dual_6plus2() && vk_adreno_8xx(g_vk.props.deviceName);
+    plat_cpu_set_auto_affinity(mali_40 ? 1 : oryon_turnip ? 3 : 0);
+}
+
 static void android_frame_rate(struct ANativeWindow *aw) {
+    android_update_auto_affinity();
     static struct ANativeWindow *asked_aw;
     static float asked = -1;
     float want = fps_mode_now() == 4 && vk_between_target() != 30 ? (float)vk_between_target() : 0.0f;
@@ -1299,12 +1309,6 @@ static void android_frame_rate(struct ANativeWindow *aw) {
           : set_rate ? set_rate(aw, want, compat) : -1;
     if (want != asked) LOG("[vk] the window asks for %.0f fps content (%d)\n", want, r);
     asked_aw = aw, asked = want;
-    {
-        extern int framepace_target(void);
-        bool mali_40 = vk_driver_is_mali() && (fps_mode_now() == 4 || framepace_target() == 40);
-        bool oryon_turnip = vk_driver_is_turnip() && plat_cpu_is_dual_6plus2();
-        plat_cpu_set_auto_affinity(mali_40 ? 1 : oryon_turnip ? 3 : 0);
-    }
 }
 
 static bool android_surface_ready(void) {  // false: no window to draw into now
@@ -1371,14 +1375,17 @@ bool vk_frame_begin(const float clear[4]) {
     if (!w || !h) return false;  // minimised
 #ifdef __ANDROID__
     if (!android_surface_ready()) return false;
-    {
+    if (vk_async_on() && vk_async_is_render_thread()) {
         static __thread int last_render_aff_mode;
         int m = plat_cpu_affinity_mode();
         if (m != last_render_aff_mode) {
             last_render_aff_mode = m;
-            plat_thread_pin_role(0, m ? PLAT_CPU_ROLE_RENDER : PLAT_CPU_ROLE_ALL);
-            if (!vk_async_on() || vk_async_is_render_thread())
-                LOG("[android] render thread auto-affinity mode=%d\n", m);
+            if (m) plat_thread_pin_role(0, PLAT_CPU_ROLE_RENDER);
+            else {
+                plat_thread_unpin();
+                plat_render_thread_pin();
+            }
+            LOG("[android] render thread auto-affinity mode=%d\n", m);
         }
     }
 #endif
@@ -2359,6 +2366,9 @@ void ui_window_init(void) {
     }
 #endif
     create_swapchain();
+#ifdef __ANDROID__
+    android_update_auto_affinity();
+#endif
     vk_exec_init();
     vk_shaders_init();
 #ifdef __ANDROID__

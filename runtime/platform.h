@@ -105,7 +105,6 @@ typedef struct {
     int game_cpu, render_cpu;  // the core each last ran on (-1: unknown)
 } PlatAdpfStats;
 void plat_adpf_stats(PlatAdpfStats *out);
-#ifdef __ANDROID__
 #ifndef PLAT_CPU_ROLE_DEFINED
 #define PLAT_CPU_ROLE_DEFINED
 enum {
@@ -121,12 +120,12 @@ void plat_cpu_set_auto_affinity(int mode);  // sets default affinity mode when L
 bool plat_cpu_is_dual_6plus2(void);
 bool plat_adpf_guests_enabled(void);  // true when hot guest tids should be added to ADPF session
 bool plat_worker_thread_pin(void);  // binds calling worker to worker_mask when mode != 0; returns true if pinned
+void plat_render_thread_pin(void);
 bool plat_thread_pin_role(int32_t tid, int role);  // tid==0 means calling thread
 void plat_adpf_set_guest_tids(const int32_t *tids, int count);
 // A new thread back on every core: threads inherit the creating thread's affinity, and the presenting thread is
 // pinned to the fastest cores (platform/android.c)
 void plat_thread_unpin(void);
-#endif
 #endif
 
 #ifdef __cplusplus

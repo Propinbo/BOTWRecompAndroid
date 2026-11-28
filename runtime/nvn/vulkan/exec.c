@@ -588,7 +588,7 @@ void vk_pace_frame(void) {
         if (budget30 < 0) budget30 = getenv("LARECOMP_ADPF30_MS") ? atof(getenv("LARECOMP_ADPF30_MS")) : 0;
         if (budget30 > 0 && budget == 25000000ull) budget = (uint64_t)(budget30 * 1e6);
         plat_frame_work_gpu((uint64_t)(hint_busy * 1e6), no_gpu ? 0 : gpu, budget, (uint64_t)(game_busy * 1e6));
-        if (plat_cpu_affinity_mode() != 0) kernel_affinity_tick();
+        kernel_affinity_tick();
     }
 #endif
 #ifdef __ANDROID__
@@ -1516,10 +1516,18 @@ static void *worker(void *a) {
     (void)a;
 #ifdef __ANDROID__
     prctl(PR_SET_NAME, "vk-shaderc", 0, 0, 0);
+    int aff_mode = plat_cpu_affinity_mode();
     plat_worker_thread_pin();
 #endif
     for (;;) {
         Job *j = mw_job_pop_active(&jobs_lock, &jobs_cond, &jobs_head, &jobs_tail, &jobs_active);
+#ifdef __ANDROID__
+        int cur_mode = plat_cpu_affinity_mode();
+        if (cur_mode != aff_mode) {
+            aff_mode = cur_mode;
+            plat_worker_thread_pin();
+        }
+#endif
         j->fn(j->arg);
         free(j);
         finish_active_job(&jobs_lock, &jobs_head, &jobs_active);
@@ -1548,10 +1556,18 @@ static void *translator(void *a) {
     (void)a;
 #ifdef __ANDROID__
     prctl(PR_SET_NAME, "vk-xlat", 0, 0, 0);
+    int aff_mode = plat_cpu_affinity_mode();
     plat_worker_thread_pin();
 #endif
     for (;;) {
         Job *j = mw_job_pop_active(&tjobs_lock, &tjobs_cond, &tjobs_head, &tjobs_tail, &tjobs_active);
+#ifdef __ANDROID__
+        int cur_mode = plat_cpu_affinity_mode();
+        if (cur_mode != aff_mode) {
+            aff_mode = cur_mode;
+            plat_worker_thread_pin();
+        }
+#endif
         j->fn(j->arg);
         free(j);
         finish_active_job(&tjobs_lock, &tjobs_head, &tjobs_active);

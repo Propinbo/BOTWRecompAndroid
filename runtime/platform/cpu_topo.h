@@ -37,25 +37,34 @@ typedef struct {
 } PlatCpuTopo;
 
 static inline int plat_cpu_popcnt64(uint64_t m) {
+#if defined(__GNUC__) || defined(__clang__)
     return __builtin_popcountll(m);
+#else
+    int n = 0;
+    while (m) { m &= m - 1; n++; }
+    return n;
+#endif
 }
 
-static inline void plat_cpu_topo_classify(const uint32_t *cap, const long *max_khz, int ncpu,
-                                          uint64_t allowed_mask, PlatCpuTopo *out) {
+// shared_l3: 1 = L3 cache present, 0 = L2 verified & L3 absent (e.g. dual-L2 Oryon 6+2), -1 = unknown (fails closed).
+static inline void plat_cpu_topo_classify_cache(const uint32_t *cap, const long *max_khz, int shared_l3, int ncpu,
+                                                uint64_t allowed_mask, PlatCpuTopo *out) {
     if (!out) return;
     *out = (PlatCpuTopo){0};
     out->allowed_mask = allowed_mask;
     if (ncpu <= 0 || !allowed_mask) return;
     if (ncpu > 64) ncpu = 64;
+    out->n_allowed = plat_cpu_popcnt64(allowed_mask);
 
-    // Decide whether cpu_capacity gives >= 2 distinct positive scores across allowed CPUs.
+    // Decide whether cpu_capacity gives >= 2 distinct positive scores across every allowed CPU.
     uint64_t first_cap = 0;
-    bool cap_distinct = false;
+    bool cap_distinct = false, cap_complete = (cap != NULL);
     if (cap) {
         for (int c = 0; c < ncpu; c++) {
-            if (!(allowed_mask & (1ull << c)) || cap[c] == 0) continue;
+            if (!(allowed_mask & (1ull << c))) continue;
+            if (cap[c] == 0) { cap_complete = false; continue; }
             if (!first_cap) first_cap = cap[c];
-            else if (cap[c] != first_cap) { cap_distinct = true; break; }
+            else if (cap[c] != first_cap) cap_distinct = true;
         }
     }
 
@@ -65,7 +74,7 @@ static inline void plat_cpu_topo_classify(const uint32_t *cap, const long *max_k
     } CpuScore;
     CpuScore items[64];
     int count = 0;
-    bool used_cap = cap_distinct;
+    bool used_cap = cap_distinct && cap_complete;
 
     for (int c = 0; c < ncpu; c++) {
         if (!(allowed_mask & (1ull << c))) continue;
@@ -88,24 +97,21 @@ static inline void plat_cpu_topo_classify(const uint32_t *cap, const long *max_k
         items[j + 1] = key;
     }
 
-    // Group into tiers using a 10% relative tolerance (keeps [472,502] +6.4% together while
-    // separating X4 vs X925 on both cpu_capacity +16.4% and max_khz +13.0%).
+    // Group into tiers using a 10% relative tolerance without multiplying large integers.
     uint64_t tier_masks[64] = {0};
     int ntiers = 0;
     uint64_t tier_min = items[0].score;
     tier_masks[0] = 1ull << items[0].cpu;
     ntiers = 1;
     for (int i = 1; i < count; i++) {
-        if (items[i].score * 100ull > tier_min * 110ull) {
+        uint64_t thresh = (tier_min / 100ull) * 110ull + ((tier_min % 100ull) * 110ull) / 100ull;
+        if (items[i].score > thresh) {
             tier_min = items[i].score;
             ntiers++;
         }
         tier_masks[ntiers - 1] |= 1ull << items[i].cpu;
     }
 
-    out->allowed_mask = 0;
-    for (int i = 0; i < count; i++) out->allowed_mask |= 1ull << items[i].cpu;
-    out->n_allowed = count;
     out->used_capacity = used_cap;
     out->little_mask = tier_masks[0];
     out->n_little = plat_cpu_popcnt64(out->little_mask);
@@ -131,8 +137,8 @@ static inline void plat_cpu_topo_classify(const uint32_t *cap, const long *max_k
         return;
     }
 
-    // Dual-L2 6+2 topology (e.g. SM8750 Oryon without shared L3: cpus 0-5 L2 #0 + cpus 6-7 L2 #1).
-    if (ntiers == 2 && out->n_prime == 2 && out->n_little >= 6) {
+    // Dual-L2 6+2 topology (e.g. SM8750 Oryon verified without shared L3: cpus 0-5 L2 #0 + cpus 6-7 L2 #1).
+    if (shared_l3 == 0 && ntiers == 2 && out->n_prime == 2 && out->n_little >= 6) {
         uint64_t m = out->little_mask, w = 0;
         int picked = 0;
         for (int c = 0; c < 64 && picked < 2; c++) {
@@ -150,6 +156,11 @@ static inline void plat_cpu_topo_classify(const uint32_t *cap, const long *max_k
         out->dual_6plus2 = true;
         out->valid = (out->n_worker == 2 && out->n_guest_hot >= 4 && out->n_big == 2);
     }
+}
+
+static inline void plat_cpu_topo_classify(const uint32_t *cap, const long *max_khz, int ncpu,
+                                          uint64_t allowed_mask, PlatCpuTopo *out) {
+    plat_cpu_topo_classify_cache(cap, max_khz, -1, ncpu, allowed_mask, out);
 }
 
 static inline uint64_t plat_cpu_topo_mask_for_role(const PlatCpuTopo *t, int mode, int role) {

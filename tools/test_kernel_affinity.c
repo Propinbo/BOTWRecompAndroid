@@ -12,6 +12,28 @@ uint64_t plat_now_ns(void) {
 }
 
 static atomic_int ran;
+#ifdef __ANDROID__
+static int mock_aff_mode;
+static int mock_pin_all_calls;
+static int mock_pin_hot_calls;
+static int mock_adpf_clears;
+static int32_t mock_last_adpf_tids[3];
+static int mock_last_adpf_count = -1;
+
+int plat_cpu_affinity_mode(void) { return mock_aff_mode; }
+bool plat_adpf_guests_enabled(void) { return true; }
+bool plat_thread_pin_role(int32_t tid, int role) {
+    (void)tid;
+    if (role == PLAT_CPU_ROLE_ALL) mock_pin_all_calls++;
+    else if (role == PLAT_CPU_ROLE_GUEST_HOT) mock_pin_hot_calls++;
+    return true;
+}
+void plat_adpf_set_guest_tids(const int32_t *tids, int count) {
+    mock_last_adpf_count = count;
+    for (int i = 0; i < 3; i++) mock_last_adpf_tids[i] = (tids && i < count) ? tids[i] : 0;
+    if (count == 0) mock_adpf_clears++;
+}
+#endif
 static void *worker(void *arg) {
     KThread *t = arg;
     t_cur = t;
@@ -96,5 +118,35 @@ int main(void) {
     pthread_join(th, NULL);
     core0_release(&owner);
     assert(!c0_head && !c0_tail && c0_nevicted == 0);
+
+#ifdef __ANDROID__
+    // Verify kernel_affinity_tick mode transitions (1 -> 0 and 1 -> 3) cleanly demote promoted guests & clear ADPF.
+    KThread promoted = {.started = true, .finished = false, .host_tid = 12345, .aff_promoted = true};
+    KThread pending = {.started = true, .finished = false, .host_tid = 0, .aff_promoted = false};
+    promoted.anext = &pending;
+    g_threads = &promoted;
+    g_aff_last_mode = 1;
+    g_aff_last_ns = 0;
+    g_aff_self_pinned_tid = 999;
+    g_aff_self_pinned_mode = 1;
+    mock_aff_mode = 0;
+    mock_pin_all_calls = 0;
+    mock_adpf_clears = 0;
+    kernel_affinity_tick();
+    assert(!promoted.aff_promoted && mock_pin_all_calls == 2 && mock_adpf_clears == 1 && mock_last_adpf_count == 0);
+    assert(g_aff_last_mode == 0 && g_aff_self_pinned_tid == 0);
+
+    // Zero host_tid in dt_ns == 0 must skip safely without crashing on uninitialized t->host.
+    mock_aff_mode = 1;
+    promoted.aff_promoted = false;
+    kernel_affinity_tick();
+    promoted.aff_promoted = true;
+    mock_aff_mode = 3;
+    mock_pin_all_calls = 0;
+    kernel_affinity_tick();
+    assert(!promoted.aff_promoted && mock_pin_all_calls >= 1 && g_aff_last_mode == 3);
+    g_threads = NULL;
+    g_aff_last_mode = 0;
+#endif
     puts("PASS: affinity validation, 100 queued migrations, safe handoff, reboot wakeup");
 }
