@@ -66,6 +66,8 @@ typedef struct {
     bool mali_spirv_cleanup;      // !BC && ASTC or Turnip: Maxwell/SPIR-V cleanup pass (LARECOMP_MALI_SPIRV_CLEANUP)
     bool mali_discard_opt;        // !BC && ASTC or Turnip: discard pruning/hoisting & terminate opt (LARECOMP_MALI_DISCARD_OPT)
     bool noop_blend_opt;          // Turnip: disable no-op blending in pipelines to preserve LRZ (LARECOMP_VK_NOOP_BLEND_OPT)
+    bool mali_rp_merge_opt;       // !BC && ASTC or Turnip: defer clears + suppress 3ms mid-pass split (LARECOMP_MALI_RP_MERGE_OPT)
+    bool mali_rp_store_opt;       // (!BC && ASTC or Turnip) && VK 1.3+: lookahead STORE_OP_NONE / DONT_CARE (LARECOMP_MALI_RP_STORE_OPT)
     uint32_t api;                 // the device's Vulkan version as used: 1.3, or 1.1 / 1.2 with extensions (device.c)
 #endif
     // window
@@ -101,6 +103,13 @@ void vk_wait_seq(uint64_t seq);
 void vk_full_barrier(VkCommandBuffer cb);
 void vk_end_pass(void);
 void vk_submit_extra(VkSemaphore wait, VkSemaphore signal, VkCommandBuffer extra);  // submit + one more cb (present)
+#ifdef __ANDROID__
+void vk_mali_rp_forget_image(VkImage img);
+void vk_mali_rp_flush_clears_for(VkImage img);
+#else
+static inline void vk_mali_rp_forget_image(VkImage img) { (void)img; }
+static inline void vk_mali_rp_flush_clears_for(VkImage img) { (void)img; }
+#endif
 
 // Transient GPU-visible memory that lives until the submission it was allocated for completes.
 typedef struct { VkBuffer buf; uint64_t off; void *ptr; } VkSpan;
