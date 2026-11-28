@@ -143,7 +143,7 @@ bool settings_eff_no_game_fxaa(void) { return g_settings.no_game_fxaa; }
 int settings_eff_aniso(void) { return g_settings.aniso; }
 bool settings_eff_oled_dither(void) { return g_settings.oled_dither; }
 bool settings_eff_oled_black(void) { return g_settings.oled_black; }
-int settings_eff_shadow_scale(void) { return g_settings.shadow_scale > 0 ? g_settings.shadow_scale : 1; }
+int settings_eff_shadow_scale(void) { return g_settings.shadow_scale == 2 ? 2 : 1; }
 bool settings_eff_lod_bias_ultra(void) { return g_settings.lod_bias_ultra; }
 float settings_eff_ssao_scale(void) {
 #ifdef __ANDROID__
@@ -431,7 +431,9 @@ PFN_vkUpdateDescriptorSets vkUpdateDescriptorSets = n_uds; PFN_vkCreateDescripto
 PFN_vkDestroyDescriptorSetLayout vkDestroyDescriptorSetLayout = n_ddsl; PFN_vkDestroyShaderModule vkDestroyShaderModule = n_dsm;
 PFN_vkCreatePipelineLayout vkCreatePipelineLayout = n_pl; PFN_vkDestroyPipelineLayout vkDestroyPipelineLayout = n_dpl;
 PFN_vkCreateGraphicsPipelines vkCreateGraphicsPipelines = n_gp;
+static VKAPI_ATTR void VKAPI_CALL n_dsmp(VkDevice d, VkSampler s, const VkAllocationCallbacks *a) { (void)d, (void)s, (void)a; }
 PFN_vkDestroyPipeline vkDestroyPipeline = n_dp; PFN_vkCreateSampler vkCreateSampler = n_csmp;
+PFN_vkDestroySampler vkDestroySampler = n_dsmp;
 PFN_vkCreateCommandPool vkCreateCommandPool = mc_cpool; PFN_vkResetCommandPool vkResetCommandPool = mr_cpool;
 PFN_vkAllocateCommandBuffers vkAllocateCommandBuffers = ma_cbs; PFN_vkBeginCommandBuffer vkBeginCommandBuffer = mb_cb;
 PFN_vkEndCommandBuffer vkEndCommandBuffer = me_cb; PFN_vkResetDescriptorPool vkResetDescriptorPool = mr_dpool;

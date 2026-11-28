@@ -645,12 +645,13 @@ float settings_eff_ssao_scale(void) {
     float s_cached;
     if (on_cached == -2) {
         const char *fv = getenv("LARECOMP_FULL_RES_SSAO");
-        int on_val = fv && *fv ? atoi(fv) : -1;
+        int n_fv = fv && *fv ? atoi(fv) : -1;
+        int on_val = (fv && *fv) ? (n_fv >= 0 ? n_fv : 0) : -1;
         const char *sv = getenv("LARECOMP_SSAO_SCALE");
         float s_val = 0.0f;
         if (sv && *sv) {
             float v = (float)atof(sv);
-            s_val = (v >= 1.0f && v <= 2.0f) ? v : 1.0f;
+            s_val = v < 1.0f ? 1.0f : (v > 2.0f ? 2.0f : v);
         }
         uint32_t s_bits = 0;
         memcpy(&s_bits, &s_val, sizeof s_bits);

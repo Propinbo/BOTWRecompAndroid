@@ -675,17 +675,16 @@ static void tab_display(void) {
             g_settings.shadow_scale = sri ? 2 : 1;
         opt_indent(-1);
     }
-#ifdef __ANDROID__
     {
         static const char *saores[] = {"Default", "1.5x", "1:1"};
         int sao = g_settings.ssao_res < 0 || g_settings.ssao_res > 2 ? 0 : g_settings.ssao_res;
         if (opt_choice("SSAO resolution", &sao, saores, 3, 0,
-                       "Resolution multiplier for BOTW ambient occlusion and half-resolution lighting (800x450/400x225). "
-                       "1.5x sharpens contact shadows with strong 40 fps headroom; 1:1 renders at full 1080p at higher GPU cost.",
+                       "Resolution multiplier for BOTW ambient occlusion and half-resolution lighting (800x450 / 400x225). "
+                       "1.5x sharpens contact shadows with modest GPU cost; 1:1 matches output resolution up to 1080p at "
+                       "higher GPU cost.",
                        false))
             g_settings.ssao_res = sao;
     }
-#endif
     {   // Frame generation (vulkan/lsfg/lsfg_present.c): Lossless Scaling's LSFG with the player's own Lossless.dll
         const char *why = "";
         int st = vk_fg_status(&why);

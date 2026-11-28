@@ -2497,6 +2497,7 @@ static bool no_chunks_now(void) {
     extern bool framepace_in_menu(void);
     return !keep && framepace_in_menu();
 }
+static void vk_post_convert_promoted_rt(VkCommandBuffer cb, TexBackend *b, bool to_linear);
 static void begin_pass(void) {
     if (in_pass && !st.rt_dirty) return;
     pipeline_dirty = true;
@@ -2577,6 +2578,7 @@ static void begin_pass(void) {
     wb_npass = 0;
     uint32_t unowned_slots = 0, unowned_wb = 0;
     uint32_t att_ew[8] = {0}, att_eh[8] = {0};
+    bool att_view_srgb[8] = {0};
     for (int i = 0; i < st.rt.ncolor; i++) {
         NvnTexture *t = st.rt.color[i];
         ca[i] = (VkRenderingAttachmentInfo){.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
@@ -2614,15 +2616,7 @@ static void begin_pass(void) {
                 continue;
             }
             vf = view_fmt && vk_format(t->format) == b->format ? vk_format(st.rt.cview[i].format) : b->format;
-            if (b->promoted_linear_rt) {
-                b->linear_srgb = view_fmt && vk_format_is_srgb(vk_format(st.rt.cview[i].format));
-                static int nlog10;
-                if (getenv("LARECOMP_LOG_10BIT_VIEWS") && nlog10 < 16) {
-                    nlog10++;
-                    LOG("[vk-10bit] pass target %ux%u nvn %#x view=%#x -> linear_srgb=%d\n", t->width, t->height,
-                        t->format, view_fmt ? st.rt.cview[i].format : t->format, b->linear_srgb ? 1 : 0);
-                }
-            }
+            if (i < 8) att_view_srgb[i] = view_fmt && vk_format_is_srgb(vk_format(st.rt.cview[i].format));
             ew = level_extent(b->width, lv), eh = level_extent(b->height, lv);
         }
         ca[i].imageView = v;
@@ -2733,6 +2727,30 @@ static void begin_pass(void) {
                 for (int k = 0; k < ninplace; k++) armed_inplace |= inplace_tex[k] == st.rt.color[i];
                 if (!armed_inplace) snapshots_invalidate_for(st.rt.color[i], "cpu-upload");
             }
+        }
+    }
+    for (uint32_t i = 0; i < pass_ncolor && i < 8; i++) {
+        if (!ca[i].imageView || !st.rt.color[i]) continue;
+        TexBackend *b = st.rt.color[i]->backend;
+        if (!b || !b->promoted_linear_rt) continue;
+        bool dup = false;
+        for (uint32_t j = 0; j < i; j++)
+            if (ca[j].imageView && st.rt.color[j] && st.rt.color[j]->backend == b) dup = true;
+        if (dup) continue;
+        if (ca[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
+            b->linear_srgb = att_view_srgb[i];
+        } else if (b->linear_srgb != att_view_srgb[i] && b->layers == 1 && b->depth == 1 && b->samples == 1) {
+            vk_post_convert_promoted_rt(cb, b, att_view_srgb[i]);
+            cb = vk_cmd();
+        }
+        static int nlog10;
+        if (getenv("LARECOMP_LOG_10BIT_VIEWS") && nlog10 < 16) {
+            nlog10++;
+            bool vfmt = st.rt.has_cview[i] && (st.rt.cview[i].setmask & 4);
+            LOG("[vk-10bit] pass target %ux%u nvn %#x view=%#x load=%d -> linear_srgb=%d\n",
+                st.rt.color[i]->width, st.rt.color[i]->height, st.rt.color[i]->format,
+                vfmt ? st.rt.cview[i].format : st.rt.color[i]->format,
+                ca[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ? 1 : 0, b->linear_srgb ? 1 : 0);
         }
     }
     VkRenderingInfo ri = {.sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = {{0, 0}, {minw, minh}}, .layerCount = 1,
@@ -4379,18 +4397,22 @@ static struct { NvnTexture *t; TexBackend *img; VkImageView view; float sx, sy; 
 // That upscaled image seen through the game's own swizzle for the scene texture. BOTW's quick menu (weapons, shields)
 // draws its 1280x720 copy of the world full-screen like a scene composite, through a view forcing alpha to one; the
 // copy's alpha is 0, so the plain view drew it transparent - a black background.
-static VkImageView scene_up_view(const NvnTexEntry *e) {
+static VkImageView vk_swizzled_entry_view(const NvnTexEntry *e, TexBackend *img, VkFormat vf, VkImageView def_view) {
     const uint8_t *s = e->has_view && (e->view.setmask & 8) ? e->view.swizzle : e->tex->swizzle;
     uint8_t c[4];
     for (int i = 0; i < 4; i++) c[i] = s[i] <= 5 ? s[i] : (uint8_t)(2 + i);
     if (!(c[0] || c[1] || c[2] || c[3])) c[0] = 2, c[1] = 3, c[2] = 4, c[3] = 5;  // (never set: identity)
     if (vk_format_alpha_one(e->tex->format))
         for (int i = 0; i < 4; i++) if (c[i] == 5) c[i] = 1;
-    if (c[0] == 2 && c[1] == 3 && c[2] == 4 && c[3] == 5) return scene_up.view;
+    if (c[0] == 2 && c[1] == 3 && c[2] == 4 && c[3] == 5) return def_view;
     // NVN swizzle 0 zero, 1 one, 2..5 r,g,b,a == VkComponentSwizzle - 1
     VkComponentMapping sw = {(VkComponentSwizzle)(c[0] + 1), (VkComponentSwizzle)(c[1] + 1), (VkComponentSwizzle)(c[2] + 1),
                              (VkComponentSwizzle)(c[3] + 1)};
-    return vk_image_view(scene_up.img, VK_IMAGE_VIEW_TYPE_2D, scene_up.img->format, 0, 1, 0, 1, sw, VK_IMAGE_ASPECT_COLOR_BIT);
+    return vk_image_view(img, VK_IMAGE_VIEW_TYPE_2D, vf, 0, 1, 0, 1, sw, VK_IMAGE_ASPECT_COLOR_BIT);
+}
+
+static VkImageView scene_up_view(const NvnTexEntry *e) {
+    return vk_swizzled_entry_view(e, scene_up.img, scene_up.img->format, scene_up.view);
 }
 static bool scene_upscale(Prog *pr, CmdRec *r);
 
@@ -8113,10 +8135,12 @@ static void draw_(CmdRec *r, bool indexed) {
             // GPU 18.3 -> 15.5 ms, render thread 17.0 -> 13.3 ms.
             static int env = -2;
             if (env == -2) env = getenv("LARECOMP_SHADOWS") ? atoi(getenv("LARECOMP_SHADOWS")) != 0 : -1;
-            if (!(env >= 0 ? env : g_settings.shadows) && AB("shadow") != 1 &&
-                st.rt.ncolor == 0 && st.rt.depth && vk_texture_scale_group(st.rt.depth) != RS_SCENE) {
-                stat_skipped++;
-                return;
+            if (!(env >= 0 ? env : g_settings.shadows) && AB("shadow") != 1 && st.rt.ncolor == 0 && st.rt.depth) {
+                uint8_t dg = vk_texture_scale_group(st.rt.depth);
+                if (dg != RS_SCENE && dg != RS_HALF) {
+                    stat_skipped++;
+                    return;
+                }
             }
         }
         {   // LARECOMP_SKIPVS=1 (diagnosis): build/skipvs.txt lists vertex shader code addresses ("3da039b00,3da258600";
@@ -8740,9 +8764,9 @@ static void draw_(CmdRec *r, bool indexed) {
         bool same_scale = (pass_sx > 1.001f || pass_sy > 1.001f) && gs >= 0 &&
                           fabsf(tex_sc[1][gs][0] - pass_sx) < 0.01f * pass_sx &&
                           fabsf(tex_sc[1][gs][1] - pass_sy) < 0.01f * pass_sy;
-        bool half_ssao = gb && gb->rs_group == RS_HALF && gs >= 0 &&
+        bool half_ssao = settings_eff_ssao_scale() > 1.01f && gb && gb->rs_group == RS_HALF && gs >= 0 &&
                          tex_sc[1][gs][0] >= pass_sx * 0.99f && tex_sc[1][gs][1] >= pass_sy * 0.99f &&
-                         (tex_sc[1][gs][0] > 1.001f || tex_sc[1][gs][1] > 1.001f);
+                         (gb->width != gt->width || gb->height != gt->height);
         if (!same_scale && !half_ssao) gt = NULL, gb = NULL;
         if (gb && gt->width && gt->height) {
             up_fix.gw = st.rt.color[0]->width, up_fix.gh = st.rt.color[0]->height;
@@ -9225,9 +9249,32 @@ static void copy_buffer_to_texture(uint64_t src, const TexRefRec *dst) {
                            .imageExtent = {(uint32_t)rg[3], (uint32_t)rg[4], array ? 1 : nz}};
     if (b->promoted_linear_rt && t->format == 0x25u) {
         if (nz != 1 || b->depth != 1 || (uint32_t)level >= b->levels) return;
+        float dsx = 1.0f, dsy = 1.0f;
+        renderer_texture_scale(t, &dsx, &dsy);
+        int32_t dlw = (int32_t)level_extent(b->width, (uint32_t)level);
+        int32_t dlh = (int32_t)level_extent(b->height, (uint32_t)level);
+        int32_t dx0 = (int32_t)lroundf(rg[0] * dsx), dy0 = (int32_t)lroundf(rg[1] * dsy);
+        int32_t dx1 = (int32_t)lroundf((rg[0] + rg[3]) * dsx), dy1 = (int32_t)lroundf((rg[1] + rg[4]) * dsy);
+        if (dx0 < 0) dx0 = 0;
+        if (dy0 < 0) dy0 = 0;
+        if (dx1 > dlw) dx1 = dlw;
+        if (dy1 > dlh) dy1 = dlh;
+        if (dx1 <= dx0 || dy1 <= dy0) return;
         uint32_t ew = (uint32_t)rg[3], eh = (uint32_t)rg[4];
+        bool whole = dx0 == 0 && dy0 == 0 && dx1 == dlw && dy1 == dlh;
+        VkFormat timg_fmt = (!whole && b->linear_srgb) ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+        if (timg_fmt == VK_FORMAT_R8G8B8A8_SRGB) {
+            VkFormatProperties fp;
+            vkGetPhysicalDeviceFormatProperties(g_vk.phys, timg_fmt, &fp);
+            VkFormatFeatureFlags need = VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_BLIT_SRC_BIT;
+            if ((fp.optimalTilingFeatures & need) != need) {
+                vk_post_convert_promoted_rt(cb, b, false);
+                cb = vk_cmd();
+                timg_fmt = VK_FORMAT_R8G8B8A8_UNORM;
+            }
+        }
         VkImageCreateInfo tci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D,
-                                 .format = VK_FORMAT_R8G8B8A8_UNORM, .extent = {ew, eh, 1}, .mipLevels = 1, .arrayLayers = 1,
+                                 .format = timg_fmt, .extent = {ew, eh, 1}, .mipLevels = 1, .arrayLayers = 1,
                                  .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
                                  .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT};
         VmaAllocationCreateInfo tai = {.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
@@ -9244,11 +9291,12 @@ static void copy_buffer_to_texture(uint64_t src, const TexRefRec *dst) {
         VkImageBlit bl = {.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
                           .srcOffsets = {{0, 0, 0}, {(int32_t)ew, (int32_t)eh, 1}},
                           .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, (uint32_t)level, array ? (uint32_t)rg[2] : 0, 1},
-                          .dstOffsets = {{rg[0], rg[1], 0}, {rg[0] + rg[3], rg[1] + rg[4], 1}}};
-        vkCmdBlitImage(cb, timg, VK_IMAGE_LAYOUT_GENERAL, b->image, VK_IMAGE_LAYOUT_GENERAL, 1, &bl, VK_FILTER_NEAREST);
+                          .dstOffsets = {{dx0, dy0, 0}, {dx1, dy1, 1}}};
+        vkCmdBlitImage(cb, timg, VK_IMAGE_LAYOUT_GENERAL, b->image, VK_IMAGE_LAYOUT_GENERAL, 1, &bl,
+                       (dx1 - dx0 == (int32_t)ew && dy1 - dy0 == (int32_t)eh) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR);
         vk_full_barrier(cb);
         vk_defer_image(timg, tmem);
-        b->linear_srgb = false;
+        if (whole && timg_fmt == VK_FORMAT_R8G8B8A8_UNORM) b->linear_srgb = false;
         return;
     }
     vkCmdCopyBufferToImage(cb, s.buf, b->image, VK_IMAGE_LAYOUT_GENERAL, 1, &c);
@@ -9403,8 +9451,24 @@ static void copy_texture(const TexRefRec *src, const TexRefRec *dst, uint64_t fl
     if (naliases) s = alias_read(st_)->backend;
     VkCommandBuffer cb = vk_cmd();
     vk_full_barrier(cb);
-    if (d->promoted_linear_rt)
-        d->linear_srgb = s->promoted_linear_rt ? s->linear_srgb : vk_format_is_srgb(s->format);
+    bool src_srgb = s->promoted_linear_rt ? s->linear_srgb : vk_format_is_srgb(s->format);
+    bool dst_whole = dx0 == 0 && dy0 == 0 && dw == (int)level_extent(d->width, dlv) && dh == (int)level_extent(d->height, dlv);
+    if (s->promoted_linear_rt && s->linear_srgb && !d->promoted_linear_rt &&
+        d->format == VK_FORMAT_R8G8B8A8_UNORM && slv == 0 && sly == 0 &&
+        s->layers == 1 && s->depth == 1 && s->samples == 1) {
+        TexBackend *enc = vk_post_encode_srgb_rgba8(cb, s);
+        if (enc) {
+            if (sw == (int)s->width) sw = (int)enc->width;
+            if (sh == (int)s->height) sh = (int)enc->height;
+            s = enc;
+            src_srgb = false;
+        }
+    } else if (d->promoted_linear_rt && !dst_whole && src_srgb != d->linear_srgb &&
+               dlv == 0 && dly == 0 && d->layers == 1 && d->depth == 1 && d->samples == 1) {
+        vk_post_convert_promoted_rt(cb, d, src_srgb);
+    }
+    if (d->promoted_linear_rt && dst_whole)
+        d->linear_srgb = src_srgb;
     VkImageAspectFlags sa = s->aspect, da = d->aspect;
     if (s->samples > 1 && d->samples == 1 && sw == dw && sh == dh && s->format == d->format && !(sa & VK_IMAGE_ASPECT_DEPTH_BIT)) {
         VkImageResolve rv = {.srcSubresource = {sa, slv, sly, 1}, .srcOffset = {sx0, sy0, 0}, .dstSubresource = {da, dlv, dly, 1},
@@ -9510,8 +9574,10 @@ static VkDescriptorSetLayout post_set_layout;
 
 static VkPipeline post_pipeline(const char *fs, VkFormat fmt, uint32_t write_mask) {
     uint32_t wm = write_mask & 0xFu;
-    static struct { const char *fs; VkFormat f; uint32_t wm; VkPipeline p; } cache[32];
-    for (int i = 0; i < 32; i++) if (cache[i].p && cache[i].fs == fs && cache[i].f == fmt && cache[i].wm == wm) return cache[i].p;
+    enum { POST_PIPE_CAP = 64 };
+    static struct { const char *fs; VkFormat f; uint32_t wm; VkPipeline p; } cache[POST_PIPE_CAP];
+    static int next;
+    for (int i = 0; i < POST_PIPE_CAP; i++) if (cache[i].p && cache[i].fs == fs && cache[i].f == fmt && cache[i].wm == wm) return cache[i].p;
     if (!post_layout) {
         VkDescriptorSetLayoutBinding b[3];
         for (uint32_t i = 0; i < 3; i++)
@@ -9558,14 +9624,20 @@ static VkPipeline post_pipeline(const char *fs, VkFormat fmt, uint32_t write_mas
         LOG("[vk] post pipeline failed\n");
         return VK_NULL_HANDLE;
     }
-    for (int i = 0; i < 32; i++) if (!cache[i].p) { cache[i].fs = fs; cache[i].f = fmt; cache[i].wm = wm; cache[i].p = p; break; }
+    int dst = -1;
+    for (int i = 0; i < POST_PIPE_CAP; i++) if (!cache[i].p) { dst = i; break; }
+    if (dst < 0) {
+        dst = next++ & (POST_PIPE_CAP - 1);
+        vk_defer_pipeline(cache[dst].p);
+    }
+    cache[dst].fs = fs; cache[dst].f = fmt; cache[dst].wm = wm; cache[dst].p = p;
     return p;
 }
 
 // Post image `i` at w x h in format f (kept until the size or format changes). 0, 1: SMAA edges / weights, 2: SMAA
 // output, 3, 4: FSR EASU / RCAS (or SGSR) of the presented image; 5, 6: the same of the 3D scene (scene_upscale);
-// 7: pre-post Linear->sRGB OETF staging output when presenting an FP16 linear display target through post passes.
-enum { POST_IMAGES = 8 };
+// 7: pre-post Linear->sRGB OETF staging output; 8: RGBA8 sRGB encode staging (copy_texture / LSFG); 9: promoted RT conversion.
+enum { POST_IMAGES = 10 };
 static TexBackend *post_image(int i, uint32_t w, uint32_t h, VkFormat f) {
     static TexBackend img[POST_IMAGES];
     TexBackend *d = &img[i];
@@ -9579,7 +9651,7 @@ static TexBackend *post_image(int i, uint32_t w, uint32_t h, VkFormat f) {
         // (the EASU output, A2B10G10R10: compressed (UBWC) on Turnip, RCAS's texelFetch of it read 16x4 blocks
         // of zeros - black dashes in the grass, about one a frame on the Adreno 830; uncompressed with a mutable
         // format, as SGSR's single pass and an RGBA8 intermediate showed none either)
-        bool plain = (i == 3 || i == 5) && f == VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+        bool plain = (i == 2 || i == 3 || i == 5 || i == 7) && f == VK_FORMAT_A2B10G10R10_UNORM_PACK32;
         VkImageCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D,
                                 .flags = plain ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0,
                                 .format = f, .extent = {w, h, 1}, .mipLevels = 1, .arrayLayers = 1,
@@ -9626,19 +9698,23 @@ static VkImageView smaa_lut(int i) {
 
 // One post pass (outside the window image's rendering): srcs (bindings 0..n-1) -> dst, fragment shader `fs`.
 // clear: start from zero (SMAA's edge pass only writes edge pixels; its weights / output read them).
-static void post_pass_masked(VkCommandBuffer cb, const char *fs, const VkImageView *srcs, int n, TexBackend *dst,
-                             const float pc[8], bool clear, bool load_dst, uint32_t write_mask) {
-    VkPipeline pipe = post_pipeline(fs, dst->format, write_mask);  // (before the rendering begins: created inside it, the NVIDIA driver crashed)
+static void post_pass_masked_fmt(VkCommandBuffer cb, const char *fs, const VkImageView *srcs, int n, TexBackend *dst,
+                                 VkFormat dst_fmt, const float pc[8], bool clear, bool load_dst, uint32_t write_mask) {
+    VkFormat fmt = dst_fmt != VK_FORMAT_UNDEFINED ? dst_fmt : dst->format;
+    VkPipeline pipe = post_pipeline(fs, fmt, write_mask);  // (before the rendering begins: created inside it, the NVIDIA driver crashed)
     if (!pipe) return;
     vk_full_barrier(cb);
-    VkRenderingAttachmentInfo ca = {.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = post_view(dst),
+    static const VkComponentMapping id = {0};
+    VkImageView dst_v = fmt == dst->format ? post_view(dst)
+                                           : vk_image_view(dst, VK_IMAGE_VIEW_TYPE_2D, fmt, 0, 1, 0, 1, id, VK_IMAGE_ASPECT_COLOR_BIT);
+    VkRenderingAttachmentInfo ca = {.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = dst_v,
                                     .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                                     .loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR
                                                     : (load_dst ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_DONT_CARE),
                                     .storeOp = VK_ATTACHMENT_STORE_OP_STORE};
     VkRenderingInfo ri = {.sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = {{0, 0}, {dst->width, dst->height}},
                           .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &ca};
-    if (!vk_begin_rendering(cb, &ri, &dst->format, VK_FORMAT_UNDEFINED, VK_SAMPLE_COUNT_1_BIT)) return;
+    if (!vk_begin_rendering(cb, &ri, &fmt, VK_FORMAT_UNDEFINED, VK_SAMPLE_COUNT_1_BIT)) return;
     VkDescriptorSet ds = vk_alloc_set(post_set_layout);
     VkDescriptorImageInfo ii[3];
     VkWriteDescriptorSet w[3];
@@ -9661,16 +9737,54 @@ static void post_pass_masked(VkCommandBuffer cb, const char *fs, const VkImageVi
     vk_end_rendering(cb);
 }
 
+static void post_pass_masked(VkCommandBuffer cb, const char *fs, const VkImageView *srcs, int n, TexBackend *dst,
+                             const float pc[8], bool clear, bool load_dst, uint32_t write_mask) {
+    post_pass_masked_fmt(cb, fs, srcs, n, dst, dst->format, pc, clear, load_dst, write_mask);
+}
+
 static void post_pass(VkCommandBuffer cb, const char *fs, const VkImageView *srcs, int n, TexBackend *dst, const float pc[8],
                       bool clear) {
     post_pass_masked(cb, fs, srcs, n, dst, pc, clear, false, 0xFu);
+}
+
+TexBackend *vk_post_encode_srgb_rgba8(VkCommandBuffer cb, TexBackend *b) {
+    if (!b || !b->image || !b->width || !b->height || b->layers != 1 || b->depth != 1 || b->samples != 1 ||
+        !b->promoted_linear_rt || !b->linear_srgb)
+        return NULL;
+    VkImageView v = raw_view(b);
+    TexBackend *enc = post_image(8, b->width, b->height, VK_FORMAT_R8G8B8A8_UNORM);
+    if (!enc || !enc->image) return NULL;
+    float pe[8] = {1.0f / (float)b->width, 1.0f / (float)b->height};
+    post_pass(cb, "srgb_encode.frag", &v, 1, enc, pe, false);
+    vk_full_barrier(cb);
+    enc->linear_srgb = false;
+    return enc;
+}
+
+static void vk_post_convert_promoted_rt(VkCommandBuffer cb, TexBackend *b, bool to_linear) {
+    if (!b || !b->image || !b->width || !b->height || b->layers != 1 || b->depth != 1 || b->samples != 1 ||
+        !b->promoted_linear_rt || b->linear_srgb == to_linear)
+        return;
+    VkImageView v = raw_view(b);
+    TexBackend *tmp = post_image(9, b->width, b->height, b->format);
+    if (!tmp || !tmp->image) return;
+    float pe[8] = {1.0f / (float)b->width, 1.0f / (float)b->height};
+    post_pass(cb, to_linear ? "srgb_decode.frag" : "srgb_encode.frag", &v, 1, tmp, pe, false);
+    vk_full_barrier(cb);
+    VkImageCopy cp = {.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                      .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                      .extent = {b->width, b->height, 1}};
+    vkCmdCopyImage(cb, tmp->image, VK_IMAGE_LAYOUT_GENERAL, b->image, VK_IMAGE_LAYOUT_GENERAL, 1, &cp);
+    vk_full_barrier(cb);
+    b->linear_srgb = to_linear;
 }
 
 // Frame index where pre-HUD scene AA already ran inside scene_upscale() so post_process() avoids softening HUD/text.
 static uint64_t scene_aa_done_frame = ~0ULL;
 
 static VkImageView run_aa_pass(VkCommandBuffer cb, int aa_mode, VkImageView src_v, uint32_t w, uint32_t h,
-                               TexBackend *dst, uint32_t dst_wmask, bool load_dst) {
+                               TexBackend *dst, VkFormat dst_fmt, uint32_t dst_wmask, bool load_dst) {
+    VkFormat fmt = dst_fmt != VK_FORMAT_UNDEFINED ? dst_fmt : dst->format;
     float fw = (float)w, fh = (float)h;
     float m[8] = {1.0f / fw, 1.0f / fh, fw, fh};
     if (aa_mode == AA_SMAA) {
@@ -9681,12 +9795,14 @@ static VkImageView run_aa_pass(VkCommandBuffer cb, int aa_mode, VkImageView src_
         VkImageView wi[3] = {post_view(edges), smaa_lut(0), smaa_lut(1)};
         post_pass(cb, "smaa_weight.frag", wi, 3, weights, m, true);
         VkImageView bi[3] = {src_v, post_view(weights)};
-        post_pass_masked(cb, "smaa_blend.frag", bi, 2, dst, m, false, load_dst, dst_wmask);
+        post_pass_masked_fmt(cb, "smaa_blend.frag", bi, 2, dst, fmt, m, false, load_dst, dst_wmask);
     } else {
         VkImageView in[3] = {src_v};
-        post_pass_masked(cb, "fxaa.frag", in, 1, dst, m, false, load_dst, dst_wmask);
+        post_pass_masked_fmt(cb, "fxaa.frag", in, 1, dst, fmt, m, false, load_dst, dst_wmask);
     }
-    return post_view(dst);
+    static const VkComponentMapping id = {0};
+    return fmt == dst->format ? post_view(dst)
+                              : vk_image_view(dst, VK_IMAGE_VIEW_TYPE_2D, fmt, 0, 1, 0, 1, id, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
 // The view the present samples: the game image, or its anti-aliased / upscaled version. ow x oh: the whole image's
@@ -9730,7 +9846,7 @@ static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, 
     }
     if (smaa || fxaa) {
         TexBackend *out = post_image(2, b->width, b->height, post_fmt);
-        v = run_aa_pass(cb, smaa ? AA_SMAA : AA_FXAA, v, b->width, b->height, out, 0xFu, false);
+        v = run_aa_pass(cb, smaa ? AA_SMAA : AA_FXAA, v, b->width, b->height, out, out->format, 0xFu, false);
     }
     if (fsr) gp_mark(cb, "present: upscale");  // ([gpuprof]: the AA pass's own row above, the upscale's here)
     if (fsr && up == UPSCALE_SGSR1) {
@@ -9785,63 +9901,116 @@ static bool scene_upscale(Prog *pr, CmdRec *r) {
     int mode = g_settings.upscaler;
     extern int vk_ab(const char *what);
     if (AB("sgsr") == 1) mode = UPSCALE_SGSR1;
+    bool upscaling = on && (mode == UPSCALE_FSR1 || mode == UPSCALE_SGSR1);
     int aa = g_settings.antialias;
     bool do_aa = (aa == AA_SMAA || aa == AA_FXAA);
     uint32_t rt_wmask = st.channel_mask & 0xFu;
     bool replace_fxaa = settings_eff_no_game_fxaa() && g_cur_fs_hash == 0x058188a1db3e22e9ULL &&
-                        st.rt.ncolor == 1 && !(st.color_state[0] & 1) && rt_wmask != 0;
-    if (!on && !do_aa && !replace_fxaa) return false;
+                        st.rt.ncolor == 1 && !(st.color_state[0] & 1) && !st.ds[0] && !st.ds[3] && rt_wmask != 0;
+    if (!upscaling && !do_aa && !replace_fxaa) return false;
     NvnTexture *rt = st.rt.ncolor ? st.rt.color[0] : NULL;
     if (!rt || r->x[2] > 6 || !pr->fi->ntex || vk_texture_scale_group(rt) != RS_OUT) return false;
     const float *vp = st.viewport[0];
     if (vp[2] < rt->width * 0.5f || vp[3] < rt->height * 0.5f) return false;  // (a composite fills most of the image)
     if (replace_fxaa &&
-        (vp[0] != 0.0f || vp[1] != 0.0f || st.scissor[0][0] > 0 || st.scissor[0][1] > 0 || st.scissor[0][2] <= 0 ||
-         st.scissor[0][3] <= 0 || (int64_t)st.scissor[0][0] + (int64_t)st.scissor[0][2] < (int64_t)rt->width ||
+        (vp[0] != 0.0f || vp[1] != 0.0f || fabsf(vp[2] - (float)rt->width) > 1.0f ||
+         fabsf(vp[3] - (float)rt->height) > 1.0f || st.scissor[0][0] > 0 || st.scissor[0][1] > 0 ||
+         st.scissor[0][2] <= 0 || st.scissor[0][3] <= 0 ||
+         (int64_t)st.scissor[0][0] + (int64_t)st.scissor[0][2] < (int64_t)rt->width ||
          (int64_t)st.scissor[0][1] + (int64_t)st.scissor[0][3] < (int64_t)rt->height))
         replace_fxaa = false;
-    if (!on && !do_aa && !replace_fxaa) return false;
+    if (!upscaling && !do_aa && !replace_fxaa) return false;
     float osx, osy;
     renderer_texture_scale(rt, &osx, &osy);
     uint32_t ow = (uint32_t)lroundf(vp[2] * osx), oh = (uint32_t)lroundf(vp[3] * osy);
     if (ow > 16384) ow = 16384;
     if (oh > 16384) oh = 16384;
     for (int i = 0; i < pr->fi->ntex && i < 64; i++) {
-        NvnTexture *t = shader_texture_object(1, &pr->fi->tex[i]);
+        NvnTexEntry *e = shader_texture_entry(1, &pr->fi->tex[i]);
+        NvnTexture *t = e ? e->tex : NULL;
         // the scene: a full-size scene target (not one of its reduced steps: bloom, blur)
         if (!t || t->target != 1 || vk_texture_scale_group(t) != RS_SCENE || t->width * 2 < vp[2] || t->height * 2 < vp[3]) continue;
         TexBackend *b = vk_tex(t, false);
         if (!b->image || b->layers != 1 || b->samples != 1 || b->depth != 1 || (b->aspect & ~VK_IMAGE_ASPECT_COLOR_BIT)) continue;
-        bool need_upscale = on && (mode == UPSCALE_FSR1 || mode == UPSCALE_SGSR1) && (ow > b->width + 1 || oh > b->height + 1);
+        bool need_upscale = upscaling && (ow > b->width + 1 || oh > b->height + 1);
         if (!need_upscale && !do_aa && !replace_fxaa) return false;
         VkFormatProperties fp;
         vkGetPhysicalDeviceFormatProperties(g_vk.phys, b->format, &fp);
         if ((need_upscale || do_aa) && !(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) continue;
         TexBackend *rt_b = replace_fxaa ? vk_tex(rt, true) : NULL;
-        if (replace_fxaa && (!rt_b || !rt_b->image || rt_b->layers != 1 || rt_b->depth != 1 ||
+        if (replace_fxaa && (!rt_b || !rt_b->image || rt_b->layers != 1 || rt_b->depth != 1 || rt_b->samples != 1 ||
                              (rt_b->aspect & ~VK_IMAGE_ASPECT_COLOR_BIT) || rt_b->width != ow || rt_b->height != oh))
             replace_fxaa = false;
+        bool src_has_v = e->has_view && (e->view.setmask & 4);
+        VkFormat src_vfmt = b->format;
+        if (src_has_v && vk_format(t->format) == b->format) {
+            VkFormat cand = vk_format(e->view.format);
+            if (!b->fixed_fmt || cand == b->format || cand == b->view_alt) src_vfmt = cand;
+        }
+        bool src_linear = b->promoted_linear_rt ? b->linear_srgb : vk_format_is_srgb(src_vfmt);
+        bool dst_req_srgb = rt_b && !rt_b->promoted_linear_rt &&
+                            (vk_format_is_srgb(rt_b->format) ||
+                             (st.rt.has_cview[0] && (st.rt.cview[0].setmask & 4) &&
+                              vk_format_is_srgb(vk_format(st.rt.cview[0].format))));
+        VkFormat dst_vfmt = rt_b ? rt_b->format : VK_FORMAT_UNDEFINED;
+        bool dst_has_srgb_att = rt_b && !rt_b->promoted_linear_rt && vk_format_is_srgb(rt_b->format);
+        if (replace_fxaa && !rt_b->promoted_linear_rt && !dst_has_srgb_att && dst_req_srgb &&
+            vk_format(rt->format) == rt_b->format) {
+            VkFormat cand = vk_format(st.rt.cview[0].format);
+            if (cand != VK_FORMAT_UNDEFINED && (!rt_b->fixed_fmt || cand == rt_b->format || cand == rt_b->view_alt)) {
+                VkFormatProperties dfp;
+                vkGetPhysicalDeviceFormatProperties(g_vk.phys, cand, &dfp);
+                if (dfp.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) {
+                    dst_vfmt = cand;
+                    dst_has_srgb_att = true;
+                }
+            }
+        }
+        if (replace_fxaa && rt_b->promoted_linear_rt && (rt_wmask & 7u) != 7u && rt_b->linear_srgb != src_linear)
+            replace_fxaa = false;
+        if (replace_fxaa && !rt_b->promoted_linear_rt && !src_linear && dst_req_srgb)
+            replace_fxaa = false;
+        VkFormat mid_fmt = b->format;
+        if (replace_fxaa && src_linear) {
+            if (rt_b->promoted_linear_rt &&
+                (b->format == VK_FORMAT_R8G8B8A8_UNORM || b->format == VK_FORMAT_R8G8B8A8_SRGB)) {
+                mid_fmt = rt_b->format;
+            } else if (!rt_b->promoted_linear_rt && (need_upscale || do_aa) &&
+                       (b->format == VK_FORMAT_R8G8B8A8_UNORM || b->format == VK_FORMAT_R8G8B8A8_SRGB ||
+                        b->format == VK_FORMAT_B8G8R8A8_UNORM || b->format == VK_FORMAT_B8G8R8A8_SRGB)) {
+                VkFormatProperties mfp;
+                vkGetPhysicalDeviceFormatProperties(g_vk.phys, VK_FORMAT_R16G16B16A16_SFLOAT, &mfp);
+                VkFormatFeatureFlags need = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+                                            VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+                if ((mfp.optimalTilingFeatures & need) == need)
+                    mid_fmt = VK_FORMAT_R16G16B16A16_SFLOAT;
+                else
+                    replace_fxaa = false;
+            }
+        }
         if (!need_upscale && !do_aa && !replace_fxaa) return false;
         vk_end_pass();
         VkCommandBuffer cb = vk_cmd();
         static const VkComponentMapping id = {0};
         TexBackend *cur = b;
-        VkImageView cur_view = vk_image_view(b, VK_IMAGE_VIEW_TYPE_2D, b->format, 0, 1, 0, 1, id, VK_IMAGE_ASPECT_COLOR_BIT);
+        VkFormat cur_vfmt = replace_fxaa ? src_vfmt : b->format;
+        VkImageView cur_view = vk_image_view(b, VK_IMAGE_VIEW_TYPE_2D, cur_vfmt, 0, 1, 0, 1, id, VK_IMAGE_ASPECT_COLOR_BIT);
+        if (replace_fxaa) cur_view = vk_swizzled_entry_view(e, b, cur_vfmt, cur_view);
         if (need_upscale) {
             float iw = (float)b->width, ih = (float)b->height;
             VkImageView in[3] = {cur_view};
-            TexBackend *o = post_image(6, ow, oh, b->format);
+            TexBackend *o = post_image(6, ow, oh, mid_fmt);
             gp_mark(cb, "scene upscale %ux%u -> %ux%u: %s", b->width, b->height, ow, oh, mode == UPSCALE_SGSR1 ? "sgsr1" : "easu");
             if (mode == UPSCALE_SGSR1) {
                 float ps[8] = {1.0f / iw, 1.0f / ih, iw, ih, (float)ow, (float)oh};
                 post_pass(cb, "sgsr1.frag", in, 1, o, ps, false);
             } else {
-                TexBackend *e = post_image(5, ow, oh, b->format);
+                TexBackend *e_ = post_image(5, ow, oh, mid_fmt);
                 float pe[8] = {iw / ow, ih / oh, 0.5f * iw / ow - 0.5f, 0.5f * ih / oh - 0.5f, iw, ih};
-                post_pass(cb, "easu.frag", in, 1, e, pe, false);
+                post_pass(cb, "easu.frag", in, 1, e_, pe, false);
                 gp_mark(cb, "scene upscale: rcas");
                 float pr_[8] = {exp2f(-0.2f), 0, 0, 0, (float)ow, (float)oh};  // (sharpness 0.2 stops: AMD's default)
-                VkImageView ri[3] = {post_view(e)};
+                VkImageView ri[3] = {post_view(e_)};
                 post_pass(cb, "rcas.frag", ri, 1, o, pr_, false);
             }
             cur = o;
@@ -9849,8 +10018,10 @@ static bool scene_upscale(Prog *pr, CmdRec *r) {
         }
         bool dst_written = false;
         if (do_aa) {
-            bool direct_rt = replace_fxaa && cur->width == rt_b->width && cur->height == rt_b->height;
-            TexBackend *aa_dst = direct_rt ? rt_b : post_image(need_upscale ? 2 : 6, cur->width, cur->height, cur->format);
+            bool direct_rt = replace_fxaa && cur->width == rt_b->width && cur->height == rt_b->height &&
+                             (rt_b->promoted_linear_rt || !src_linear || dst_has_srgb_att);
+            TexBackend *aa_dst = direct_rt ? rt_b : post_image(need_upscale ? 2 : 6, cur->width, cur->height, mid_fmt);
+            VkFormat aa_fmt = direct_rt ? dst_vfmt : aa_dst->format;
             uint32_t aa_wmask = direct_rt ? rt_wmask : 0xFu;
             bool aa_load = direct_rt && rt_wmask != 0xFu;
             if (direct_rt) {
@@ -9859,7 +10030,7 @@ static bool scene_upscale(Prog *pr, CmdRec *r) {
                 dst_written = true;
             }
             gp_mark(cb, "scene pre-hud %s %ux%u", aa == AA_SMAA ? "smaa" : "fxaa", cur->width, cur->height);
-            cur_view = run_aa_pass(cb, aa, cur_view, cur->width, cur->height, aa_dst, aa_wmask, aa_load);
+            cur_view = run_aa_pass(cb, aa, cur_view, cur->width, cur->height, aa_dst, aa_fmt, aa_wmask, aa_load);
             cur = aa_dst;
             scene_aa_done_frame = renderer_present_count();
         }
@@ -9868,9 +10039,13 @@ static bool scene_upscale(Prog *pr, CmdRec *r) {
                 prepare_direct_rt_write(rt, "scene replace copy");
                 cb = vk_cmd();
                 float cp[8] = {1.0f / (float)rt_b->width, 1.0f / (float)rt_b->height, (float)rt_b->width, (float)rt_b->height};
+                const char *copy_fs = (!rt_b->promoted_linear_rt && src_linear && !dst_has_srgb_att)
+                                      ? "srgb_encode.frag" : "scene_copy.frag";
                 gp_mark(cb, "scene replace game fxaa %ux%u", rt_b->width, rt_b->height);
-                post_pass_masked(cb, "scene_copy.frag", &cur_view, 1, rt_b, cp, false, rt_wmask != 0xFu, rt_wmask);
+                post_pass_masked_fmt(cb, copy_fs, &cur_view, 1, rt_b, dst_vfmt, cp, false, rt_wmask != 0xFu, rt_wmask);
             }
+            if (rt_b->promoted_linear_rt && (rt_wmask & 7u) == 7u)
+                rt_b->linear_srgb = src_linear;
             vk_full_barrier(cb);
             snapshots_invalidate_for(rt, "scene-replace");
             snapshots_invalidate(rt);
@@ -10002,8 +10177,7 @@ void renderer_save_texture_tex(TexBackend *b, const char *path) {
         VkRect2D sc = {{0, 0}, {w, h}};
         vkCmdSetViewport(cb, 0, 1, &vp);
         vkCmdSetScissor(cb, 0, 1, &sc);
-        float pv[8] = {vk_present_flags_pack(renderer_origin_lower_left() && !strstr(path, "window"),
-                                             b->linear_srgb && strstr(path, "pass_") == NULL),
+        float pv[8] = {vk_present_flags_pack(renderer_origin_lower_left() && !strstr(path, "window"), b->linear_srgb),
                        0, 0, 0, crop[0], crop[1], crop[2], crop[3]};
         vkCmdPushConstants(cb, present_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32, pv);
         ss_forget();  // (static-VI pipeline and another layout: draws re-bind state)

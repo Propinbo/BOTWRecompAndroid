@@ -306,6 +306,12 @@ static const char *builtin_src(const char *name, int *stage) {
                "  uv = pc.crop.xy + u * pc.crop.zw;\n"
                "}\n";
     }
+#define GLSL_LINEAR_TO_SRGB                                                                        \
+    "vec3 linear_to_srgb(vec3 x) {\n"                                                              \
+    "  vec3 c = clamp(x, 0.0, 1.0);\n"                                                             \
+    "  return mix(c * 12.92, 1.055 * pow(max(c, vec3(0.0031308)), vec3(1.0 / 2.4)) - 0.055, "      \
+    "step(vec3(0.0031308), c));\n"                                                                 \
+    "}\n"
     if (!strcmp(name, "present.frag")) {
         *stage = STAGE_FRAGMENT;
         return "#version 450\n"
@@ -314,10 +320,7 @@ static const char *builtin_src(const char *name, int *stage) {
                "layout(location = 0) in vec2 uv;\n"
                "layout(location = 0) out vec4 o;\n"
                "float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }\n"
-               "vec3 linear_to_srgb(vec3 x) {\n"
-               "  vec3 c = clamp(x, 0.0, 1.0);\n"
-               "  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));\n"
-               "}\n"
+               GLSL_LINEAR_TO_SRGB
                "void main() {\n"
                "  int flags = int(pc.a.x + 0.5);\n"
                "  vec3 c = texture(t, uv).rgb;\n"
@@ -341,13 +344,25 @@ static const char *builtin_src(const char *name, int *stage) {
                "layout(set = 0, binding = 0) uniform sampler2D t0;\n"
                "layout(push_constant) uniform P { vec4 a; vec4 b; } pc;\n"
                "layout(location = 0) out vec4 o;\n"
-               "vec3 linear_to_srgb(vec3 x) {\n"
-               "  vec3 c = clamp(x, 0.0, 1.0);\n"
-               "  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));\n"
-               "}\n"
+               GLSL_LINEAR_TO_SRGB
                "void main() {\n"
                "  vec4 v = textureLod(t0, gl_FragCoord.xy * pc.a.xy, 0.0);\n"
                "  o = vec4(linear_to_srgb(v.rgb), v.a);\n"
+               "}\n";
+    }
+    if (!strcmp(name, "srgb_decode.frag")) {
+        *stage = STAGE_FRAGMENT;
+        return "#version 450\n"
+               "layout(set = 0, binding = 0) uniform sampler2D t0;\n"
+               "layout(push_constant) uniform P { vec4 a; vec4 b; } pc;\n"
+               "layout(location = 0) out vec4 o;\n"
+               "vec3 srgb_to_linear(vec3 x) {\n"
+               "  vec3 c = clamp(x, 0.0, 1.0);\n"
+               "  return mix(c / 12.92, pow(max((c + 0.055) / 1.055, vec3(0.04045)), vec3(2.4)), step(vec3(0.04045), c));\n"
+               "}\n"
+               "void main() {\n"
+               "  vec4 v = textureLod(t0, gl_FragCoord.xy * pc.a.xy, 0.0);\n"
+               "  o = vec4(srgb_to_linear(v.rgb), v.a);\n"
                "}\n";
     }
     if (!strcmp(name, "scene_copy.frag")) {
@@ -361,11 +376,19 @@ static const char *builtin_src(const char *name, int *stage) {
     if (!strcmp(name, "present_a.frag")) {  // (debug pass dumps: alpha kept)
         *stage = STAGE_FRAGMENT;
         return "#version 450\n"
+               "layout(push_constant) uniform P { vec4 a; vec4 crop; } pc;\n"
                "layout(set = 0, binding = 0) uniform sampler2D t;\n"
                "layout(location = 0) in vec2 uv;\n"
                "layout(location = 0) out vec4 o;\n"
-               "void main() { o = texture(t, uv); }\n";
+               GLSL_LINEAR_TO_SRGB
+               "void main() {\n"
+               "  int flags = int(pc.a.x + 0.5);\n"
+               "  vec4 v = texture(t, uv);\n"
+               "  if ((flags & 2) != 0) v.rgb = linear_to_srgb(v.rgb);\n"
+               "  o = v;\n"
+               "}\n";
     }
+#undef GLSL_LINEAR_TO_SRGB
     // ---- post passes before the present (Video tab "Anti-aliasing" / "Upscaler"): exec.c vk_present_draw.
     // Each draws a fullscreen triangle into an image the size of its output; push constants: two vec4.
     if (!strcmp(name, "post.vert")) {

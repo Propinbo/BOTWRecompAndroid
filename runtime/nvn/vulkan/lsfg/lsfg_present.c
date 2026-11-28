@@ -241,16 +241,17 @@ int vk_fg_frame(TexBackend *game, TexBackend **gen, uint64_t *hold_ns, uint64_t 
         F.no_room = !ng;  // (a 45 fps game on a 60 Hz screen: the menu says so - device.c asks for a faster refresh)
     } else F.no_room = 0;
     VkCommandBuffer cb = vk_cmd();
+    TexBackend *fg_src = (game->promoted_linear_rt && game->linear_srgb) ? vk_post_encode_srgb_rgba8(cb, game) : NULL;
     vk_full_barrier(cb);  // (the game's writes to its image; the presents still reading the outputs)
     VkImageBlit b = {{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {{0, 0, 0}, {(int32_t)e.width, (int32_t)e.height, 1}},
                      {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {{0, 0, 0}, {(int32_t)e.width, (int32_t)e.height, 1}}};
-    vkCmdBlitImage(cb, game->image, VK_IMAGE_LAYOUT_GENERAL, lsfg_chain_input(F.chain, count), VK_IMAGE_LAYOUT_GENERAL, 1, &b,
-                   VK_FILTER_NEAREST);
+    vkCmdBlitImage(cb, fg_src ? fg_src->image : game->image, VK_IMAGE_LAYOUT_GENERAL, lsfg_chain_input(F.chain, count),
+                   VK_IMAGE_LAYOUT_GENERAL, 1, &b, VK_FILTER_NEAREST);
     if (warm) lsfg_chain_shared(F.chain, cb, count);
     for (size_t g = 0; g < ng; g++) lsfg_chain_generate(F.chain, cb, count, ng, g);
     vk_full_barrier(cb);  // (the outputs, for the presents after this)
     for (size_t g = 0; g < ng; g++) {
-        F.out_tex[g].linear_srgb = game->linear_srgb;
+        F.out_tex[g].linear_srgb = fg_src ? false : game->linear_srgb;
         gen[g] = &F.out_tex[g];
     }
     if (ng) *hold_ns = (uint64_t)(interval * 1e9 / (double)(ng + 1));

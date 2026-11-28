@@ -406,8 +406,7 @@ static uint8_t tex_scale_group(const NvnTexture *t) {
     if (on < 0) on = getenv("LARECOMP_NO_SCALE") == NULL;
     if (!on) return RS_NONE;
     if ((t->target != 1 && t->target != 4) || t->samples > 1 || t->width < 32 || t->height < 16) return RS_NONE;
-    if ((settings_eff_ssao_scale() > 1.01f || g_rs[RS_QUARTER_SSAO][0] > 1.001f) &&
-        vk_is_botw_ssao_quarter_target(t->target, t->width, t->height, t->samples, t->format))
+    if (vk_is_botw_ssao_quarter_target(t->target, t->width, t->height, t->samples, t->format))
         return RS_QUARTER_SSAO;
     if (!(t->flags & 9)) return RS_NONE;
     if (vk_is_botw_shadow_target(t->target, t->width, t->height, t->layout.layers ? t->layout.layers : t->depth,
@@ -496,7 +495,7 @@ void vk_image_init_layout(VkCommandBuffer cb, VkImage img, VkImageAspectFlags as
 }
 
 // Images destroyed by the guest are kept until the submissions that may use them have completed.
-typedef struct { VkImage img; VmaAllocation mem; VkImageView view; uint64_t seq; } Dead;
+typedef struct { VkImage img; VmaAllocation mem; VkImageView view; VkSampler smp; VkPipeline pipe; uint64_t seq; } Dead;
 static Dead *dead;
 static int ndead, cap_dead;
 static void views_forget(TexBackend *b);
@@ -548,6 +547,8 @@ void vk_collect_dead(void) {
         if (dead[i].seq > done) { dead[k++] = dead[i]; continue; }
         if (dead[i].view) dv_set(dead[i].view, true);  // (#176: the check above)
         if (dead[i].view) vk_rp_forget_view(dead[i].view), vkDestroyImageView(g_vk.dev, dead[i].view, NULL);
+        else if (dead[i].smp) vkDestroySampler(g_vk.dev, dead[i].smp, NULL);
+        else if (dead[i].pipe) vkDestroyPipeline(g_vk.dev, dead[i].pipe, NULL);
         else vmaDestroyImage(g_vk.vma, dead[i].img, dead[i].mem);
     }
     ndead = k;
@@ -644,10 +645,13 @@ static void create_image(NvnTexture *t, TexBackend *b) {
     }
     bool depthfmt = renderer_format_is_depth(t->format);
 #ifdef __ANDROID__
-    if (vk_display_promote_fp16_ok(
+    if (type == VK_IMAGE_TYPE_2D && layers == 1 && depth == 1 &&
+        vk_display_promote_fp16_ok(
             g_vk.sc_format, depthfmt, bc_vf, astc_used, t->flags, t->format, t->samples,
             format_supports(VK_FORMAT_R16G16B16A16_SFLOAT,
-                            VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                            VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+                            VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT |
+                            VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
                             VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
                             VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT))) {
         vf = VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -784,6 +788,7 @@ static void defer(Dead d) {
 
 void vk_defer_image(VkImage img, VmaAllocation mem) { defer((Dead){.img = img, .mem = mem}); }
 void vk_defer_view(VkImageView v) { defer((Dead){.view = v}); }
+void vk_defer_pipeline(VkPipeline p) { if (p) defer((Dead){.pipe = p}); }
 
 void vk_dl_note_upload(void *img, uint32_t w, uint32_t h, uint32_t lv);  // (exec.c: LARECOMP_VK_DEVLOST_TRACE)
 
@@ -2117,7 +2122,7 @@ static uint32_t sampler_override_cfg(void) {
 }
 
 static VkSampler sampler_cached(const NvnSamplerDesc *d, bool compare, uint32_t cfg) {
-    enum { SMP_TAB = 1024 };
+    enum { SMP_TAB = 2048 };
     static struct { NvnSamplerDesc desc; bool compare; uint32_t cfg; VkSampler s; } tab[SMP_TAB];
     static uint32_t next;
     size_t ksz = offsetof(NvnSamplerDesc, backend);
@@ -2125,7 +2130,7 @@ static VkSampler sampler_cached(const NvnSamplerDesc *d, bool compare, uint32_t 
     uint32_t h = (cfg * 0x9E3779B1u) ^ (compare ? 0x517CC1B7u : 0u);
     for (size_t i = 0; i < ksz; i++) h = (h ^ kb[i]) * 16777619u;
     uint32_t slot = h & (SMP_TAB - 1u);
-    for (uint32_t p = 0; p < 16; p++, slot = (slot + 1u) & (SMP_TAB - 1u)) {
+    for (uint32_t p = 0; p < 32; p++, slot = (slot + 1u) & (SMP_TAB - 1u)) {
         if (tab[slot].s && tab[slot].compare == compare && tab[slot].cfg == cfg &&
             memcmp(&tab[slot].desc, d, ksz) == 0)
             return tab[slot].s;
@@ -2136,6 +2141,7 @@ static VkSampler sampler_cached(const NvnSamplerDesc *d, bool compare, uint32_t 
         }
     }
     uint32_t evict = (h + next++) & (SMP_TAB - 1u);
+    if (tab[evict].s) defer((Dead){.smp = tab[evict].s});
     memcpy(&tab[evict].desc, d, ksz);
     tab[evict].compare = compare; tab[evict].cfg = cfg;
     return tab[evict].s = make_sampler(d, compare);
@@ -2155,10 +2161,10 @@ VkSampler vk_sampler(NvnSamplerDesc *d) {
 // its depth buffer through a comparison sampler and got 0 everywhere: no lighting, Link a black silhouette. Kept per
 // comparison sampler (the slot's VkSampler), so the descriptor struct the game sees stays as it is.
 VkSampler vk_sampler_plain(NvnSamplerDesc *d) {
+    if (!d->compare_mode) return vk_sampler(d);
     uint32_t cfg = sampler_override_cfg();
     if (cfg) return sampler_cached(d, false, cfg);
     VkSampler s = vk_sampler(d);
-    if (!d->compare_mode) return s;
     static struct { VkSampler cmp, plain; } tab[256];
     static int n, next;
     for (int i = 0; i < n; i++) if (tab[i].cmp == s) return tab[i].plain;

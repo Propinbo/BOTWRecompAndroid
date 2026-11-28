@@ -181,7 +181,9 @@ void vk_image_init_layout(VkCommandBuffer cb, VkImage img, VkImageAspectFlags as
 // Destruction once every submission that may use the object has completed.
 void vk_defer_image(VkImage img, VmaAllocation mem);
 void vk_defer_view(VkImageView v);
+void vk_defer_pipeline(VkPipeline p);
 void vk_views_forget(TexBackend *b);  // drop (deferred) the cached views of an image being replaced
+TexBackend *vk_post_encode_srgb_rgba8(VkCommandBuffer cb, TexBackend *b);
 uint64_t vk_frame_counter(void);
 
 // ---- shaders / pipelines (shaders.c)

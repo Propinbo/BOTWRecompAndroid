@@ -78,12 +78,16 @@ static VKAPI_ATTR VkResult VKAPI_CALL create_view(VkDevice d, const VkImageViewC
     return VK_SUCCESS;
 }
 static VKAPI_ATTR void VKAPI_CALL destroy_view(VkDevice d, VkImageView v, const VkAllocationCallbacks *a) { (void)d, (void)v, (void)a; }
+static VKAPI_ATTR void VKAPI_CALL destroy_sampler(VkDevice d, VkSampler s, const VkAllocationCallbacks *a) { (void)d, (void)s, (void)a; }
+static VKAPI_ATTR void VKAPI_CALL destroy_pipeline(VkDevice d, VkPipeline p, const VkAllocationCallbacks *a) { (void)d, (void)p, (void)a; }
 PFN_vkCmdCopyImageToBuffer vkCmdCopyImageToBuffer = copy_i2b;
 PFN_vkCmdCopyBufferToImage vkCmdCopyBufferToImage = copy_b2i;
 PFN_vkCmdCopyImage vkCmdCopyImage = copy_i2i;
 PFN_vkCmdPipelineBarrier2 vkCmdPipelineBarrier2 = barrier2;
 PFN_vkCreateImageView vkCreateImageView = create_view;
 PFN_vkDestroyImageView vkDestroyImageView = destroy_view;
+PFN_vkDestroySampler vkDestroySampler = destroy_sampler;
+PFN_vkDestroyPipeline vkDestroyPipeline = destroy_pipeline;
 PFN_vkGetPhysicalDeviceFormatProperties vkGetPhysicalDeviceFormatProperties;
 
 static int failures;

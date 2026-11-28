@@ -1750,7 +1750,10 @@ void backend_present(NvnTexture *t) {
         for (int g = 0; g < ng; g++) {
             if (!vk_frame_begin(black)) { ng = g; break; }
             VkCommandBuffer cb = vk_cmd();
-            vk_present_draw(cb, gen[g], fg_place.vx, fg_place.vy, fg_place.vw, fg_place.vh, fg_place.pv);
+            float fg_pv[8];
+            memcpy(fg_pv, fg_place.pv, sizeof fg_pv);
+            fg_pv[1] = (float)((renderer_present_count() + (uint64_t)(g + 1)) & 63);
+            vk_present_draw(cb, gen[g], fg_place.vx, fg_place.vy, fg_place.vw, fg_place.vh, fg_pv);
             menu_render((void *)cb, g_vk.sc_extent.width, g_vk.sc_extent.height);
             g_present_at = g ? base + (uint64_t)g * hold : 0;
             vk_frame_end(NULL);
