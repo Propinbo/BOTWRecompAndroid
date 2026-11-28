@@ -6,9 +6,10 @@
 enum {
     PW_VERSION = 1,
     PW_DEFAULT_CAP = 256,
-    PW_MAX_CAP = 512,
+    PW_DEFAULT_CAP_GPL = 1024,
+    PW_MAX_CAP = 2048,
     PW_HEADROOM = 256,
-    PW_IDX_BUCKETS = 1024,
+    PW_IDX_BUCKETS = 4096,
 };
 #define PW_LOAD_TIMEOUT_NS   30000000000ull
 #define PW_FLUSH_INTERVAL_NS 10000000000ull
@@ -54,6 +55,9 @@ typedef struct {
 #ifndef PW_PENDING_DECLARED
 static Pipe *pw_pending;
 #endif
+#ifndef PW_INFLIGHT_DECLARED
+static Pipe *pw_inflight[8];
+#endif
 static PwRecord *pw_records;
 static unsigned pw_alloc_cap, pw_count, pw_cap_val;
 static PwRecBucket pw_rec_set[PW_IDX_BUCKETS];
@@ -86,7 +90,7 @@ static bool prewarm_supported(void) {
 
 static unsigned prewarm_cap(void) {
     if (!pw_cap_val) {
-        unsigned c = PW_DEFAULT_CAP;
+        unsigned c = g_vk.gpl ? PW_DEFAULT_CAP_GPL : PW_DEFAULT_CAP;
         const char *e = getenv("LARECOMP_PIPE_PREWARM_MAX");
         if (e && *e) {
             long v = strtol(e, NULL, 10);
@@ -371,15 +375,27 @@ static void prewarm_tick(void) {
     if (pw_frame == frame) return;
     pw_frame = frame;
 
-    if (pw_pending && !pw_pending->evicted && atomic_load(&pw_pending->state) == 0) return;
-    pw_pending = NULL;
-
     int keep = pipe_keep();
     if (keep > 0) {
         size_t live = (size_t)atomic_load(&live_gpipes);
         if (live + PW_HEADROOM >= (size_t)keep || pipe_cache.count + PW_HEADROOM >= (size_t)keep) return;
     }
-    if (!prewarm_workers_idle()) return;
+
+    unsigned max_inflight = g_vk.gpl ? (jobs_workers > 1 ? jobs_workers : 1) : 1u;
+    if (max_inflight > 8) max_inflight = 8;
+    if (max_inflight == 1) {
+        if (pw_pending && !pw_pending->evicted && atomic_load(&pw_pending->state) == 0) return;
+        pw_pending = NULL;
+        if (!prewarm_workers_idle()) return;
+    } else {
+        unsigned busy = 0;
+        for (unsigned i = 0; i < max_inflight; i++) {
+            Pipe *ip = pw_inflight[i];
+            if (ip && !ip->evicted && atomic_load(&ip->state) == 0) busy++;
+            else pw_inflight[i] = NULL;
+        }
+        if (busy >= max_inflight) return;
+    }
 
     for (size_t j = 0; j < prog_cache.capacity; j++) {
         Prog *pr = prog_cache.entries[j].object;
@@ -418,7 +434,14 @@ static void prewarm_tick(void) {
             pw_attempted[idx] = 1;
             pw_queued_load++;
             pw_queued_boot++;
-            return;
+            if (max_inflight == 1) return;
+            unsigned busy = 0;
+            bool stored = false;
+            for (unsigned i = 0; i < max_inflight; i++) {
+                if (!pw_inflight[i] && !stored) { pw_inflight[i] = p; stored = true; }
+                if (pw_inflight[i]) busy++;
+            }
+            if (busy >= max_inflight) return;
         }
     }
 }
@@ -443,6 +466,7 @@ static bool prewarm_resolve_collision(Pipe *pp, const PipeKey *k) {
     int pst = atomic_load(&pp->state);
     if (!pst) return false;
     if (pp == pw_pending) pw_pending = NULL;
+    for (int i = 0; i < 8; i++) if (pw_inflight[i] == pp) pw_inflight[i] = NULL;
     if (pp->pipe) {
         long long mg0 = vk_mnow();
         vkDestroyPipeline(g_vk.dev, pp->pipe, NULL);
@@ -467,6 +491,7 @@ static void prewarm_reset(void) {
             pw_queued_boot, pw_seen_boot, pw_ready_boot, pw_count);
     }
     pw_pending = NULL;
+    memset(pw_inflight, 0, sizeof pw_inflight);
     pw_read = false;
     pw_saw_title = false;
     pw_loading = false;

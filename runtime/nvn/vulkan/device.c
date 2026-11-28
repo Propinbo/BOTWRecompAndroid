@@ -505,6 +505,8 @@ static void create_device(void) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_FEATURES_EXT};
     VkPhysicalDeviceDynamicRenderingLocalReadFeaturesKHR lr_have = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES_KHR};
+    VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT gpl_have = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT};
     VkPhysicalDeviceFeatures2 optional = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
 #define QUERY_OPTIONAL(name, feature) do { if (has_ext(ep, ne, name)) { \
         feature.pNext = optional.pNext; optional.pNext = &feature; } } while (0)
@@ -516,6 +518,7 @@ static void create_device(void) {
     QUERY_OPTIONAL(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME, vids_have);
     QUERY_OPTIONAL(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME, fbl_have);
     QUERY_OPTIONAL(VK_KHR_DYNAMIC_RENDERING_LOCAL_READ_EXTENSION_NAME, lr_have);
+    QUERY_OPTIONAL(VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME, gpl_have);
 #undef QUERY_OPTIONAL
     vkGetPhysicalDeviceFeatures2(g_vk.phys, &optional);
 #endif
@@ -530,9 +533,15 @@ static void create_device(void) {
     // (VkPhysicalDeviceDriverProperties: core from 1.2, before that its own extension, only queried)
     bool driver_props = g_vk.api >= VK_API_VERSION_1_2 || has_ext(ep, ne, VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME);
     g_driver_props = driver_props;
-    VkPhysicalDeviceDriverProperties driver = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
-    VkPhysicalDeviceProperties2 properties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-                                              .pNext = driver_props ? &driver : NULL};
+    bool have_pl_ext = has_ext(ep, ne, VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
+    bool have_gpl_ext = has_ext(ep, ne, VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME);
+    VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT gpl_props = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_PROPERTIES_EXT};
+    VkPhysicalDeviceDriverProperties driver = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES,
+                                              .pNext = have_gpl_ext ? (void *)&gpl_props : NULL};
+    VkPhysicalDeviceProperties2 properties = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = driver_props ? (void *)&driver : (have_gpl_ext ? (void *)&gpl_props : NULL)};
     vkGetPhysicalDeviceProperties2(g_vk.phys, &properties);
     if (!driver_props) snprintf(driver.driverName, sizeof driver.driverName, "unknown");
     const char *no_dr_env = getenv("LARECOMP_NO_DYNAMIC_RENDERING");
@@ -957,6 +966,23 @@ static void create_device(void) {
         vids.pNext = f.pNext;
         f.pNext = &vids;
     }
+    bool gpl_supported = have_pl_ext && have_gpl_ext && gpl_have.graphicsPipelineLibrary &&
+                         gpl_props.graphicsPipelineLibraryFastLinking &&
+                         g_vk.dyn_render && g_vk.eds && g_vk.eds2 && g_vk.dyn_vi &&
+                         (n_ext + 2 <= sizeof ext / sizeof ext[0]);
+    g_vk.gpl = vk_gpl_want(gpl_supported, (uint32_t)driver.driverID, driver_props, getenv("LARECOMP_VK_GPL"));
+    VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT gpl_feat = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT,
+        .graphicsPipelineLibrary = VK_TRUE};
+    if (g_vk.gpl) {
+        ext[n_ext++] = VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME;
+        ext[n_ext++] = VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME;
+        gpl_feat.pNext = f.pNext;
+        f.pNext = &gpl_feat;
+    }
+    LOG("[vk-cap] graphics pipeline library: %s (fast_link=%d, indep_interp=%d)\n",
+        g_vk.gpl ? "on" : "off", (int)gpl_props.graphicsPipelineLibraryFastLinking,
+        (int)gpl_props.graphicsPipelineLibraryIndependentInterpolationDecoration);
     bool has_bc = have.features.textureCompressionBC != VK_FALSE;
     bool has_astc_ldr = have.features.textureCompressionASTC_LDR != VK_FALSE;
     bool is_turnip = vk_driver_is_turnip();

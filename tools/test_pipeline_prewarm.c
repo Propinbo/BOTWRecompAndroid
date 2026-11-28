@@ -70,7 +70,7 @@ typedef struct {
 static struct {
     VkDevice dev;
     VkPhysicalDeviceProperties props;
-    bool dyn_render, eds, eds2, divisor, exec_stats, dyn_vi;
+    bool dyn_render, eds, eds2, divisor, exec_stats, dyn_vi, gpl;
 } g_vk = {
     .props = {.vendorID = 0x13b5, .deviceID = 0xd8300010, .driverVersion = 49,
               .pipelineCacheUUID = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}},
@@ -190,10 +190,13 @@ static void free_caches(void) {
 }
 
 int main(void) {
-    char tmpdir[] = "/data/local/tmp/pw_unit_XXXXXX";
     char cwd[PATH_MAX];
     assert(getcwd(cwd, sizeof cwd) != NULL);
     mkdir("/data/local/tmp", 0755);
+    const char *base = access("/data/local/tmp", W_OK | X_OK) == 0 ? "/data/local/tmp"
+                     : (getenv("TMPDIR") && *getenv("TMPDIR")) ? getenv("TMPDIR") : "/tmp";
+    char tmpdir[PATH_MAX];
+    snprintf(tmpdir, sizeof tmpdir, "%s/pw_unit_XXXXXX", base);
     assert(mkdtemp(tmpdir) != NULL);
     assert(chdir(tmpdir) == 0);
 
@@ -471,6 +474,41 @@ int main(void) {
     g_vk.dyn_vi = false;
     assert(prewarm_parse_and_validate(draw_raw, draw_n) == 0);
 
+    // Turnip GPL mode enables higher default cap (1024), max cap 2048, and multi-inflight prewarm
+    free_caches();
+    prewarm_clear_records();
+    remove(PW_PATH);
+    prewarm_reset();
+    g_vk.gpl = true;
+    unsetenv("LARECOMP_PIPE_PREWARM_MAX");
+    assert(prewarm_cap() == 1024);
+    setenv("LARECOMP_PIPE_PREWARM_MAX", "2048", 1);
+    prewarm_reset();
+    assert(prewarm_cap() == 2048);
+    setenv("LARECOMP_PIPE_PREWARM_MAX", "16", 1);
+    prewarm_reset();
+    Prog gp1 = make_prog(0xA111), gp2 = make_prog(0xA222);
+    vk_object_slot(&prog_cache, 101)->object = &gp1;
+    vk_object_slot(&prog_cache, 102)->object = &gp2;
+    PipeKey gk1 = make_key(&gp1, 16), gk2 = make_key(&gp2, 32);
+    mock_title = false;
+    g_scene_frame = 300;
+    mock_frame = 300;
+    prewarm_record(&gk1);
+    prewarm_record(&gk2);
+    assert(pw_count == 2);
+    mock_enqueue_calls = 0;
+    mock_title = true;
+    mock_frame = 329;
+    prewarm_tick();
+    mock_title = false;
+    mock_frame = 330;
+    prewarm_tick();
+    assert(pw_loading && mock_enqueue_calls == 2 && pw_queued_load == 2);
+    prewarm_reset();
+    for (int i = 0; i < 8; i++) assert(pw_inflight[i] == NULL);
+    g_vk.gpl = false;
+
     free_caches();
     free(pw_records);
     pw_records = NULL;
@@ -478,6 +516,6 @@ int main(void) {
     rmdir("cache");
     chdir(cwd);
     rmdir(tmpdir);
-    puts("PASS: default-off, record/dedup/cap, header+payload validation, loading transitions, guards, reuse, reset");
+    puts("PASS: default-off, record/dedup/cap, header+payload validation, loading transitions, guards, reuse, reset, gpl");
     return 0;
 }

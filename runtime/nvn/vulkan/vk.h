@@ -71,6 +71,7 @@ typedef struct {
     bool mali_rp_merge_opt;       // !BC && ASTC or Turnip: defer clears + suppress 3ms mid-pass split (LARECOMP_MALI_RP_MERGE_OPT)
     bool mali_rp_store_opt;       // (!BC && ASTC or Turnip) && VK 1.3+: lookahead STORE_OP_NONE / DONT_CARE (LARECOMP_MALI_RP_STORE_OPT)
     bool turnip_fb_loop;          // Turnip: intra-pass feedback-loop local barrier (LARECOMP_TURNIP_FB_LOCAL_BARRIER)
+    bool gpl;                     // Turnip: VK_EXT_graphics_pipeline_library 4-part fast-link (LARECOMP_VK_GPL)
     uint32_t api;                 // the device's Vulkan version as used: 1.3, or 1.1 / 1.2 with extensions (device.c)
 #endif
     // window
@@ -191,6 +192,7 @@ VkSampler vk_default_sampler(bool linear);
 void vk_image_init_layout(VkCommandBuffer cb, VkImage img, VkImageAspectFlags aspect);
 // Destruction once every submission that may use the object has completed.
 void vk_defer_image(VkImage img, VmaAllocation mem);
+VkImageView vk_create_temp_view(VkImage img, VkFormat fmt, uint32_t lv, uint32_t ly, VkImageAspectFlags aspect);
 void vk_defer_view(VkImageView v);
 void vk_views_forget(TexBackend *b);  // drop (deferred) the cached views of an image being replaced
 uint64_t vk_frame_counter(void);

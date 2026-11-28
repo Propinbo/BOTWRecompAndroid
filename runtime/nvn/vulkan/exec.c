@@ -1177,9 +1177,18 @@ void renderer_sync(void) {
     vk_wait_seq(s);
 }
 
+#ifdef __ANDROID__
+static _Atomic int g_mali_dclears_pending;
+#endif
+
 uint64_t renderer_fence_seq(void) {
     pthread_mutex_lock(&seq_lock);
-    uint64_t q = submit_seq + (subs[cur_sub].main_begun || subs[cur_sub].upload_begun ? 1 : 0);
+#ifdef __ANDROID__
+    bool dclears = atomic_load_explicit(&g_mali_dclears_pending, memory_order_acquire) > 0;
+#else
+    bool dclears = false;
+#endif
+    uint64_t q = submit_seq + (subs[cur_sub].main_begun || subs[cur_sub].upload_begun || dclears ? 1 : 0);
 #ifdef __ANDROID__
     static int fence_present = -1;
     if (fence_present < 0) fence_present = getenv("LARECOMP_FENCE_PRESENT") != NULL;
@@ -1720,6 +1729,10 @@ static void account_build_wait(uint64_t dt) {
                                                              memory_order_relaxed, memory_order_relaxed)) {}
 }
 
+#ifdef __ANDROID__
+static void gpl_log_summary(const char *where);
+#endif
+
 void vk_shader_build_report(const char *where) {
     uint64_t wns = atomic_exchange_explicit(&boot_build_wait_ns, 0, memory_order_relaxed);
     uint64_t wmax = atomic_exchange_explicit(&stat_build_wait_max_ns, 0, memory_order_relaxed);
@@ -1733,6 +1746,9 @@ void vk_shader_build_report(const char *where) {
     if (hits || misses)
         LOG("[vk] shader-meta (%s): %llu hits / %llu misses\n", where ? where : "?",
             (unsigned long long)hits, (unsigned long long)misses);
+#ifdef __ANDROID__
+    gpl_log_summary(where);
+#endif
 }
 
 static void wait_built_job(_Atomic int *state, _Atomic int *urgent_flag, void *steal_arg, uint64_t wd_arg) {
@@ -2443,6 +2459,9 @@ void vk_dump_watch_frame(void) {
 }
 #ifdef __ANDROID__
 static MaliDeferredClearTable g_mali_dclears;
+static inline void mali_dclear_publish_count(void) {
+    atomic_store_explicit(&g_mali_dclears_pending, g_mali_dclears.count, memory_order_release);
+}
 static MaliActivePassImgs g_mali_active_pass;
 static uint32_t g_mali_pass_draws;
 static uint32_t g_mali_pass_store_none_mask;
@@ -2587,9 +2606,11 @@ static void mali_fs_meta_reset(void) {
 }
 
 static void mali_dclear_materialize(const MaliDeferredClear *e) {
-    if (!e || !e->image || !e->view) return;
-    extern bool vk_view_is_dead(VkImageView v);
-    if (vk_view_is_dead(e->view)) return;
+    if (!e || !e->image) return;
+    VkImageAspectFlags aspect = e->has_color ? VK_IMAGE_ASPECT_COLOR_BIT : e->image_aspect;
+    VkFormat vfmt = e->has_color ? e->view_format : e->image_format;
+    VkImageView v = vk_create_temp_view(e->image, vfmt, e->mip_level, e->array_layer, aspect);
+    if (!v) return;
     if (in_pass) {
         vk_end_pass();
         st.rt_dirty = true;
@@ -2604,7 +2625,7 @@ static void mali_dclear_materialize(const MaliDeferredClear *e) {
     if (e->has_color) {
         colors[0] = e->view_format;
         ca = (VkRenderingAttachmentInfo){.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                                         .imageView = e->view,
+                                         .imageView = v,
                                          .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                                          .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
                                          .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -2614,7 +2635,7 @@ static void mali_dclear_materialize(const MaliDeferredClear *e) {
         if (e->image_aspect & VK_IMAGE_ASPECT_DEPTH_BIT) {
             has_d = true;
             da = (VkRenderingAttachmentInfo){.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                                             .imageView = e->view,
+                                             .imageView = v,
                                              .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                                              .loadOp = e->has_depth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD,
                                              .storeOp = e->has_depth ? VK_ATTACHMENT_STORE_OP_STORE
@@ -2625,7 +2646,7 @@ static void mali_dclear_materialize(const MaliDeferredClear *e) {
         if (e->image_aspect & VK_IMAGE_ASPECT_STENCIL_BIT) {
             has_s = true;
             sa = (VkRenderingAttachmentInfo){.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                                             .imageView = e->view,
+                                             .imageView = v,
                                              .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                                              .loadOp = e->has_stencil ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD,
                                              .storeOp = e->has_stencil ? VK_ATTACHMENT_STORE_OP_STORE
@@ -2641,13 +2662,18 @@ static void mali_dclear_materialize(const MaliDeferredClear *e) {
                           .pColorAttachments = e->has_color ? &ca : NULL,
                           .pDepthAttachment = has_d ? &da : NULL,
                           .pStencilAttachment = has_s ? &sa : NULL};
-    if (!vk_begin_rendering(cb, &ri, e->has_color ? colors : NULL, ds_fmt, e->samples)) return;
+    if (!vk_begin_rendering(cb, &ri, e->has_color ? colors : NULL, ds_fmt, e->samples)) {
+        vk_defer_view(v);
+        return;
+    }
     vk_end_rendering(cb);
+    vk_defer_view(v);
     stat_passes++;
 }
 
 void vk_mali_rp_forget_image(VkImage img) {
     mali_dclear_forget_image(&g_mali_dclears, img);
+    mali_dclear_publish_count();
 }
 
 void vk_mali_rp_flush_clears_for(VkImage img) {
@@ -2665,7 +2691,10 @@ void vk_mali_rp_flush_clears_for(VkImage img) {
         }
         mali_dclear_materialize(&e);
     }
-    if (did) vk_full_barrier(vk_cmd());
+    if (did) {
+        mali_dclear_publish_count();
+        vk_full_barrier(vk_cmd());
+    }
 }
 
 static void vk_mali_rp_flush_all_clears(void) {
@@ -2683,7 +2712,10 @@ static void vk_mali_rp_flush_all_clears(void) {
         }
         mali_dclear_materialize(&e);
     }
-    if (did) vk_full_barrier(vk_cmd());
+    if (did) {
+        mali_dclear_publish_count();
+        vk_full_barrier(vk_cmd());
+    }
 }
 
 static void mali_prepare_rt_scales(void) {
@@ -2819,20 +2851,21 @@ static bool mali_try_defer_rt_clear(int index, const float *color_raw, uint32_t 
 
     VkClearColorValue cc = {0};
     if (index >= 0 && color_raw) memcpy(&cc, color_raw, 16);
-    int rc = mali_dclear_upsert(&g_mali_dclears, b->image, v, vf, b->format, b->aspect, lv, ly, ew, eh,
+    int rc = mali_dclear_upsert(&g_mali_dclears, b->image, vf, b->format, b->aspect, lv, ly, ew, eh,
                                 (VkSampleCountFlagBits)(b->samples ? b->samples : 1),
                                 index >= 0, &cc, set_d, dval, set_s, sval);
     if (rc == MALI_DCLEAR_CONFLICT) {
         vk_mali_rp_flush_clears_for(b->image);
-        rc = mali_dclear_upsert(&g_mali_dclears, b->image, v, vf, b->format, b->aspect, lv, ly, ew, eh,
+        rc = mali_dclear_upsert(&g_mali_dclears, b->image, vf, b->format, b->aspect, lv, ly, ew, eh,
                                 (VkSampleCountFlagBits)(b->samples ? b->samples : 1),
                                 index >= 0, &cc, set_d, dval, set_s, sval);
     } else if (rc == MALI_DCLEAR_FULL) {
         vk_mali_rp_flush_all_clears();
-        rc = mali_dclear_upsert(&g_mali_dclears, b->image, v, vf, b->format, b->aspect, lv, ly, ew, eh,
+        rc = mali_dclear_upsert(&g_mali_dclears, b->image, vf, b->format, b->aspect, lv, ly, ew, eh,
                                 (VkSampleCountFlagBits)(b->samples ? b->samples : 1),
                                 index >= 0, &cc, set_d, dval, set_s, sval);
     }
+    mali_dclear_publish_count();
     return rc == MALI_DCLEAR_OK;
 }
 
@@ -2881,20 +2914,21 @@ static bool mali_try_defer_clear_texture(NvnTexture *t, const NvnTextureView *tv
     uint32_t ew = level_extent(b->width, lv), eh = level_extent(b->height, lv);
     VkClearColorValue cc = {0};
     memcpy(&cc, color, 16);
-    int rc = mali_dclear_upsert(&g_mali_dclears, b->image, v, vf, b->format, b->aspect, lv, ly, ew, eh,
+    int rc = mali_dclear_upsert(&g_mali_dclears, b->image, vf, b->format, b->aspect, lv, ly, ew, eh,
                                 (VkSampleCountFlagBits)(b->samples ? b->samples : 1),
                                 true, &cc, false, 0.0f, false, 0);
     if (rc == MALI_DCLEAR_CONFLICT) {
         vk_mali_rp_flush_clears_for(b->image);
-        rc = mali_dclear_upsert(&g_mali_dclears, b->image, v, vf, b->format, b->aspect, lv, ly, ew, eh,
+        rc = mali_dclear_upsert(&g_mali_dclears, b->image, vf, b->format, b->aspect, lv, ly, ew, eh,
                                 (VkSampleCountFlagBits)(b->samples ? b->samples : 1),
                                 true, &cc, false, 0.0f, false, 0);
     } else if (rc == MALI_DCLEAR_FULL) {
         vk_mali_rp_flush_all_clears();
-        rc = mali_dclear_upsert(&g_mali_dclears, b->image, v, vf, b->format, b->aspect, lv, ly, ew, eh,
+        rc = mali_dclear_upsert(&g_mali_dclears, b->image, vf, b->format, b->aspect, lv, ly, ew, eh,
                                 (VkSampleCountFlagBits)(b->samples ? b->samples : 1),
                                 true, &cc, false, 0.0f, false, 0);
     }
+    mali_dclear_publish_count();
     return rc == MALI_DCLEAR_OK;
 }
 
@@ -3443,6 +3477,10 @@ static void begin_pass(void) {
     pass_written = 0;
 #ifdef __ANDROID__
     if (g_vk.mali_rp_merge_opt) {
+        for (uint32_t i = 0; i < pass_ncolor && i < 8; i++)
+            if (ca[i].imageView && ca[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) pass_written |= 1u << i;
+        if ((has_d && da.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) || (has_s && sa.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR))
+            pass_written |= 1u << 8;
         g_mali_pass_draws = 0;
         VkImage aimgs[MALI_ACTIVE_PASS_ATT_MAX];
         int n_a = 0;
@@ -3693,10 +3731,35 @@ static void mali_check_store_none_write(uint32_t write_mask, const char *where) 
                 where, write_mask, g_mali_pass_store_none_mask);
     }
 }
+
+static uint32_t mali_draw_store_write_mask(uint32_t draw_w) {
+    static int nodt = -1;
+    if (nodt < 0) nodt = getenv("LARECOMP_NO_DEPTH_TEST") != NULL;
+    uint32_t actual_w = draw_w & 0xFFu;
+    if (pass_depth != VK_FORMAT_UNDEFINED && vk_mali_depth_state_writes(st.ds[0] && !nodt, st.ds[1] != 0))
+        actual_w |= 1u << 8;
+    if (pass_stencil != VK_FORMAT_UNDEFINED) {
+        uint32_t ops = (uint32_t)st.ds[5] | ((uint32_t)st.ds[6] << 8) | ((uint32_t)st.ds[7] << 16);
+        if (vk_mali_stencil_state_writes(st.ds[3] != 0, ops, st.stencil_mask[0], st.stencil_mask[1]))
+            actual_w |= 1u << 9;
+    }
+    return actual_w;
+}
 #endif
 
 static void clear(int index, int kind, const void *color, uint32_t mask, bool depth, float dval, bool stencil, uint32_t sval,
                   uint32_t smask) {
+#ifdef __ANDROID__
+    if (g_vk.mali_rp_store_opt && in_pass && !st.rt_dirty && g_mali_pass_store_none_mask) {
+        uint32_t cw = 0;
+        if (index >= 0 && index < 8 && (mask & 0xF)) cw |= 1u << (uint32_t)index;
+        if (index < 0) {
+            if (depth && pass_depth != VK_FORMAT_UNDEFINED) cw |= 1u << 8;
+            if (stencil && pass_stencil != VK_FORMAT_UNDEFINED && (smask & 0xFF)) cw |= 1u << 9;
+        }
+        if (cw & g_mali_pass_store_none_mask) st.rt_dirty = true;
+    }
+#endif
     begin_pass();
     if (!in_pass) return;
     for (int i = 0; i < nlclear; i++) {  // (done by the pass's load operations: begin_pass - each once)
@@ -3827,6 +3890,10 @@ typedef struct {
     uint8_t evict;      // (prog_evict, vk_exec_reset) 1: to be freed, 2: kept - a pipeline of its still building
     uint32_t used_s;    // when a draw last used it (g_exec_s), and that submission (prog_evict)
     uint64_t used_seq;
+#ifdef __ANDROID__
+    VkPipeline gpl_pre[4];
+    VkPipeline gpl_fs[16];
+#endif
 } Prog;
 
 static VkPipelineLayout make_layout(Prog *p, int nsets, VkShaderStageFlags s0, VkShaderStageFlags s1) {
@@ -4698,6 +4765,9 @@ static void pipe_evict(void) {
 #ifdef __ANDROID__
 static Pipe *pw_pending;
 #define PW_PENDING_DECLARED
+static Pipe *pw_inflight[8];
+#define PW_INFLIGHT_DECLARED
+static pthread_mutex_t gpl_lock = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
 // ---- freeing programs and their pipelines (render thread; nothing building with them, the GPU done with them)
@@ -4705,6 +4775,7 @@ static void pipe_free(Pipe *pp) {
     if (pp == last_pipeline) last_pipeline = NULL;
 #ifdef __ANDROID__
     if (pp == pw_pending) pw_pending = NULL;
+    for (int i = 0; i < 8; i++) if (pw_inflight[i] == pp) pw_inflight[i] = NULL;
 #endif
     if (pp->pipe) {
         long long mg0 = vk_mnow();
@@ -4718,6 +4789,19 @@ static void pipe_free(Pipe *pp) {
 // (a graphics program; compute ones: cs_free)
 static void prog_free(Prog *p) {
     if (p == last_prog) last_prog = NULL;
+#ifdef __ANDROID__
+    VkPipeline gpl_tmp[20];
+    int ngpl = 0;
+    pthread_mutex_lock(&gpl_lock);
+    for (int i = 0; i < 4; i++) {
+        if (p->gpl_pre[i]) { gpl_tmp[ngpl++] = p->gpl_pre[i]; p->gpl_pre[i] = VK_NULL_HANDLE; }
+    }
+    for (int i = 0; i < 16; i++) {
+        if (p->gpl_fs[i]) { gpl_tmp[ngpl++] = p->gpl_fs[i]; p->gpl_fs[i] = VK_NULL_HANDLE; }
+    }
+    pthread_mutex_unlock(&gpl_lock);
+    for (int i = 0; i < ngpl; i++) vkDestroyPipeline(g_vk.dev, gpl_tmp[i], NULL);
+#endif
     long long mg0 = vk_mnow();
     if (p->vs) vkDestroyShaderModule(g_vk.dev, p->vs, NULL);
     if (p->fs) vkDestroyShaderModule(g_vk.dev, p->fs, NULL);
@@ -4825,6 +4909,327 @@ static uint64_t hmix(uint64_t h, const void *p, size_t n) {
 static VkPrimitiveTopology topo_class_base(uint8_t c) {
     return c == 0 ? VK_PRIMITIVE_TOPOLOGY_POINT_LIST : c == 1 ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 }
+
+#ifdef __ANDROID__
+typedef struct {
+    uint32_t ncolor, samples;
+    uint32_t write_mask[8];
+    VkFormat color[8], depth, stencil;
+    uint8_t blend[8][8];
+    uint8_t blend_on, a2c, fb_loop, pad;
+} GplFoKey;
+
+typedef struct {
+    uint64_t hash;
+    GplFoKey key;
+    VkPipeline pipe;
+} GplFoEntry;
+
+static VkPipeline gpl_vi[6];
+static GplFoEntry *gpl_fo_tab;
+static size_t gpl_fo_cap, gpl_fo_cnt;
+static _Atomic uint64_t gpl_links, gpl_fallbacks, gpl_link_ns;
+static _Atomic uint64_t gpl_vi_hits, gpl_vi_misses, gpl_pre_hits, gpl_pre_misses;
+static _Atomic uint64_t gpl_fs_hits, gpl_fs_misses, gpl_fo_hits, gpl_fo_misses;
+
+static int gpl_sample_idx(uint32_t s) {
+    return s == 1 ? 0 : s == 2 ? 1 : s == 4 ? 2 : s == 8 ? 3 : -1;
+}
+
+static VkPipeline gpl_fo_lookup_locked(const GplFoKey *fk, uint64_t h) {
+    if (!gpl_fo_cap) return VK_NULL_HANDLE;
+    size_t slot = (size_t)h & (gpl_fo_cap - 1);
+    while (gpl_fo_tab[slot].hash) {
+        if (gpl_fo_tab[slot].hash == h && memcmp(&gpl_fo_tab[slot].key, fk, sizeof *fk) == 0)
+            return gpl_fo_tab[slot].pipe;
+        slot = (slot + 1) & (gpl_fo_cap - 1);
+    }
+    return VK_NULL_HANDLE;
+}
+
+static bool gpl_fo_insert_locked(const GplFoKey *fk, uint64_t h, VkPipeline pipe, VkPipeline *existing_out) {
+    if ((gpl_fo_cnt + 1) * 10 >= gpl_fo_cap * 7) {
+        size_t ncap = gpl_fo_cap ? gpl_fo_cap * 2 : 64;
+        GplFoEntry *ntab = calloc(ncap, sizeof *ntab);
+        if (!ntab) return false;
+        for (size_t i = 0; i < gpl_fo_cap; i++) {
+            if (!gpl_fo_tab[i].hash) continue;
+            size_t s = (size_t)gpl_fo_tab[i].hash & (ncap - 1);
+            while (ntab[s].hash) s = (s + 1) & (ncap - 1);
+            ntab[s] = gpl_fo_tab[i];
+        }
+        free(gpl_fo_tab);
+        gpl_fo_tab = ntab;
+        gpl_fo_cap = ncap;
+    }
+    size_t slot = (size_t)h & (gpl_fo_cap - 1);
+    while (gpl_fo_tab[slot].hash) {
+        if (gpl_fo_tab[slot].hash == h && memcmp(&gpl_fo_tab[slot].key, fk, sizeof *fk) == 0) {
+            *existing_out = gpl_fo_tab[slot].pipe;
+            return false;
+        }
+        slot = (slot + 1) & (gpl_fo_cap - 1);
+    }
+    gpl_fo_tab[slot] = (GplFoEntry){.hash = h, .key = *fk, .pipe = pipe};
+    gpl_fo_cnt++;
+    return true;
+}
+
+static void gpl_log_summary(const char *where) {
+    uint64_t l = atomic_load_explicit(&gpl_links, memory_order_relaxed);
+    uint64_t fb = atomic_load_explicit(&gpl_fallbacks, memory_order_relaxed);
+    uint64_t ns = atomic_load_explicit(&gpl_link_ns, memory_order_relaxed);
+    uint64_t vim = atomic_load_explicit(&gpl_vi_misses, memory_order_relaxed);
+    if (!l && !fb && !vim) return;
+    LOG("[vk-gpl] (%s): links=%llu avg=%.2fms fallbacks=%llu vi=%llu/%llu pre=%llu/%llu fs=%llu/%llu fo=%llu/%llu\n",
+        where ? where : "?", (unsigned long long)l, l ? (double)ns / 1e6 / (double)l : 0.0,
+        (unsigned long long)fb,
+        (unsigned long long)atomic_load_explicit(&gpl_vi_hits, memory_order_relaxed), (unsigned long long)vim,
+        (unsigned long long)atomic_load_explicit(&gpl_pre_hits, memory_order_relaxed),
+        (unsigned long long)atomic_load_explicit(&gpl_pre_misses, memory_order_relaxed),
+        (unsigned long long)atomic_load_explicit(&gpl_fs_hits, memory_order_relaxed),
+        (unsigned long long)atomic_load_explicit(&gpl_fs_misses, memory_order_relaxed),
+        (unsigned long long)atomic_load_explicit(&gpl_fo_hits, memory_order_relaxed),
+        (unsigned long long)atomic_load_explicit(&gpl_fo_misses, memory_order_relaxed));
+}
+
+static void gpl_reset(void) {
+    gpl_log_summary("reset");
+    pthread_mutex_lock(&gpl_lock);
+    for (int i = 0; i < 6; i++) {
+        if (gpl_vi[i]) { vkDestroyPipeline(g_vk.dev, gpl_vi[i], NULL); gpl_vi[i] = VK_NULL_HANDLE; }
+    }
+    for (size_t i = 0; i < gpl_fo_cap; i++) {
+        if (gpl_fo_tab[i].pipe) vkDestroyPipeline(g_vk.dev, gpl_fo_tab[i].pipe, NULL);
+    }
+    free(gpl_fo_tab);
+    gpl_fo_tab = NULL;
+    gpl_fo_cap = gpl_fo_cnt = 0;
+    pthread_mutex_unlock(&gpl_lock);
+    atomic_store_explicit(&gpl_links, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_fallbacks, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_link_ns, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_vi_hits, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_vi_misses, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_pre_hits, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_pre_misses, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_fs_hits, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_fs_misses, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_fo_hits, 0, memory_order_relaxed);
+    atomic_store_explicit(&gpl_fo_misses, 0, memory_order_relaxed);
+}
+
+static void gpl_log_fallback_once(const char *stage, VkResult rc) {
+    atomic_fetch_add_explicit(&gpl_fallbacks, 1, memory_order_relaxed);
+    static atomic_bool logged;
+    if (!atomic_exchange(&logged, true))
+        LOG("[vk-gpl] fallback to monolithic at %s (rc=%d)\n", stage, (int)rc);
+}
+
+static bool build_pipeline_gpl(const PipeKey *k, const VkPipelineShaderStageCreateInfo stages[2],
+                               const VkPipelineInputAssemblyStateCreateInfo *ia,
+                               const VkPipelineViewportStateCreateInfo *vs,
+                               const VkPipelineRasterizationStateCreateInfo *rs,
+                               const VkPipelineMultisampleStateCreateInfo *ms,
+                               const VkPipelineDepthStencilStateCreateInfo *ds,
+                               const VkPipelineColorBlendStateCreateInfo *cb,
+                               const VkPipelineRenderingCreateInfo *ri,
+                               bool fb_loop, VkPipeline *out_pipe) {
+    if (!g_vk.gpl || !g_vk.dyn_render || !g_vk.eds || !g_vk.eds2 || !g_vk.dyn_vi ||
+        k->fx.on || g_vk.exec_stats || k->topo_class >= 3)
+        return false;
+    int sidx = gpl_sample_idx(k->samples);
+    if (sidx < 0) return false;
+    int vi_idx = (int)k->topo_class * 2 + (k->prim_restart ? 1 : 0);
+    int pre_idx = (k->poly_fill ? 1 : 0) | (k->depth_clamp ? 2 : 0);
+    int fs_idx = (sidx << 2) | (k->a2c ? 2 : 0) | (fb_loop ? 1 : 0);
+
+    // 1. Vertex Input Interface
+    pthread_mutex_lock(&gpl_lock);
+    VkPipeline p_vi = gpl_vi[vi_idx];
+    if (p_vi) atomic_fetch_add_explicit(&gpl_vi_hits, 1, memory_order_relaxed);
+    else atomic_fetch_add_explicit(&gpl_vi_misses, 1, memory_order_relaxed);
+    pthread_mutex_unlock(&gpl_lock);
+    if (!p_vi) {
+        static const VkDynamicState vi_dyn[3] = {
+            VK_DYNAMIC_STATE_VERTEX_INPUT_EXT, VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY,
+            VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE};
+        VkPipelineDynamicStateCreateInfo dy = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                               .dynamicStateCount = 3, .pDynamicStates = vi_dyn};
+        VkGraphicsPipelineLibraryCreateInfoEXT lc = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT,
+            .flags = VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT};
+        VkGraphicsPipelineCreateInfo pi = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &lc,
+            .flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR,
+            .pInputAssemblyState = ia, .pDynamicState = &dy};
+        VkPipeline created = VK_NULL_HANDLE;
+        VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &created);
+        if (r != VK_SUCCESS) { gpl_log_fallback_once("vi", r); return false; }
+        pthread_mutex_lock(&gpl_lock);
+        if (gpl_vi[vi_idx]) {
+            p_vi = gpl_vi[vi_idx];
+            pthread_mutex_unlock(&gpl_lock);
+            vkDestroyPipeline(g_vk.dev, created, NULL);
+        } else {
+            gpl_vi[vi_idx] = p_vi = created;
+            pthread_mutex_unlock(&gpl_lock);
+        }
+    }
+
+    // 2. Pre-Rasterization Shaders
+    pthread_mutex_lock(&gpl_lock);
+    VkPipeline p_pre = k->prog->gpl_pre[pre_idx];
+    if (p_pre) atomic_fetch_add_explicit(&gpl_pre_hits, 1, memory_order_relaxed);
+    else atomic_fetch_add_explicit(&gpl_pre_misses, 1, memory_order_relaxed);
+    pthread_mutex_unlock(&gpl_lock);
+    if (!p_pre) {
+        static const VkDynamicState pre_dyn[6] = {
+            VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_DEPTH_BIAS,
+            VK_DYNAMIC_STATE_CULL_MODE, VK_DYNAMIC_STATE_FRONT_FACE, VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE};
+        VkPipelineDynamicStateCreateInfo dy = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                               .dynamicStateCount = 6, .pDynamicStates = pre_dyn};
+        VkGraphicsPipelineLibraryCreateInfoEXT lc = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT,
+            .flags = VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT};
+        VkGraphicsPipelineCreateInfo pi = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &lc,
+            .flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR,
+            .stageCount = 1, .pStages = &stages[0],
+            .pViewportState = vs, .pRasterizationState = rs, .pDynamicState = &dy,
+            .layout = k->prog->layout};
+        VkPipeline created = VK_NULL_HANDLE;
+        VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &created);
+        if (r != VK_SUCCESS) { gpl_log_fallback_once("pre", r); return false; }
+        pthread_mutex_lock(&gpl_lock);
+        if (k->prog->gpl_pre[pre_idx]) {
+            p_pre = k->prog->gpl_pre[pre_idx];
+            pthread_mutex_unlock(&gpl_lock);
+            vkDestroyPipeline(g_vk.dev, created, NULL);
+        } else {
+            k->prog->gpl_pre[pre_idx] = p_pre = created;
+            pthread_mutex_unlock(&gpl_lock);
+        }
+    }
+
+    // 3. Fragment Shader
+    pthread_mutex_lock(&gpl_lock);
+    VkPipeline p_fs = k->prog->gpl_fs[fs_idx];
+    if (p_fs) atomic_fetch_add_explicit(&gpl_fs_hits, 1, memory_order_relaxed);
+    else atomic_fetch_add_explicit(&gpl_fs_misses, 1, memory_order_relaxed);
+    pthread_mutex_unlock(&gpl_lock);
+    if (!p_fs) {
+        static const VkDynamicState fs_dyn[8] = {
+            VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK, VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
+            VK_DYNAMIC_STATE_STENCIL_REFERENCE, VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE,
+            VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE, VK_DYNAMIC_STATE_DEPTH_COMPARE_OP,
+            VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE, VK_DYNAMIC_STATE_STENCIL_OP};
+        VkPipelineDynamicStateCreateInfo dy = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                               .dynamicStateCount = 8, .pDynamicStates = fs_dyn};
+        VkGraphicsPipelineLibraryCreateInfoEXT lc = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT,
+            .flags = VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT};
+        VkPipelineCreateFlags fflags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR |
+            (fb_loop ? VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT : 0);
+        VkGraphicsPipelineCreateInfo pi = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &lc,
+            .flags = fflags,
+            .stageCount = 1, .pStages = &stages[1],
+            .pMultisampleState = ms, .pDepthStencilState = ds, .pDynamicState = &dy,
+            .layout = k->prog->layout};
+        VkPipeline created = VK_NULL_HANDLE;
+        VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &created);
+        if (r != VK_SUCCESS) { gpl_log_fallback_once("fs", r); return false; }
+        pthread_mutex_lock(&gpl_lock);
+        if (k->prog->gpl_fs[fs_idx]) {
+            p_fs = k->prog->gpl_fs[fs_idx];
+            pthread_mutex_unlock(&gpl_lock);
+            vkDestroyPipeline(g_vk.dev, created, NULL);
+        } else {
+            k->prog->gpl_fs[fs_idx] = p_fs = created;
+            pthread_mutex_unlock(&gpl_lock);
+        }
+    }
+
+    // 4. Fragment Output Interface
+    GplFoKey fk;
+    memset(&fk, 0, sizeof fk);
+    fk.ncolor = k->ncolor;
+    fk.samples = k->samples;
+    for (uint32_t i = 0; i < k->ncolor && i < 8; i++) {
+        fk.write_mask[i] = k->write_mask[i];
+        fk.color[i] = k->color[i];
+        if ((k->blend_on >> i) & 1) memcpy(fk.blend[i], k->blend[i], 8);
+    }
+    fk.depth = k->depth;
+    fk.stencil = k->stencil;
+    fk.blend_on = k->blend_on;
+    fk.a2c = k->a2c;
+    fk.fb_loop = fb_loop ? 1 : 0;
+    uint64_t fh = hash_words(0xcbf29ce484222325ull, &fk, sizeof fk);
+    if (!fh) fh = 1;
+
+    pthread_mutex_lock(&gpl_lock);
+    VkPipeline p_fo = gpl_fo_lookup_locked(&fk, fh);
+    if (p_fo) atomic_fetch_add_explicit(&gpl_fo_hits, 1, memory_order_relaxed);
+    else atomic_fetch_add_explicit(&gpl_fo_misses, 1, memory_order_relaxed);
+    pthread_mutex_unlock(&gpl_lock);
+    if (!p_fo) {
+        static const VkDynamicState fo_dyn[1] = {VK_DYNAMIC_STATE_BLEND_CONSTANTS};
+        VkPipelineDynamicStateCreateInfo dy = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                               .dynamicStateCount = 1, .pDynamicStates = fo_dyn};
+        VkPipelineRenderingCreateInfo ri_copy = *ri;
+        ri_copy.pNext = NULL;
+        VkGraphicsPipelineLibraryCreateInfoEXT lc = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT,
+            .pNext = &ri_copy,
+            .flags = VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT};
+        VkPipelineCreateFlags fflags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR |
+            (fb_loop ? VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT : 0);
+        VkGraphicsPipelineCreateInfo pi = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &lc,
+            .flags = fflags,
+            .pMultisampleState = ms, .pColorBlendState = cb, .pDynamicState = &dy};
+        VkPipeline created = VK_NULL_HANDLE;
+        VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &created);
+        if (r != VK_SUCCESS) { gpl_log_fallback_once("fo", r); return false; }
+        VkPipeline existing = VK_NULL_HANDLE;
+        pthread_mutex_lock(&gpl_lock);
+        bool inserted = gpl_fo_insert_locked(&fk, fh, created, &existing);
+        pthread_mutex_unlock(&gpl_lock);
+        if (!inserted) {
+            vkDestroyPipeline(g_vk.dev, created, NULL);
+            if (!existing) { gpl_log_fallback_once("fo_oom", VK_ERROR_OUT_OF_HOST_MEMORY); return false; }
+            p_fo = existing;
+        } else {
+            p_fo = created;
+        }
+    }
+
+    // 5. Fast-Link all 4 pipeline libraries
+    VkPipeline libs[4] = {p_vi, p_pre, p_fs, p_fo};
+    VkPipelineLibraryCreateInfoKHR link_ci = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR,
+        .libraryCount = 4, .pLibraries = libs};
+    VkGraphicsPipelineCreateInfo link_pi = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &link_ci,
+        .flags = fb_loop ? VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT : 0,
+        .layout = k->prog->layout};
+    uint64_t t0 = plat_now_ns();
+    VkResult lr = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &link_pi, NULL, out_pipe);
+    if (lr != VK_SUCCESS) {
+        gpl_log_fallback_once("link", lr);
+        *out_pipe = VK_NULL_HANDLE;
+        return false;
+    }
+    atomic_fetch_add_explicit(&gpl_link_ns, plat_now_ns() - t0, memory_order_relaxed);
+    atomic_fetch_add_explicit(&gpl_links, 1, memory_order_relaxed);
+    static atomic_bool first_ok;
+    if (!atomic_exchange(&first_ok, true)) LOG("[vk-gpl] first fast-link ok\n");
+    return true;
+}
+#endif
 
 static void build_pipeline(void *arg) {
     Pipe *pp = arg;
@@ -4947,7 +5352,14 @@ static void build_pipeline(void *arg) {
     }
 #endif
     long long mg0 = vk_mnow();
-    VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &pp->pipe);
+    VkResult r = VK_ERROR_UNKNOWN;
+#ifdef __ANDROID__
+    if (build_pipeline_gpl(k, stages, &ia, &vs, &rs, &ms, &ds, &cb, &ri,
+                           g_vk.turnip_fb_loop && k->ncolor > 0, &pp->pipe))
+        r = VK_SUCCESS;
+    else
+#endif
+        r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &pp->pipe);
     vk_mgrow_add(MG_GPIPE, mg0);
     {   // LARECOMP_PIPE_FAIL_OOM=<n>: the n-th to (n+19)-th pipelines built fail once as out of device memory (a test of
         // the retry, #520; twenty, so some of them are drawn again)
@@ -6330,6 +6742,7 @@ RT_ON_RESET(ubo_inline_reset) {
 #ifdef __ANDROID__
 RT_ON_RESET(mali_rp_opt_reset) {
     mali_dclear_reset(&g_mali_dclears);
+    mali_dclear_publish_count();
     mali_active_pass_reset(&g_mali_active_pass);
     mali_fs_meta_reset();
     g_mali_pass_draws = 0;
@@ -8005,6 +8418,9 @@ void vk_exec_reset(void) {
     pipe_cache = (VkObjectCache){0};
     atomic_store(&program_keys, 0);
     atomic_store(&pipeline_keys, 0);
+#ifdef __ANDROID__
+    gpl_reset();
+#endif
     int nc = compute_reset();
     LOG("[vk] reboot: %d programs, %d pipelines and %d compute programs freed (%d kept)\n", np, ng, nc, kept);
     guest_copy_flush();
@@ -8047,6 +8463,7 @@ void vk_exec_reset(void) {
     dchain_env = -1;
 #ifdef __ANDROID__
     mali_dclear_reset(&g_mali_dclears);
+    mali_dclear_publish_count();
     mali_active_pass_reset(&g_mali_active_pass);
     mali_fs_meta_reset();
     g_mali_pass_draws = 0;
@@ -9205,6 +9622,10 @@ static void draw_(CmdRec *r, bool indexed) {
     // (the attachments this draw writes: once a draw - the targets and masks don't change before it is recorded; three
     // computations of it were ~8% of the render thread on the POCO F7 Ultra)
     const uint32_t draw_w = draw_writes(pr);
+#ifdef __ANDROID__
+    if (g_vk.mali_rp_store_opt && in_pass && !st.rt_dirty && (mali_draw_store_write_mask(draw_w) & g_mali_pass_store_none_mask))
+        st.rt_dirty = true;
+#endif
     resolve_feedback(pr, draw_w);
     scene_upscale(pr, r);
     snap_reason = "draw-depthwrite";
