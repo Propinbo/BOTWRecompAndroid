@@ -1069,6 +1069,7 @@ bool plat_worker_thread_pin(void) {
         }
         return ok;
     }
+    if (g_cpu_topo.valid) plat_thread_pin_role(0, PLAT_CPU_ROLE_ALL);
     plat_thread_unpin();
     return false;
 }
@@ -1390,6 +1391,7 @@ static void adpf_work_locked(int slot, uint64_t work_ns, uint64_t target_ns, uin
                 session[0] = create(m, tids, (size_t)ntids, (int64_t)target_ns);
                 if (!session[0] && s_guest_ntids > 0) {
                     s_guest_ntids = 0;
+                    memset(s_guest_tids, 0, sizeof s_guest_tids);
                     ntids = adpf_collect_tids(tids);
                     if (ntids > 0) session[0] = create(m, tids, (size_t)ntids, (int64_t)target_ns);
                 }

@@ -1382,7 +1382,7 @@ bool vk_frame_begin(const float clear[4]) {
             last_render_aff_mode = m;
             if (m) plat_thread_pin_role(0, PLAT_CPU_ROLE_RENDER);
             else {
-                plat_thread_unpin();
+                plat_thread_pin_role(0, PLAT_CPU_ROLE_ALL);
                 plat_render_thread_pin();
             }
             LOG("[android] render thread auto-affinity mode=%d\n", m);

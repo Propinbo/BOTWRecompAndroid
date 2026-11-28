@@ -1509,7 +1509,7 @@ void kernel_affinity_tick(void) {
         pthread_mutex_lock(&g_klock);
         kernel_aff_demote_guests_locked();
         pthread_mutex_unlock(&g_klock);
-        if (mode == 0 && g_aff_self_pinned_tid > 0 && g_aff_self_pinned_mode != 0 && g_aff_self_pinned_mode != 3)
+        if (mode == 0 && g_aff_self_pinned_tid > 0 && g_aff_self_pinned_mode != 0)
             plat_thread_pin_role(0, PLAT_CPU_ROLE_ALL);
         if (mode == 0) {
             g_aff_self_pinned_tid = 0;
@@ -1530,12 +1530,12 @@ void kernel_affinity_tick(void) {
 
     int32_t self_tid = (int32_t)syscall(__NR_gettid);
     if (self_tid > 0 && (self_tid != g_aff_self_pinned_tid || mode != g_aff_self_pinned_mode)) {
-        if (mode == 3) {
-            if (g_aff_self_pinned_mode != 0 && g_aff_self_pinned_mode != 3)
-                plat_thread_pin_role(0, PLAT_CPU_ROLE_ALL);
+        if (plat_thread_pin_role(0, PLAT_CPU_ROLE_PRESENT)) {
             g_aff_self_pinned_tid = self_tid;
             g_aff_self_pinned_mode = mode;
-        } else if (plat_thread_pin_role(0, PLAT_CPU_ROLE_PRESENT)) {
+        } else if (mode == 3) {
+            if (g_aff_self_pinned_mode != 0)
+                plat_thread_pin_role(0, PLAT_CPU_ROLE_ALL);
             g_aff_self_pinned_tid = self_tid;
             g_aff_self_pinned_mode = mode;
         }
