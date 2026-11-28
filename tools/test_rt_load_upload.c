@@ -88,6 +88,15 @@ void widescreen_backdrop_seen(uint64_t h) { (void)h; }
 void widescreen_scene_ubo(const float *u, uint64_t s) { (void)u, (void)s; }
 float widescreen_effect_stretch(uint64_t h) { (void)h; return 1.0f; }
 bool framepace_in_menu(void) { return false; }
+bool framepace_on(void) { return true; }
+int framepace_target(void) { return 30; }
+uint64_t framepace_period_ns(void) { return 33333333ull; }
+int framepace_env_target_fps(void) { return -1; }
+bool framepace_is_between_mode(void) { return false; }
+bool framepace_wants_120hz(void) { return false; }
+bool framepace_in_event(void) { return false; }
+bool settings_eff_late_input_latch(void) { return false; }
+bool vk_mali_40fps_pacer_env_on(void) { return false; }
 const char *game_level_name(void) { return "MainField"; }
 int texpatch_identify(const NvnTexture *t) { (void)t; return -1; }
 uint32_t texpatch_generation(void) { return 0; }

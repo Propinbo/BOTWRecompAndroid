@@ -1058,17 +1058,39 @@ static bool swapchain_readback = true;  // (Android: false where the surface can
 static MaliFramePacer g_mali_pacer;
 static bool g_mali_pacer_logged;
 static bool sc_for_120hz_fifo;
-static bool mali_40fps_pacer_active(void) {
-    static int env = -1;
-    if (env < 0) {
-        const char *e = getenv("LARECOMP_MALI_40FPS_PACER");
-        env = (!e || !*e) ? 1 : atoi(e) != 0;
+static _Atomic uint64_t g_mali_pacer_step_ns;
+static uint64_t vs_anchor, vs_period, vs_delay;
+static bool vs_fit;
+bool vk_mali_40fps_pacer_env_on(void) {
+    static _Atomic int env = -1;
+    int e = atomic_load_explicit(&env, memory_order_relaxed);
+    if (e < 0) {
+        const char *v = getenv("LARECOMP_MALI_40FPS_PACER");
+        e = (!v || !*v) ? 1 : atoi(v) != 0;
+        atomic_store_explicit(&env, e, memory_order_relaxed);
     }
-    return env > 0 && g_nmodules > 0 && g_game_version >= 182 && framepace_on() && framepace_wants_120hz();
+    return e > 0;
 }
-RT_ON_RESET(mali_pacer_reboot_reset) {
+uint64_t vk_mali_pacer_step_ns(void) {
+    return atomic_load_explicit(&g_mali_pacer_step_ns, memory_order_relaxed);
+}
+static void reset_pacer_timing_state(void) {
     mali_pacer_reset(&g_mali_pacer);
     g_mali_pacer_logged = false;
+    atomic_store_explicit(&g_mali_pacer_step_ns, 0, memory_order_relaxed);
+    __atomic_store_n(&vs_anchor, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&vs_period, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&vs_delay, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&vs_fit, false, __ATOMIC_RELAXED);
+    vk_late_latch_reset();
+}
+static bool mali_40fps_pacer_active(void) {
+    extern int vk_fg_status(const char **why);
+    return vk_mali_40fps_pacer_env_on() && g_nmodules > 0 && g_game_version >= 182 &&
+           framepace_on() && framepace_wants_120hz() && vk_fg_status(NULL) <= 0;
+}
+RT_ON_RESET(mali_pacer_reboot_reset) {
+    reset_pacer_timing_state();
 }
 #endif
 static VkPresentModeKHR present_mode(void) {
@@ -1113,7 +1135,7 @@ static void swapchain_surface_lost(VkSwapchainKHR old) {
     if (old) vkDestroySwapchainKHR(g_vk.dev, old, NULL);
     g_vk.swapchain = VK_NULL_HANDLE;
     surface_lost = true;
-    mali_pacer_reset(&g_mali_pacer);
+    reset_pacer_timing_state();
 }
 #endif
 
@@ -1228,7 +1250,7 @@ static void create_swapchain(void) {
 static void recreate_swapchain(void) {
 #ifdef __ANDROID__
     WdMark wd_mark = vk_wd_enter(WD_R_SWAPCHAIN, 0);  // (freeze watchdog: vkDeviceWaitIdle waits for all the GPU's work)
-    mali_pacer_reset(&g_mali_pacer);
+    reset_pacer_timing_state();
 #endif
     vkDeviceWaitIdle(g_vk.dev);
     create_swapchain();
@@ -1260,18 +1282,21 @@ static int between_for(float hz) { return hz > 110 ? 40 : hz > 80 ? 45 : hz > 50
 
 int vk_between_fps(void) {
     if (framepace_wants_120hz()) return 40;
-    static int fps = 45;
-    static uint64_t next;
+    static _Atomic int fps = 45;
+    static _Atomic uint64_t next;
     uint64_t now = SDL_GetTicksNS();
-    if (now >= next) {
-        next = now + 1000000000ull;
-        const SDL_DisplayMode *m = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+    uint64_t nxt = atomic_load_explicit(&next, memory_order_relaxed);
+    if (now >= nxt) {
+        atomic_store_explicit(&next, now + 1000000000ull, memory_order_relaxed);
+        const SDL_DisplayMode *m = window ? SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window)) : NULL;
         float hz = m ? m->refresh_rate : 0;
         int f = between_for(hz);
-        if (f != fps) LOG("[vk] Frame rate 40 / 45: %d fps on a %.0f Hz screen\n", f, hz);
-        fps = f;
+        int prev = atomic_load_explicit(&fps, memory_order_relaxed);
+        if (f != prev) LOG("[vk] Frame rate 40 / 45: %d fps on a %.0f Hz screen\n", f, hz);
+        atomic_store_explicit(&fps, f, memory_order_relaxed);
+        return f;
     }
-    return fps;
+    return atomic_load_explicit(&fps, memory_order_relaxed);
 }
 
 // ... and the one the window asks for (android_frame_rate): from the fastest rate the screen offers, not the current
@@ -1279,16 +1304,19 @@ int vk_between_fps(void) {
 // to 30 and never asked (POCO F7 Pro, 2026-11-15). The frame rate itself still follows the screen's rate
 // (vk_between_fps): 30 until the system switches, and on a system that won't.
 int vk_between_target(void) {
-    static int s_fps;
-    int fps = __atomic_load_n(&s_fps, __ATOMIC_RELAXED);
-    if (!fps) {
-        extern float plat_max_refresh_hz(void);
-        float hz = plat_max_refresh_hz();
-        fps = hz > 0 ? between_for(hz) : -1;
-        __atomic_store_n(&s_fps, fps, __ATOMIC_RELAXED);
+    static _Atomic int s_fps;
+    int fps = atomic_load_explicit(&s_fps, memory_order_relaxed);
+    if (fps > 0) return fps;
+    extern float plat_max_refresh_hz(void);
+    float hz = plat_max_refresh_hz();
+    if (hz > 0.0f) {
+        fps = between_for(hz);
+        atomic_store_explicit(&s_fps, fps, memory_order_relaxed);
         LOG("[vk] Frame rate 40 / 45: the screen offers up to %.0f Hz\n", hz);
+        return fps;
     }
-    return fps > 0 ? fps : vk_between_fps();
+    const SDL_DisplayMode *m = window ? SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window)) : NULL;
+    return m && m->refresh_rate > 0 ? between_for(m->refresh_rate) : 30;
 }
 
 // (hle/benchmark.c) the screen's refresh rate now
@@ -1323,12 +1351,10 @@ static void android_frame_rate(struct ANativeWindow *aw) {
     }
     if (wants_120 && !fg) {
         if (aw != asked_aw || asked_pref_hz != 120.0f) {
-            plat_set_preferred_display_hz(120.0f);
-            asked_pref_hz = 120.0f;
+            if (plat_set_preferred_display_hz(120.0f)) asked_pref_hz = 120.0f;
         }
     } else if (asked_pref_hz > 0.0f) {
-        plat_set_preferred_display_hz(0.0f);
-        asked_pref_hz = 0.0f;
+        if (plat_set_preferred_display_hz(0.0f)) asked_pref_hz = 0.0f;
     }
     if (aw == asked_aw && want == asked) return;
     // (libnativewindow's, looked up, not linked. Android 12+: with the change strategy ALWAYS - the plain call changes
@@ -1356,7 +1382,7 @@ static bool android_surface_ready(void) {  // false: no window to draw into now
     android_frame_rate(aw);
     if (aw == surface_aw && !surface_lost) return true;
     WdMark wd_mark = vk_wd_enter(WD_R_SWAPCHAIN, 1);  // (freeze watchdog)
-    mali_pacer_reset(&g_mali_pacer);
+    reset_pacer_timing_state();
     vkDeviceWaitIdle(g_vk.dev);
     for (uint32_t i = 0; i < g_vk.sc_count; i++) vk_rp_forget_view(g_vk.sc_views[i]), vkDestroyImageView(g_vk.dev, g_vk.sc_views[i], NULL);
     g_vk.sc_count = 0;
@@ -1526,8 +1552,6 @@ static void save_window_image(VkCommandBuffer cb, VkSpan *out) {
 // (when the latest timed frame reached the screen), the vsync period, and the time from the game's hand-over of a
 // frame to its queueBuffer (the median of the last 9: after a load the render thread's backlog runs to tens of ms,
 // and an average of it kept moving for seconds after), ns. vs_fit: the latest frame reached the screen on the grid.
-static uint64_t vs_anchor, vs_period, vs_delay;
-static bool vs_fit;
 static uint32_t present_id;
 static uint64_t present_asked;  // when the game's thread handed over the frame being presented (vk_present_now)
 
@@ -1544,10 +1568,11 @@ static void poll_past_presents(uint64_t p) {
             a_id = past[i].presentID;
         }
     }
-    if (a <= vs_anchor) return;
+    uint64_t cur_anchor = __atomic_load_n(&vs_anchor, __ATOMIC_RELAXED);
+    if (a <= cur_anchor) return;
     mali_pacer_observe_present(&g_mali_pacer, a_id, a, p, framepace_wants_120hz());
-    if (vs_anchor && p) {
-        uint64_t r = (a - vs_anchor) % p;
+    if (cur_anchor && p) {
+        uint64_t r = (a - cur_anchor) % p;
         __atomic_store_n(&vs_fit, (r < p - r ? r : p - r) < p / 8, __ATOMIC_RELAXED);
     }
     __atomic_store_n(&vs_anchor, a, __ATOMIC_RELAXED);
@@ -1569,12 +1594,12 @@ static void vsync_update(uint64_t queued) {
         }
         __atomic_store_n(&vs_delay, s[n / 2], __ATOMIC_RELAXED);
     }
-    uint64_t p = vs_period;
-    if (present_id % 32 == 1 || !p || !vs_fit) {  // (about once a second: the panel's rate may change)
+    uint64_t p = __atomic_load_n(&vs_period, __ATOMIC_RELAXED);
+    if (present_id % 32 == 1 || !p || !__atomic_load_n(&vs_fit, __ATOMIC_RELAXED)) {  // (about once a second: the panel's rate may change)
         VkRefreshCycleDurationGOOGLE rc;
         if (vkGetRefreshCycleDurationGOOGLE(g_vk.dev, g_vk.swapchain, &rc) == VK_SUCCESS)
             p = rc.refreshDuration >= 4000000 && rc.refreshDuration <= 50000000 ? rc.refreshDuration : 0;
-        uint64_t was = vs_period;  // (the period is measured: it moves by microseconds)
+        uint64_t was = __atomic_load_n(&vs_period, __ATOMIC_RELAXED);  // (the period is measured: it moves by microseconds)
         if (!p != !was || (p > was ? p - was : was - p) > was / 100) LOG("[pace] display vsync %.3f ms\n", p / 1e6);
         __atomic_store_n(&vs_period, p, __ATOMIC_RELAXED);
     }
@@ -1645,6 +1670,9 @@ void vk_frame_end(const char *shot_path) {
         if (display_timing) poll_past_presents(vp);
         uint64_t desired = mali_pacer_next_present_ex(&g_mali_pacer, plat_now_ns(), vp, framepace_target(),
                                                       display_timing, when.presentID, framepace_wants_120hz());
+        uint64_t step_ns = g_mali_pacer.vsync_period_ns && g_mali_pacer.last_divisor
+                               ? (uint64_t)g_mali_pacer.last_divisor * g_mali_pacer.vsync_period_ns : 0;
+        atomic_store_explicit(&g_mali_pacer_step_ns, step_ns, memory_order_relaxed);
         if (!g_mali_pacer_logged) {
             g_mali_pacer_logged = true;
             LOG("[pace] mali 120Hz 1:3/1:4 pacer active (display_timing=%d, vsync=%.3f ms, div=%u)\n",
@@ -1653,12 +1681,20 @@ void vk_frame_end(const char *shot_path) {
         if (desired) {
             if (display_timing) {
                 when.desiredPresentTime = desired;
-            } else if (desired > plat_now_ns()) {
-                WdMark sleep_wd = vk_wd_enter(WD_R_QUEUE_PRESENT, present_id);
-                plat_sleep_until_ns(desired);
-                vk_wd_leave(sleep_wd);
+            } else {
+                uint64_t st0 = plat_now_ns();
+                if (desired > st0) {
+                    WdMark sleep_wd = vk_wd_enter(WD_R_QUEUE_PRESENT, present_id);
+                    plat_sleep_until_ns(desired);
+                    vk_wd_leave(sleep_wd);
+                    uint64_t st1 = plat_now_ns();
+                    extern void vk_async_note_present_sleep_ns(uint64_t ns);
+                    if (st1 > st0) vk_async_note_present_sleep_ns(st1 - st0);
+                }
             }
         }
+    } else if (atomic_load_explicit(&g_mali_pacer_step_ns, memory_order_relaxed) != 0) {
+        atomic_store_explicit(&g_mali_pacer_step_ns, 0, memory_order_relaxed);
     }
     uint64_t queued = plat_now_ns();
 #endif

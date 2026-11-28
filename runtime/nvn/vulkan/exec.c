@@ -86,6 +86,11 @@ uint64_t prof_up_cum;  // (the same, never reset)
 #define PROF_T0() uint64_t prof_t0_ = prof ? SDL_GetTicksNS() : 0
 #define PROF_ADD(v) do { if (prof) v += SDL_GetTicksNS() - prof_t0_; } while (0)
 static _Atomic int stat_compiles;
+static _Atomic uint64_t stat_compiles_seq;
+static inline void note_shader_compile(void) {
+    atomic_fetch_add(&stat_compiles, 1);
+    atomic_fetch_add_explicit(&stat_compiles_seq, 1, memory_order_relaxed);
+}
 static _Atomic int live_programs, live_gpipes, live_cpipes;  // (made so far: the memory mappings log, vk_live_counts)
 static void pipe_evict(void);  // (graphics pipelines: below)
 static void prog_evict(void);  // (their programs: below)
@@ -497,17 +502,42 @@ static _Atomic int pace_on = -1;
 
 #ifdef __ANDROID__
 static _Atomic uint64_t g_adpf_target_ns = 16666667ull;
+static _Atomic uint64_t g_late_latch_wait_ns;
+static _Atomic uint32_t g_latch_reset_gen;
+static _Atomic uint32_t g_latch_full_reset_gen;
+static LateLatchPacer g_late_latch;
+
+uint64_t vk_late_latch_wait_ns(void) {
+    return atomic_load_explicit(&g_late_latch_wait_ns, memory_order_acquire);
+}
+void vk_late_latch_reset(void) {
+    atomic_store_explicit(&g_late_latch_wait_ns, 0, memory_order_release);
+    atomic_fetch_add_explicit(&g_latch_reset_gen, 1, memory_order_release);
+}
 RT_ON_RESET(vk_adpf_target_reset) {
     atomic_store_explicit(&g_adpf_target_ns, 16666667ull, memory_order_relaxed);
+    atomic_fetch_add_explicit(&g_latch_full_reset_gen, 1, memory_order_release);
+    vk_late_latch_reset();
 }
 static uint64_t vk_adpf_compute_ns(void) {
-    static int follow = -1;
+    static _Atomic int follow = -1;
+    static _Atomic int relax = -1;
     static double budget30 = -1.0;
-    if (follow < 0) follow = getenv("LARECOMP_ADPF_FOLLOW") != NULL;
+    int fl = atomic_load_explicit(&follow, memory_order_relaxed);
+    if (fl < 0) {
+        fl = getenv("LARECOMP_ADPF_FOLLOW") != NULL ? 1 : 0;
+        atomic_store_explicit(&follow, fl, memory_order_relaxed);
+    }
+    int rx = atomic_load_explicit(&relax, memory_order_relaxed);
+    if (rx < 0) {
+        const char *re = getenv("LARECOMP_ADPF_RELAX");
+        rx = (re && *re) ? (atoi(re) != 0 ? 1 : 0) : 0;
+        atomic_store_explicit(&relax, rx, memory_order_relaxed);
+    }
     if (budget30 < 0.0) budget30 = getenv("LARECOMP_ADPF30_MS") ? atof(getenv("LARECOMP_ADPF30_MS")) : 0.0;
     bool slow = atomic_load_explicit(&pace_slow, memory_order_relaxed);
     return mali_pacer_adpf_target_ns(framepace_target(), fps_mode_now(), framepace_env_target_fps(), slow,
-                                       follow != 0, AB("adpf30") == 1, vk_driver_is_mali(), budget30);
+                                       fl != 0, AB("adpf30") == 1, vk_driver_is_mali(), rx != 0, budget30);
 }
 uint64_t vk_adpf_target_ns(void) {
     return atomic_load_explicit(&g_adpf_target_ns, memory_order_relaxed);
@@ -567,7 +597,12 @@ void vk_pace_frame(void) {
     extern bool g_benchmark;
     extern void benchmark_frame(double period, double busy, double game, double render, double gpu);
     if (g_benchmark && !first && p > 100000000ull) benchmark_frame(p / 1e6, (p > wt ? p - wt : 0) / 1e6, (p > wt ? p - wt : 0) / 1e6, -1, -1);  // (its window keeps these too)
-    if (first || p > 100000000ull) return;  // (loading, a hitch: not a pace)
+    if (first || p > 100000000ull) {
+#ifdef __ANDROID__
+        vk_late_latch_reset();
+#endif
+        return;  // (loading, a hitch: not a pace)
+    }
     double busy = (p > wt ? p - wt : 0) / 1e6;
 #ifdef __ANDROID__
     // LARECOMP_VK_ASYNC: the frame is two threads' work - the game's (busy) and the render thread's (its last frame)
@@ -618,6 +653,58 @@ void vk_pace_frame(void) {
         double work = busy > g_pace_gpu_ms ? busy : g_pace_gpu_ms;
         g_work_ms = g_work_ms > 0 ? g_work_ms + (work - g_work_ms) * 0.1 : work;
     }
+    {   // Adaptive Late Input Latching inside 40 FPS @ 120 Hz headroom.
+        extern bool settings_eff_late_input_latch(void);
+        static uint64_t prev_compiles, prev_skips, latch_log_n;
+        static uint32_t last_reset_gen, last_full_gen;
+        uint32_t fgen = atomic_load_explicit(&g_latch_full_reset_gen, memory_order_acquire);
+        if (fgen != last_full_gen) {
+            last_full_gen = fgen;
+            g_late_latch = (LateLatchPacer){0};
+            prev_compiles = prev_skips = latch_log_n = 0;
+            last_reset_gen = atomic_load_explicit(&g_latch_reset_gen, memory_order_acquire);
+        }
+        bool latch_active = pace_on && framepace_on() && settings_eff_late_input_latch() && framepace_wants_120hz();
+        if (!latch_active) {
+            if (g_late_latch.current_offset_ms != 0.0) {
+                g_late_latch.current_offset_ms = 0.0;
+                if (g_late_latch.cooldown_frames < 8u) g_late_latch.cooldown_frames = 8u;
+            }
+            if (atomic_load_explicit(&g_late_latch_wait_ns, memory_order_relaxed) != 0)
+                atomic_store_explicit(&g_late_latch_wait_ns, 0, memory_order_release);
+        } else {
+            uint64_t cur_compiles = atomic_load_explicit(&stat_compiles_seq, memory_order_relaxed);
+            uint64_t cur_skips = atomic_load_explicit(&stat_skipped_building, memory_order_relaxed);
+            uint32_t rgen = atomic_load_explicit(&g_latch_reset_gen, memory_order_acquire);
+            bool had_cs = (cur_compiles > prev_compiles) || (cur_skips > prev_skips);
+            bool slipped = (rgen != last_reset_gen);
+            prev_compiles = cur_compiles;
+            prev_skips = cur_skips;
+            last_reset_gen = rgen;
+
+            static double latch_guard = -1.0;
+            if (latch_guard < 0.0) {
+                const char *ge = getenv("LARECOMP_LATE_LATCH_GUARD_MS");
+                latch_guard = (ge && *ge) ? atof(ge) : 4.5;
+                if (latch_guard < 1.0) latch_guard = 1.0;
+            }
+            uint64_t target_p_ns = framepace_period_ns();
+            bool eligible = !framepace_in_menu() && !framepace_in_event() &&
+                            target_p_ns >= 24000000ull && target_p_ns <= 26000000ull;
+            double active_cost = busy > g_pace_gpu_ms ? busy : g_pace_gpu_ms;
+            uint64_t lns = late_latch_update(&g_late_latch, eligible, p / 1e6, active_cost,
+                                             had_cs, slipped, latch_guard, 7.5);
+            atomic_store_explicit(&g_late_latch_wait_ns, lns, memory_order_release);
+            if (++latch_log_n % 240 == 0 && (eligible || g_late_latch.active_frames)) {
+                double avg = g_late_latch.active_frames
+                                 ? g_late_latch.sum_offset_ms / (double)g_late_latch.active_frames : 0.0;
+                LOG("[latch] offset=%.2fms avg=%.2fms cost=%.2fms ewma=%.2fms active=%llu/%llu clamps=%llu\n",
+                    g_late_latch.current_offset_ms, avg, active_cost, g_late_latch.ewma_cost_ms,
+                    (unsigned long long)g_late_latch.active_frames, (unsigned long long)g_late_latch.total_frames,
+                    (unsigned long long)g_late_latch.panic_clamps);
+            }
+        }
+    }
 #endif
     static int log = -1;  // LARECOMP_LOG_PACE=1: each frame's period, vsync wait and busy time
     if (log < 0) log = getenv("LARECOMP_LOG_PACE") != NULL;
@@ -653,8 +740,8 @@ void vk_pace_frame(void) {
         static double game_sum, render_sum, period_sum, blocked_sum, busy_max;
         if (!since) since = now;
         n++; one += steps == 1; slow_n += pace_slow;
-        late_only += steps == 1 && p > 20000000ull && busy <= 16.2;
-        work_over += steps == 1 && busy > 16.2;
+        late_only += steps == 1 && p > over_period_ns && busy <= over_busy_ms;
+        work_over += steps == 1 && busy > over_busy_ms;
         game_sum += game_busy; render_sum += render_busy;
         period_sum += p / 1e6; blocked_sum += wt / 1e6;
         if (busy > busy_max) busy_max = busy;
@@ -3327,7 +3414,7 @@ static void compile_program_from_spirv(Prog *p, uint32_t *sv, size_t nv, uint32_
     }
 #endif
     p->layout = make_layout(p, 2, VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_FRAGMENT_BIT);
-    atomic_fetch_add(&stat_compiles, 1);
+    note_shader_compile();
     atomic_fetch_add(&live_programs, 1);
     bool ok = p->vs && p->fs;
     if (from_meta && ok) atomic_fetch_add_explicit(&stat_meta_hits, 1, memory_order_relaxed);
@@ -4286,7 +4373,7 @@ static void build_pipeline(void *arg) {
         }
     }
 #endif
-    atomic_fetch_add(&stat_compiles, 1);
+    note_shader_compile();
     if (r == VK_SUCCESS) atomic_fetch_add(&live_gpipes, 1);
     if (r != VK_SUCCESS) {  // (each failing key once: its draws are dropped - for lack of memory, until a retry)
         static int n;
@@ -7630,7 +7717,7 @@ static void build_compute(void *arg) {
     long long mg0 = vk_mnow();
     VkResult r = vkCreateComputePipelines(g_vk.dev, g_vk.pcache, 1, &ci, NULL, &cp->pipe);
     vk_mgrow_add(MG_CPIPE, mg0);
-    atomic_fetch_add(&stat_compiles, 1);
+    note_shader_compile();
     if (r == VK_SUCCESS) atomic_fetch_add(&live_cpipes, 1);
     if (r != VK_SUCCESS || getenv("LARECOMP_LOG_CS_PIPELINES"))
         LOG("[compute] pipeline %llx: result %d, local %ux%ux%u, %zu SPIR-V words, %d bindings\n",

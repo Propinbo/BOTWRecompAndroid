@@ -30,7 +30,8 @@ PRELUDE = r'''
 #define RT_ON_RESET(name) static void name(void)
 
 enum { ASPECT_UNLOCKED = 0, ASPECT_ORIGINAL = 1 };
-enum { RES_MATCH = 0, RES_1X = 1, RES_Q75 = 9, RES_Q50 = 10, RES_Q25 = 11, RES_DYNAMIC = 12 };
+enum { RES_MATCH = 0, RES_1X = 1, RES_Q75 = 9, RES_Q50 = 10, RES_Q25 = 11, RES_DYNAMIC = 12,
+       RES_Q65 = 13, RES_Q68 = 14, RES_Q70 = 15, RES_Q85 = 16 };
 enum { OUT_AUTO = 0 };
 
 static struct { int aspect, res_mode, out_lines; bool center_world_map; } g_settings = {ASPECT_UNLOCKED, RES_MATCH, OUT_AUTO, false};
@@ -710,9 +711,11 @@ def main():
     parser.add_argument('--negative-control', choices=['camera', 'ui', 'anchor', 'map', 'center_map', 'crop', 'band', 'crop_title', 'oob_guard', 'tall_ui', 'backdrop'])
     args = parser.parse_args()
 
+    out_scale_hdr = (ROOT / 'runtime/nvn/output_scale.h').read_text(encoding='utf-8')
+    out_scale_hdr = re.sub(r'^#(?:pragma\s+once|include\s+[<"][^>"]+[>"])\s*$', '', out_scale_hdr, flags=re.M)
     out_scale_src = (ROOT / 'runtime/nvn/output_scale.c').read_text(encoding='utf-8')
     out_scale_src = re.sub(r'^#include "[^"]+"\s*$', '', out_scale_src, flags=re.M)
-    out_scale_src = 'typedef struct { double sx, sy, scene_sx, scene_sy, shape, vx, vy, vw, vh; } OutScale;\n' + out_scale_src
+    out_scale_src = out_scale_hdr + '\n' + out_scale_src
 
     dev_src = (ROOT / 'runtime/nvn/vulkan/device.c').read_text(encoding='utf-8')
     d_start = dev_src.index('        static bool wt_init;')

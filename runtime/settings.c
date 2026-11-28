@@ -3,6 +3,7 @@
 #include <math.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -82,6 +83,7 @@ Settings g_settings = {
     .pipe_prewarm = false,      // (an experiment: vulkan/pipeline_prewarm.inc)
     .core_turns = false,        // (an experiment for #401: kernel.c core0_init)
     .sync_lag = true,           // (a few more fps; the CPU's reads of GPU results a frame old: nvn/objects.c nvnSyncWait)
+    .late_input_latch = false,  // (adaptive pre-poll wait inside idle 40 FPS headroom; opt-in)
     .out_lines = OUT_AUTO,      // (POCO F7 Ultra, 3200x1440, 1.8.2's Great Plateau: GPU 22.8 ms a frame at the screen's,
                                 // 18.6 at 1080 lines with a larger scene - the final image's passes over 2.2x the pixels)
 #else
@@ -255,6 +257,7 @@ void settings_reset_defaults(void) {
     g_settings.thermal_cap = d->thermal_cap;
     g_settings.shader_int32 = d->shader_int32;
     g_settings.sync_lag = d->sync_lag;
+    g_settings.late_input_latch = d->late_input_latch;
     g_settings.low_ram = d->low_ram;
     g_settings.native_code = d->native_code;
     g_settings.pipe_prewarm = d->pipe_prewarm;
@@ -315,6 +318,7 @@ void settings_load(void) {
         else if (!strcmp(key, "frame_rate")) g_settings.fps_mode = !strcmp(val, "30") ? 1 : !strcmp(val, "60") ? 2 : !strcmp(val, "20") ? 3 : (!strcmp(val, "40") || !strcmp(val, "45")) ? 4 : 0;
         else if (!strcmp(key, "shader_int32")) g_settings.shader_int32 = atoi(val) != 0;
         else if (!strcmp(key, "sync_lag")) g_settings.sync_lag = atoi(val) != 0;
+        else if (!strcmp(key, "late_input_latch")) g_settings.late_input_latch = atoi(val) != 0;
         else if (!strcmp(key, "native_code")) g_settings.native_code = atoi(val) != 0;
         else if (!strcmp(key, "pipe_prewarm")) g_settings.pipe_prewarm = atoi(val) != 0;
         else if (!strcmp(key, "core_turns")) g_settings.core_turns = atoi(val) != 0;
@@ -446,8 +450,8 @@ static void settings_save_locked(void) {
                g_settings.fps_mode == 4 ? "45" : "auto");
     fprintf(f, "thermal_cap = %d\n", g_settings.thermal_cap ? 1 : 0);
     fprintf(f, "cutscenes_60 = %d\n", g_settings.event_fps_unlock);
-    fprintf(f, "shader_int32 = %d\nsync_lag = %d\nnative_code = %d\nfiles_in_place = %d\n", g_settings.shader_int32,
-            g_settings.sync_lag, g_settings.native_code, g_settings.files_in_place);
+    fprintf(f, "shader_int32 = %d\nsync_lag = %d\nlate_input_latch = %d\nnative_code = %d\nfiles_in_place = %d\n", g_settings.shader_int32,
+            g_settings.sync_lag, g_settings.late_input_latch ? 1 : 0, g_settings.native_code, g_settings.files_in_place);
     fprintf(f, "pipe_prewarm = %d\n", g_settings.pipe_prewarm ? 1 : 0);
     fprintf(f, "core_turns = %d\n", g_settings.core_turns ? 1 : 0);
     static const char *const tri[] = {"auto", "0", "1"};  // (-1 / 0 / 1)
@@ -538,4 +542,19 @@ void settings_set_pad_gyro_axes(int val) {
 #ifdef __ANDROID__
 // Settings > "Switch-style core turns" (kernel.c core0_init reads it when the game's threads first take turns)
 bool settings_core_turns(void) { return g_settings.core_turns; }
+
+static int eff_env_flag(const char *name) {
+    const char *v = getenv(name);
+    return v && *v ? (atoi(v) != 0 ? 1 : 0) : -1;
+}
+
+bool settings_eff_late_input_latch(void) {
+    static _Atomic int e = -2;
+    int cached = atomic_load_explicit(&e, memory_order_relaxed);
+    if (cached == -2) {
+        cached = eff_env_flag("LARECOMP_LATE_LATCH");
+        atomic_store_explicit(&e, cached, memory_order_relaxed);
+    }
+    return cached >= 0 ? cached != 0 : __atomic_load_n(&g_settings.late_input_latch, __ATOMIC_RELAXED);
+}
 #endif

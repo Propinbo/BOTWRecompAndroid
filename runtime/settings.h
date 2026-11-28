@@ -31,7 +31,7 @@ typedef struct {
     int aspect;          // ASPECT_*: unlocked = fill the window (wider/taller views), original = 16:9 with bars
     bool center_world_map;  // use the original map proportions on narrow landscape screens in Unlocked mode
     bool fullscreen;
-    int res_mode;        // RES_MATCH, 1..4 (N x the Switch's 1080p), RES_DYNAMIC, RES_Q75/50/25 (share of the display)
+    int res_mode;        // RES_MATCH, 1..4 (N x the Switch's 1080p), RES_DYNAMIC, RES_Q85/75/70/68/65/50/25 (share of the display)
     int upscaler;        // UPSCALE_*: how a lower internal resolution reaches the window (MetalFX: macOS, FSR 1: Windows)
     int out_lines;       // Output resolution: the final image (scene + HUD) at most this many lines, scaled up to the
                          // screen at the end (0: the screen's own; 1080 / 900 / 720; OUT_AUTO: 1080 on taller
@@ -66,6 +66,7 @@ typedef struct {
                           // as LARECOMP_CORE_LOCKS=7, which overrides it; #401; experimental, off by default)
     bool files_in_place;  // Android: a setup reads the picked romfs/ where it is, no copy (services/fs.c); off by default
     bool sync_lag;        // Android: the game's next frame overlaps the GPU's last (nvn/objects.c nvnSyncWait); on by default
+    bool late_input_latch;// Android: in 40 FPS @ 120 Hz mode, adaptively delay next-frame input poll to shave latency
     int low_ram;          // RAM saving (vulkan/exec.c vk_low_ram): -1 automatic (devices up to 4 GB), 1 on, 0 off; read once,
                           // as the app starts
     // Driver compatibility (the start screen's Settings > Prelaunch, ui/launcher.mm; from LASRecompAndroid), for GPUs
@@ -140,3 +141,6 @@ const char *settings_language_name(void);
 // (tests). Elsewhere "en".
 const char *settings_menu_language(void);
 bool settings_host_portuguese(void);  // (settings_menu_language is "pt")
+#ifdef __ANDROID__
+bool settings_eff_late_input_latch(void);
+#endif

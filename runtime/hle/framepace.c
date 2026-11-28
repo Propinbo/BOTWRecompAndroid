@@ -58,8 +58,12 @@ static int env_int(const char *name, int def) {
 
 bool framepace_on(void) {
     static int on = -1;
-    if (on < 0) on = g_game_version >= 182 && env_int("LARECOMP_FRAMEPACE", 1) != 0;
-    return on;
+    int v = __atomic_load_n(&on, __ATOMIC_RELAXED);
+    if (v < 0) {
+        v = g_game_version >= 182 && env_int("LARECOMP_FRAMEPACE", 1) != 0 ? 1 : 0;
+        __atomic_store_n(&on, v, __ATOMIC_RELAXED);
+    }
+    return v != 0;
 }
 
 // ------------------------------------------------------------------ the frame rate
@@ -106,11 +110,20 @@ bool framepace_in_event(void) { return g_nmodules > 0 && g_game_version >= 182 &
 // ahead at 1.0 or more (throttling ahead) -> 30 fps; back after 30 readings in a row below both (status under SEVERE,
 // headroom under 0.9), a gap of over 2 s between readings starting the count again. Only 60 and 40 / 45 fps modes:
 // the others are 30 or less already, or the game's own choice. LARECOMP_THERMAL_CAP=1 / 0 over the setting.
-static volatile int g_thermal_hot;  // (1: capped now)
+static int g_thermal_hot;  // (1: capped now; accessed atomically across UI and presenting/render threads)
 static int thermal_cap_on(void) {
+#ifdef __ANDROID__
     static int env = -2;
-    if (env == -2) env = getenv("LARECOMP_THERMAL_CAP") ? atoi(getenv("LARECOMP_THERMAL_CAP")) != 0 : -1;
-    return env >= 0 ? env : g_settings.thermal_cap;
+    int e = __atomic_load_n(&env, __ATOMIC_RELAXED);
+    if (e == -2) {
+        const char *v = getenv("LARECOMP_THERMAL_CAP");
+        e = v ? (atoi(v) != 0 ? 1 : 0) : -1;
+        __atomic_store_n(&env, e, __ATOMIC_RELAXED);
+    }
+    return e >= 0 ? e : __atomic_load_n(&g_settings.thermal_cap, __ATOMIC_RELAXED);
+#else
+    return 0;
+#endif
 }
 void framepace_thermal_sample(int thermal, float headroom) {
     static uint64_t last_ns;
@@ -136,33 +149,45 @@ void framepace_thermal_sample(int thermal, float headroom) {
     if (gap) cool = 0;
     if (hot) {
         cool = 0;
-        if (!g_thermal_hot) {
-            g_thermal_hot = 1;
+        if (!__atomic_load_n(&g_thermal_hot, __ATOMIC_RELAXED)) {
+            __atomic_store_n(&g_thermal_hot, 1, __ATOMIC_RELAXED);
             LOG("[framepace] the phone is too hot (thermal status %d, headroom %.2f): 30 fps until it cools%s\n", thermal,
                 headroom, thermal_cap_on() ? "" : " (cap off in the settings: not applied)");
         }
-    } else if (cold && g_thermal_hot && ++cool >= 30) {
-        g_thermal_hot = 0, cool = 0;
+    } else if (cold && __atomic_load_n(&g_thermal_hot, __ATOMIC_RELAXED) && ++cool >= 30) {
+        __atomic_store_n(&g_thermal_hot, 0, __ATOMIC_RELAXED);
+        cool = 0;
         LOG("[framepace] the phone has cooled (thermal status %d, headroom %.2f): the chosen frame rate again\n", thermal, headroom);
     }
 }
 int fps_mode_now(void) {
-    int m = g_settings.fps_mode;
-    if (g_thermal_hot && (m == 2 || m == 4) && thermal_cap_on()) return 1;
+#ifdef __ANDROID__
+    int m = __atomic_load_n(&g_settings.fps_mode, __ATOMIC_RELAXED);
+    if (__atomic_load_n(&g_thermal_hot, __ATOMIC_RELAXED) && (m == 2 || m == 4) && thermal_cap_on()) return 1;
     return m;
+#else
+    return 0;
+#endif
 }
-bool framepace_thermal_capped(void) { return g_thermal_hot && thermal_cap_on() && (g_settings.fps_mode == 2 || g_settings.fps_mode == 4); }
+bool framepace_thermal_capped(void) {
+#ifdef __ANDROID__
+    int m = __atomic_load_n(&g_settings.fps_mode, __ATOMIC_RELAXED);
+    return __atomic_load_n(&g_thermal_hot, __ATOMIC_RELAXED) && thermal_cap_on() && (m == 2 || m == 4);
+#else
+    return false;
+#endif
+}
 
 int framepace_env_target_fps(void) {
-    static int env_init;
-    static int forced = -1;
-    if (!env_init) {
-        env_init = 1;
+    static int forced = -2;
+    int f = __atomic_load_n(&forced, __ATOMIC_RELAXED);
+    if (f == -2) {
         const char *e = getenv("LARECOMP_TARGET_FPS");
         if (!e || !*e) e = getenv("LARECOMP_FPS");
-        forced = (e && *e) ? atoi(e) : -1;
+        f = (e && *e) ? atoi(e) : -1;
+        __atomic_store_n(&forced, f, __ATOMIC_RELAXED);
     }
-    return forced;
+    return f;
 }
 
 bool framepace_is_between_mode(void) {
@@ -173,6 +198,8 @@ bool framepace_is_between_mode(void) {
 
 bool framepace_wants_120hz(void) {
 #ifdef __ANDROID__
+    extern bool vk_mali_40fps_pacer_env_on(void);
+    if (!vk_mali_40fps_pacer_env_on()) return false;
     int env_fps = framepace_env_target_fps();
     if (env_fps >= 0) return env_fps == 40;
     if (fps_mode_now() != 4) return false;
@@ -196,7 +223,11 @@ int framepace_target(void) {
             : fps_mode_now() == 4 ? vk_between_fps() : 60;
     if (movie > 0 && __atomic_load_n(&g_movie_playing, __ATOMIC_RELAXED) > 0 && (fps == 0 || fps > movie)) fps = movie;
     if (menu > 0 && (fps == 0 || fps > menu) && framepace_in_menu()) fps = menu;
+#ifdef __ANDROID__
     int ev = event >= 0 ? event : g_settings.event_fps_unlock ? 0 : 30;
+#else
+    int ev = event >= 0 ? event : 30;
+#endif
     if (ev > 0 && (fps == 0 || fps > ev) && framepace_in_event()) fps = ev;
     return fps;
 }
@@ -390,23 +421,8 @@ void rt_vfr_update(uint64_t vfr) {
     VF(uint32_t, vfr, VFR_INTERVAL) = iv;
     VF(uint8_t, vfr, VFR_CHANGED) = g_vfr_last_iv && iv != g_vfr_last_iv;
     g_vfr_last_iv = g_vfr_iv = iv;
-    if (log_every > 0 && g_vfr_nframe++ % (uint64_t)log_every == 0) {
-        float tod = -1.0f;
-        if (g_game_version == 190 && g_nmodules > 0) {
-            uint64_t wm = *(const uint64_t *)(uintptr_t)GA(0x7001e57580ull);
-            if (wm >= GUEST_LO && wm + 0x600 < GUEST_HI && !(wm & 7)) {
-                uint32_t nmgrs = *(const uint32_t *)(uintptr_t)(wm + 0x5c0);
-                uint64_t arr = nmgrs ? *(const uint64_t *)(uintptr_t)(wm + 0x5c0 + 8) : 0;
-                if (arr >= GUEST_LO && arr + 8 < GUEST_HI && !(arr & 7)) {
-                    uint64_t tm = *(const uint64_t *)(uintptr_t)arr;
-                    if (tm >= GUEST_LO && tm + 0xc0 < GUEST_HI && !(tm & 7))
-                        tod = *(const float *)(uintptr_t)(tm + 0xb8);
-                }
-            }
-        }
+    if (log_every > 0 && g_vfr_nframe++ % (uint64_t)log_every == 0)
         LOG("[framepace] target %d fps, %.2f ms since the last update (avg %.2f), ratio %.3f, interval %u, owed "
-            "%.2f ms, t %.3f, tod %.3f%s%s\n", framepace_target(), s * 1e3, g_vfr_smooth * 1e3, ratio, iv,
-            (g_vfr_real - g_vfr_given) * 1e3, now / 1e9, tod,
-            paused ? ", paused" : "", g_movie_playing > 0 ? ", movie" : "");
-    }
+            "%.2f ms%s%s\n", framepace_target(), s * 1e3, g_vfr_smooth * 1e3, ratio, iv,
+            (g_vfr_real - g_vfr_given) * 1e3, paused ? ", paused" : "", g_movie_playing > 0 ? ", movie" : "");
 }

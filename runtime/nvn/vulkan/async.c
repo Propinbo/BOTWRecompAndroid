@@ -46,9 +46,10 @@ static int on = -1;
 static int ahead = 1;
 
 // The render thread's work for its last frame (requests run between two presents, ns): the frame pacer's other half
-static uint64_t frame_work, last_frame_work, frame_cpu, last_frame_cpu;
+static uint64_t frame_work, last_frame_work, frame_cpu, last_frame_cpu, frame_sleep;
 uint64_t vk_async_frame_work_ns(void) { return __atomic_load_n(&last_frame_work, __ATOMIC_RELAXED); }
 uint64_t vk_async_frame_cpu_ns(void) { return __atomic_load_n(&last_frame_cpu, __ATOMIC_RELAXED); }
+void vk_async_note_present_sleep_ns(uint64_t ns) { frame_sleep += ns; }
 
 void kernel_blocking_begin(void);        // kernel.c: core 0 to the game's other threads while a guest thread waits here
 void kernel_blocking_end(void);
@@ -105,8 +106,11 @@ static void *render_main(void *arg) {
         if (r.type == REQ_EXEC || r.type == REQ_PRESENT) vk_tl(r.type == REQ_EXEC ? "render: list end" : "render: present end", r.id, 0);
         else if (r.type == REQ_FENCE) nvn_sync_set_seq(r.a, renderer_fence_seq());
         uint64_t elapsed = plat_now_ns() - t0;
-        frame_cpu += cpu_timing ? render_cpu_ns() - cpu0 : elapsed;
-        frame_work += elapsed;
+        uint64_t sleep_ns = frame_sleep <= elapsed ? frame_sleep : elapsed;
+        frame_sleep = 0;
+        uint64_t active_elapsed = elapsed - sleep_ns;
+        frame_cpu += cpu_timing ? render_cpu_ns() - cpu0 : active_elapsed;
+        frame_work += active_elapsed;
         if (r.type == REQ_PRESENT) {
             __atomic_store_n(&last_frame_work, frame_work, __ATOMIC_RELAXED);
             extern void plat_render_work(uint64_t work_ns, uint64_t target_ns);

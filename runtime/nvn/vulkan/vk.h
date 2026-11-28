@@ -210,4 +210,8 @@ static inline uint16_t vk_depth16_in(uint32_t u, VkFormat f) {  // the wide texe
 }
 bool vk_slot_async_default(void);
 uint64_t vk_adpf_target_ns(void);
+void vk_late_latch_reset(void);
+bool vk_mali_40fps_pacer_env_on(void);
+uint64_t vk_mali_pacer_step_ns(void);
+void vk_async_note_present_sleep_ns(uint64_t ns);
 #endif

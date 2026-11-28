@@ -37,7 +37,7 @@ static void check_aligned_dims(double dw, double dh, double share, int exp_w, in
     assert(w == exp_w && h == exp_h);
     assert(w % 16 == 0 && h % 16 == 0);
     // Verify float32 scaling across full (1600x900), half (800x450), and quarter (400x225) targets
-    // and confirm Track 4 ceilf scissor extent invariant holds (>= extent).
+    // and confirm ceilf scissor extent invariant holds (>= extent).
     float fsx = (float)sx, fsy = (float)sy;
     const int gw[3] = {1600, 800, 400}, gh[3] = {900, 450, 225};
     for (int i = 0; i < 3; i++) {
@@ -199,23 +199,64 @@ static void test_pacer_slip_no_snapback(void) {
 
 static void test_adpf_target_ns(void) {
     // 40 FPS mode -> 27.50 ms raw (22.00 ms effective after 20% Android ADPF margin) on both Mali and non-Mali
-    assert(mali_pacer_adpf_target_ns(40, 4, -1, false, false, false, false, 0.0) == 27500000ull);
-    assert(mali_pacer_adpf_target_ns(40, 4, -1, false, false, false, true, 0.0) == 27500000ull);
-    assert(mali_pacer_adpf_target_ns(40, 0, 40, false, false, false, false, 0.0) == 27500000ull);
-    assert(mali_pacer_adpf_target_ns(45, 4, -1, false, false, false, false, 0.0) == 24444444ull);
-    // Menu/cutscene 30 FPS fallback inside 40 FPS mode -> 29.6 ms effective non-Mali, 20.0 ms Mali (#89)
-    assert(mali_pacer_adpf_target_ns(30, 4, -1, false, false, false, false, 0.0) == 37000000ull);
-    assert(mali_pacer_adpf_target_ns(30, 0, 40, false, false, false, false, 0.0) == 37000000ull);
-    assert(mali_pacer_adpf_target_ns(30, 4, -1, false, false, false, true, 0.0) == 25000000ull);
-    // Fixed 30 FPS & 20 FPS
-    assert(mali_pacer_adpf_target_ns(30, 1, -1, false, false, false, false, 0.0) == 37000000ull);
-    assert(mali_pacer_adpf_target_ns(30, 1, -1, false, false, false, true, 0.0) == 25000000ull);
-    assert(mali_pacer_adpf_target_ns(30, 1, -1, false, false, true, true, 0.0) == 16666667ull);
-    assert(mali_pacer_adpf_target_ns(20, 3, -1, false, false, false, false, 0.0) == 37500000ull);
-    // Fixed 60 FPS vs Auto
-    assert(mali_pacer_adpf_target_ns(60, 2, -1, false, false, false, false, 0.0) == 19500000ull);
-    assert(mali_pacer_adpf_target_ns(60, 2, -1, false, false, false, true, 0.0) == 16666667ull);
-    assert(mali_pacer_adpf_target_ns(60, 0, -1, false, false, false, false, 0.0) == 16666667ull);
+    assert(mali_pacer_adpf_target_ns(40, 4, -1, false, false, false, false, false, 0.0) == 27500000ull);
+    assert(mali_pacer_adpf_target_ns(40, 4, -1, false, false, false, true, false, 0.0) == 27500000ull);
+    assert(mali_pacer_adpf_target_ns(40, 0, 40, false, false, false, false, false, 0.0) == 27500000ull);
+    assert(mali_pacer_adpf_target_ns(45, 4, -1, false, false, false, false, false, 0.0) == 24444444ull);
+    // Menu/cutscene 30 FPS fallback inside 40 FPS mode: upstream 25 ms default, or 37 ms on non-Mali with relax
+    assert(mali_pacer_adpf_target_ns(30, 4, -1, false, false, false, false, false, 0.0) == 25000000ull);
+    assert(mali_pacer_adpf_target_ns(30, 4, -1, false, false, false, false, true, 0.0) == 37000000ull);
+    assert(mali_pacer_adpf_target_ns(30, 0, 40, false, false, false, false, true, 0.0) == 37000000ull);
+    assert(mali_pacer_adpf_target_ns(30, 4, -1, false, false, false, true, true, 0.0) == 25000000ull);
+    // Fixed 30 FPS & 20 FPS: exact upstream behavior when relax=false
+    assert(mali_pacer_adpf_target_ns(30, 1, -1, false, false, false, false, false, 0.0) == 25000000ull);
+    assert(mali_pacer_adpf_target_ns(30, 1, -1, false, false, false, false, true, 0.0) == 37000000ull);
+    assert(mali_pacer_adpf_target_ns(30, 1, -1, false, false, false, true, true, 0.0) == 25000000ull);
+    assert(mali_pacer_adpf_target_ns(30, 1, -1, false, false, true, true, false, 0.0) == 16666667ull);
+    assert(mali_pacer_adpf_target_ns(20, 3, -1, false, false, false, false, false, 0.0) == 37500000ull);
+    // Fixed 60 FPS vs Auto: exact upstream 16.67 ms when relax=false, opt-in 19.5 ms on non-Mali when relax=true
+    assert(mali_pacer_adpf_target_ns(60, 2, -1, false, false, false, false, false, 0.0) == 16666667ull);
+    assert(mali_pacer_adpf_target_ns(60, 2, -1, false, false, false, false, true, 0.0) == 19500000ull);
+    assert(mali_pacer_adpf_target_ns(60, 2, -1, false, false, false, true, true, 0.0) == 16666667ull);
+    assert(mali_pacer_adpf_target_ns(60, 0, -1, false, false, false, false, true, 0.0) == 16666667ull);
+}
+
+static void test_late_latch_pacer(void) {
+    LateLatchPacer l = {0};
+    uint64_t wait_ns = 0;
+
+    // 1. Steady 14.0 ms active cost in 40 FPS (25.0 ms window) ramps smoothly up to ~6.5 ms (25 - 14 - 4.5)
+    for (int i = 0; i < 40; i++) {
+        wait_ns = late_latch_update(&l, true, 25.0, 14.0, false, false, 4.5, 7.5);
+    }
+    assert(wait_ns >= 6450000ull && wait_ns <= 6550000ull);
+    assert(l.panic_clamps == 0);
+
+    // 2. Sudden spike to 19.5 ms immediately cuts offset down (25 - 19.5 - 4.5 = 1.0 ms), no slow decay trap
+    wait_ns = late_latch_update(&l, true, 25.0, 19.5, false, false, 4.5, 7.5);
+    assert(wait_ns <= 1050000ull);
+
+    // 3. Panic clamp on overload (>= 21.5 ms), slow period (>= 26.0 ms), compile/skip, or slip -> instant 0 + cooldown
+    assert(late_latch_update(&l, true, 25.0, 21.6, false, false, 4.5, 7.5) == 0);
+    assert(l.current_offset_ms == 0.0 && l.cooldown_frames == 16u && l.panic_clamps == 1);
+    // Still clamped during 16 cooldown frames even at low cost
+    for (int i = 0; i < 16; i++) {
+        assert(late_latch_update(&l, true, 25.0, 13.0, false, false, 4.5, 7.5) == 0);
+    }
+    // Frame 17 starts smooth ramp up by <= 0.25 ms/frame
+    wait_ns = late_latch_update(&l, true, 25.0, 13.0, false, false, 4.5, 7.5);
+    assert(wait_ns > 0 && wait_ns <= 260000ull);
+
+    // Compile/skip or pacer slip forces panic clamp too
+    assert(late_latch_update(&l, true, 25.0, 13.0, true, false, 4.5, 7.5) == 0);
+    assert(l.panic_clamps == 2);
+    for (int i = 0; i < 17; i++) late_latch_update(&l, true, 25.0, 13.0, false, false, 4.5, 7.5);
+    assert(late_latch_update(&l, true, 26.1, 13.0, false, false, 4.5, 7.5) == 0);
+    assert(l.panic_clamps == 3);
+
+    // Ineligible (menu/event 30 FPS -> period 33.33 ms or eligible=false) zeroes wait immediately
+    assert(late_latch_update(&l, false, 33.33, 12.0, false, false, 4.5, 7.5) == 0);
+    assert(l.current_offset_ms == 0.0);
 }
 
 int main(void) {
@@ -226,6 +267,7 @@ int main(void) {
     test_pacer_antiburst_and_phase_lock();
     test_pacer_slip_no_snapback();
     test_adpf_target_ns();
+    test_late_latch_pacer();
     printf("PASS test_mali_40fps_pacer (all assertions)\n");
     return 0;
 }

@@ -717,7 +717,7 @@ static void tab_display(void) {
     opt_section("Rendering");
     // display order -> RES_* (the ini / enum order predates the menu order)
     // (up to 4x: 7680 x 4320, 8K - more only ran out of GPU memory, and sat next to 75% in the list)
-    // (Match display in the middle: left from it 75% / 50% / 25%, right Dynamic then 1x-4x; user 2026-10-11)
+    // (Match display in the middle: lower shares to its left, Dynamic then 1x-4x to its right; user 2026-10-11)
 #ifdef __ANDROID__  // (3x / 4x: 4K / 8K, beyond a phone)
     static const char *res[] = {"25%", "50%", "65%", "68%", "70%", "75%", "85%", "Match display", "Dynamic", "1x", "2x"};
     static const int res_mode[] = {RES_Q25, RES_Q50, RES_Q65, RES_Q68, RES_Q70, RES_Q75, RES_Q85, RES_MATCH, RES_DYNAMIC, 1, 2};
@@ -736,7 +736,7 @@ static void tab_display(void) {
         int n = snprintf(d, sizeof d, tr("How sharp the 3D image is (the HUD is drawn at the Output resolution). Match "
                                          "display: the final image's resolution (your screen's, unless Output resolution is "
                                          "lower). Dynamic: as sharp as your GPU keeps at "
-                                         "full speed. 1x-2x: the Switch's 900p times that. 75%% / 50%% / 25%%: a share of the "
+                                         "full speed. 1x-2x: the Switch's 900p times that. 85%% / 75%% / 70%% / 68%% / 65%% / 50%% / 25%%: a share of the "
                                          "display, for slower devices.\n\nRendering the 3D image at %.0f x %.0f."),
                          1600.0 * sx, 900.0 * sy);
         if (g_settings.res_mode == RES_DYNAMIC && n > 0 && n < (int)sizeof d)
@@ -809,6 +809,9 @@ static void tab_display(void) {
                "The game starts its next frame while the GPU still finishes the last one: a few more fps. What the game reads "
                "back from the GPU then comes a frame late, and Link's legs can sink into the ground while he stands "
                "still. Turn it off if that bothers you. Applies at once.");
+    opt_toggle("Late input latching", &g_settings.late_input_latch, false,
+               "In 40 fps mode on 120 Hz screens, waits adaptively inside idle frame headroom before polling input and "
+               "starting the next frame, reducing stick and gyro latency with safety clamps against drops. Applies at once.");
     opt_toggle("Native game code (experimental)", &g_settings.native_code, false,
                "Runs the game's own code directly on the phone's CPU instead of the game code built at setup: no build "
                "needed. An experiment - report what goes wrong. Applies the next time the game starts.");

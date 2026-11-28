@@ -1642,6 +1642,7 @@ NVN(nvnQueuePresentTexture) {
         KThread *kt = kernel_current_thread();
         if (kt && kt->id != last_id) LOG("[pace] presenting thread t%llu\n", (unsigned long long)(last_id = kt->id));
     }
+    bool pacer_active = false;
     {   // Frame limiter: a present waits until N vsyncs have gone by since the previous one, as NVN does on the Switch -
         // N is the larger of the window's interval (BOTW asks for 2: its world steps 1/30 s a frame) and the Video
         // tab's cap (Frame rate 30: 2, 60: 1; Auto: 2 for now). Without it the menus ran at ~200 fps and the world
@@ -1655,14 +1656,23 @@ NVN(nvnQueuePresentTexture) {
         bool twenty_cap = env_fps > 0 ? env_fps <= 20 : fps_mode_now() == 3;
         int cap = fast_cap ? 1 : twenty_cap ? 3 : 2;  // (20: 3; 40/45: 60's)
         int n = w->interval > cap ? w->interval : cap;
-        if (on && framepace_on()) {
+        pacer_active = on && framepace_on();
+        if (pacer_active) {
             // BOTW 1.8.2 (runtime/hle/framepace.c): a steady grid at the chosen frame rate, whatever the interval;
             // after a long frame the grid starts again. framepace.c sets the game's clock from when it went out.
-            uint64_t period = framepace_period_ns(), target = pace_last + period, t0 = plat_now_ns();
+            bool wants_120 = framepace_wants_120hz();
+            uint64_t period = framepace_period_ns();
+#ifdef __ANDROID__
+            if (wants_120) {
+                extern uint64_t vk_mali_pacer_step_ns(void);
+                uint64_t mstep = vk_mali_pacer_step_ns();
+                if (mstep >= 23000000ull && mstep <= 27000000ull) period = mstep;
+            }
+#endif
+            uint64_t target = pace_last + period, t0 = plat_now_ns();
             if (pace_last && t0 < target) plat_sleep_until_ns(target);
             uint64_t t1 = plat_now_ns();
             g_blocked_ns += t1 - t0;
-            bool wants_120 = framepace_wants_120hz();
             bool on_grid = pace_last && t1 < target + (wants_120 ? 4000000ull : period);
             pace_last = on_grid ? target : t1;
             framepace_presented(pace_last, on_grid);
@@ -1702,6 +1712,20 @@ NVN(nvnQueuePresentTexture) {
         }
     }
     if (i >= 0 && i < w->num) backend_present(HOST(NvnTexture, w->textures[i]));
+#ifdef __ANDROID__
+    if (pacer_active) {
+        extern uint64_t vk_late_latch_wait_ns(void);
+        extern void kernel_blocking_begin(void);
+        extern void kernel_blocking_end(void);
+        uint64_t latch_ns = vk_late_latch_wait_ns();
+        if (latch_ns > 0) {
+            uint64_t lt0 = plat_now_ns();
+            kernel_blocking_begin();
+            plat_sleep_until_ns(lt0 + latch_ns);
+            kernel_blocking_end();
+        }
+    }
+#endif
 }
 
 // ================================================================== small state objects
