@@ -11,6 +11,7 @@
 
 // ---- the rest of the runtime, as far as the shadows reach it
 VkG g_vk;
+Settings g_settings = {.depth16 = -1};
 #ifdef __ANDROID__
 bool g_benchmark;
 _Atomic uint64_t g_bench_perf[BP_COUNT];

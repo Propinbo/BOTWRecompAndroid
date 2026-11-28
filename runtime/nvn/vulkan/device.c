@@ -846,6 +846,7 @@ static void create_device(void) {
     b->dualSrcBlend = h->dualSrcBlend;
     b->fillModeNonSolid = h->fillModeNonSolid;
     b->samplerAnisotropy = h->samplerAnisotropy;
+    g_vk.aniso = h->samplerAnisotropy;
     b->textureCompressionBC = h->textureCompressionBC;
 #ifdef __ANDROID__
     b->textureCompressionASTC_LDR = h->textureCompressionASTC_LDR;  // (Adreno: the game's ASTC textures as they are)
@@ -1790,8 +1791,11 @@ void backend_present(NvnTexture *t) {
         widescreen_set_factor((float)shape);
         renderer_set_scale((float)sx, (float)sy);
         renderer_set_scene_scale((float)os.scene_sx, (float)os.scene_sy);
+        renderer_set_shadow_scale((float)settings_eff_shadow_scale());
         VkCommandBuffer cb = vk_cmd();
-        float pv[8] = {renderer_origin_lower_left() ? 1.0f : 0.0f, 0, 0, 0, crop[0], crop[1], crop[2], crop[3]};
+        float pv[8] = {renderer_origin_lower_left() ? 1.0f : 0.0f, (float)(renderer_present_count() & 63),
+                       settings_eff_oled_dither() ? (1.0f / 255.0f) : 0.0f,
+                       settings_eff_oled_black() ? 1.0f : 0.0f, crop[0], crop[1], crop[2], crop[3]};
         memcpy(g_shot_crop, crop, sizeof crop);
 #ifdef __ANDROID__
         fg_place.ok = true, fg_place.vx = (float)vx, fg_place.vy = (float)vy, fg_place.vw = (float)vw, fg_place.vh = (float)vh;

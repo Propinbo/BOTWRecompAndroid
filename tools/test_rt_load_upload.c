@@ -139,6 +139,12 @@ bool framepace_on_title(void) { return false; }
 void widescreen_minimap_seen(void) {}
 void widescreen_talk_seen(void) {}
 const Settings *settings_get(void) { return &g_settings; }
+bool settings_eff_no_game_fxaa(void) { return g_settings.no_game_fxaa; }
+int settings_eff_aniso(void) { return g_settings.aniso; }
+bool settings_eff_oled_dither(void) { return g_settings.oled_dither; }
+bool settings_eff_oled_black(void) { return g_settings.oled_black; }
+int settings_eff_shadow_scale(void) { return g_settings.shadow_scale > 0 ? g_settings.shadow_scale : 1; }
+bool settings_eff_lod_bias_ultra(void) { return g_settings.lod_bias_ultra; }
 int64_t plat_avail_ram_mb(void) { return 8192; }
 int64_t plat_total_ram_mb(void) { return 12288; }
 void plat_frame_work_gpu(uint64_t a, uint64_t b, uint64_t c, uint64_t d) { (void)a, (void)b, (void)c, (void)d; }

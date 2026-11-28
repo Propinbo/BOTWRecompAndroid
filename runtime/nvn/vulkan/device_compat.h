@@ -134,3 +134,21 @@ static inline bool vk_dyn_render_want(bool supported, uint32_t driver_id, const 
     if (reason_out) *reason_out = "default";
     return true;
 }
+
+// Restrict forced anisotropic filtering and sharp LOD bias strictly to 3D mipmapped linear non-compare samplers,
+// keeping HUD/UI textures (maxLod <= 1 or nearest) and shadow comparison samplers untouched.
+static inline bool vk_sampler_aniso_override_ok(VkFilter min_f, VkFilter mag_f, VkSamplerMipmapMode mip_m,
+                                                float max_lod, VkBool32 compare_enable, bool allow_mip_nearest) {
+    if (compare_enable != VK_FALSE) return false;
+    if (min_f != VK_FILTER_LINEAR || mag_f != VK_FILTER_LINEAR) return false;
+    if (mip_m != VK_SAMPLER_MIPMAP_MODE_LINEAR && !allow_mip_nearest) return false;
+    return max_lod > 1.0f;
+}
+
+// Identify BOTW sun shadow cascade array (896x896 D16 x 3 layers) and its gather downsample (448x448 R16 x 3 layers).
+static inline bool vk_is_botw_shadow_target(uint32_t target, uint32_t width, uint32_t height, uint32_t layers,
+                                            uint32_t samples, uint32_t format) {
+    if (target != 4 || layers != 3 || samples > 1) return false;
+    return (width == 896 && height == 896 && format == 0x32) ||
+           (width == 448 && height == 448 && format == 0x6);
+}

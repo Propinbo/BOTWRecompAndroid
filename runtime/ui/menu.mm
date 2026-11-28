@@ -666,6 +666,15 @@ static void tab_display(void) {
                "The game's shadows: of the sun, of Link and of everything around. Off: none are drawn - the picture is "
                "flatter and evenly lit, for a little less GPU work each frame; only worth it on a phone at its limit. "
                "Applies at once.");
+    if (g_settings.shadows) {
+        static const char *sres[] = {"1x", "2x"};
+        int sri = g_settings.shadow_scale == 2 ? 1 : 0;
+        opt_indent(1);
+        if (opt_choice("Shadow resolution", &sri, sres, 2, 0,
+                       "Sun shadow cascade resolution multiplier. 2x sharpens dynamic shadows at higher GPU cost.", false))
+            g_settings.shadow_scale = sri ? 2 : 1;
+        opt_indent(-1);
+    }
     {   // Frame generation (vulkan/lsfg/lsfg_present.c): Lossless Scaling's LSFG with the player's own Lossless.dll
         const char *why = "";
         int st = vk_fg_status(&why);
@@ -804,6 +813,23 @@ static void tab_display(void) {
                "Smooths jagged edges of the game image before it is scaled to the window. SMAA: finds the edges and "
                "blends only along them, so textures stay sharp. FXAA: a single, cheaper pass that also softens the image "
                "a little. Most useful at a lower internal resolution.");
+    opt_toggle("Skip game's blurry FXAA", &g_settings.no_game_fxaa, false,
+               "Replaces the game's built-in FXAA pass with clean passthrough or the chosen anti-aliasing pass before the HUD.");
+    {
+        static const char *aniso_names[] = {"Game default", "4x", "8x", "16x"};
+        static const int aniso_vals[] = {0, 4, 8, 16};
+        int ani = 0;
+        for (int i = 0; i < 4; i++) if (aniso_vals[i] == g_settings.aniso) ani = i;
+        if (opt_choice("Anisotropic filtering", &ani, aniso_names, 4, 0,
+                       "Sharpens ground and distant 3D surface textures at shallow angles without affecting HUD or shadows."))
+            g_settings.aniso = aniso_vals[ani];
+    }
+    opt_toggle("Sharp texture LODs", &g_settings.lod_bias_ultra, false,
+               "Applies a negative mipmap bias (-0.585) on 3D textures for crisper foliage and terrain detail at distance.");
+    opt_toggle("OLED dithering", &g_settings.oled_dither, false,
+               "Adds fine triangular noise before output to eliminate smooth sky and fog banding on AMOLED panels.");
+    opt_toggle("OLED black-point curve", &g_settings.oled_black, false,
+               "Applies a gentle near-black contrast toe to deepen shadow troughs on OLED screens without clipping detail.");
 #ifdef __ANDROID__
     opt_toggle("Sync lag", &g_settings.sync_lag, true,
                "The game starts its next frame while the GPU still finishes the last one: a few more fps. What the game reads "

@@ -38,7 +38,14 @@ Settings g_settings = {
     .movie_audio = true,
     .motion = true,
     .pad_gyro_axes_rev = PAD_GYRO_AXES_REV,
+    .antialias = AA_OFF,
     .shadows = true,
+    .no_game_fxaa = false,
+    .aniso = 0,
+    .oled_dither = false,
+    .oled_black = false,
+    .shadow_scale = 1,
+    .lod_bias_ultra = false,
 #ifdef __ANDROID__
     .show_fps = true,  // (the performance overlay, ui/perf_overlay.mm: on until turned off in the menu)
     .touch_controls = true,
@@ -232,6 +239,12 @@ void settings_reset_defaults(void) {
     g_settings.out_lines = d->out_lines;
     g_settings.antialias = d->antialias;
     g_settings.shadows = d->shadows;
+    g_settings.no_game_fxaa = d->no_game_fxaa;
+    g_settings.aniso = d->aniso;
+    g_settings.oled_dither = d->oled_dither;
+    g_settings.oled_black = d->oled_black;
+    g_settings.shadow_scale = d->shadow_scale;
+    g_settings.lod_bias_ultra = d->lod_bias_ultra;
     g_settings.volume = d->volume;
     g_settings.reverb = d->reverb;
     g_settings.movie_audio = d->movie_audio;
@@ -392,6 +405,12 @@ void settings_load(void) {
         }
         else if (!strcmp(key, "antialias")) g_settings.antialias = !strcmp(val, "off") ? AA_OFF : !strcmp(val, "fxaa") ? AA_FXAA : AA_SMAA;
         else if (!strcmp(key, "shadows")) g_settings.shadows = atoi(val) != 0;
+        else if (!strcmp(key, "no_game_fxaa")) g_settings.no_game_fxaa = atoi(val) != 0;
+        else if (!strcmp(key, "aniso")) { int a = atoi(val); g_settings.aniso = (a == 4 || a == 8 || a == 16) ? a : 0; }
+        else if (!strcmp(key, "oled_dither")) g_settings.oled_dither = atoi(val) != 0;
+        else if (!strcmp(key, "oled_black")) g_settings.oled_black = atoi(val) != 0;
+        else if (!strcmp(key, "shadow_scale")) g_settings.shadow_scale = atoi(val) == 2 ? 2 : 1;
+        else if (!strcmp(key, "lod_bias_ultra")) g_settings.lod_bias_ultra = atoi(val) != 0;
         else if (!strcmp(key, "language")) {  // ("auto" or one of the game's codes; anything else: auto)
             g_settings.language = LANG_AUTO;
             const char *v = !strcmp(val, "zh-CN") ? "zh-Hans" : !strcmp(val, "zh-TW") ? "zh-Hant" : val;  // (saved before #15)
@@ -486,6 +505,9 @@ static void settings_save_locked(void) {
     else fprintf(f, "output = %s\n", g_settings.out_lines == OUT_AUTO ? "auto" : "screen");
     fprintf(f, "antialias = %s\n", g_settings.antialias == AA_SMAA ? "smaa" : g_settings.antialias == AA_FXAA ? "fxaa" : "off");
     fprintf(f, "shadows = %d\n", g_settings.shadows ? 1 : 0);
+    fprintf(f, "no_game_fxaa = %d\naniso = %d\noled_dither = %d\noled_black = %d\nshadow_scale = %d\nlod_bias_ultra = %d\n",
+            g_settings.no_game_fxaa ? 1 : 0, g_settings.aniso, g_settings.oled_dither ? 1 : 0,
+            g_settings.oled_black ? 1 : 0, g_settings.shadow_scale == 2 ? 2 : 1, g_settings.lod_bias_ultra ? 1 : 0);
     if (g_settings.res_mode == RES_DYNAMIC) fprintf(f, "resolution = dynamic\n");
     else if (g_settings.res_mode == RES_Q75) fprintf(f, "resolution = 75%%\n");
     else if (g_settings.res_mode == RES_Q25) fprintf(f, "resolution = 25%%\n");
@@ -533,3 +555,75 @@ void settings_set_pad_gyro_axes(int val) {
 // Settings > "Switch-style core turns" (kernel.c core0_init reads it when the game's threads first take turns)
 bool settings_core_turns(void) { return g_settings.core_turns; }
 #endif
+
+static int eff_env_flag(const char *name) {
+    const char *v = getenv(name);
+    return v && *v ? (atoi(v) != 0 ? 1 : 0) : -1;
+}
+
+bool settings_eff_no_game_fxaa(void) {
+    static int cache = -2;
+    int e = __atomic_load_n(&cache, __ATOMIC_RELAXED);
+    if (e == -2) {
+        e = eff_env_flag("LARECOMP_NO_GAME_FXAA");
+        __atomic_store_n(&cache, e, __ATOMIC_RELAXED);
+    }
+    return e >= 0 ? e != 0 : g_settings.no_game_fxaa;
+}
+
+int settings_eff_aniso(void) {
+    static int cache = -2;
+    int e = __atomic_load_n(&cache, __ATOMIC_RELAXED);
+    if (e == -2) {
+        const char *v = getenv("LARECOMP_ANISO");
+        if (v && *v) {
+            int n = atoi(v);
+            e = (n == 4 || n == 8 || n == 16) ? n : 0;
+        } else {
+            e = -1;
+        }
+        __atomic_store_n(&cache, e, __ATOMIC_RELAXED);
+    }
+    return e >= 0 ? e : g_settings.aniso;
+}
+
+bool settings_eff_oled_dither(void) {
+    static int cache = -2;
+    int e = __atomic_load_n(&cache, __ATOMIC_RELAXED);
+    if (e == -2) {
+        e = eff_env_flag("LARECOMP_OLED_DITHER");
+        __atomic_store_n(&cache, e, __ATOMIC_RELAXED);
+    }
+    return e >= 0 ? e != 0 : g_settings.oled_dither;
+}
+
+bool settings_eff_oled_black(void) {
+    static int cache = -2;
+    int e = __atomic_load_n(&cache, __ATOMIC_RELAXED);
+    if (e == -2) {
+        e = eff_env_flag("LARECOMP_OLED_BLACK");
+        __atomic_store_n(&cache, e, __ATOMIC_RELAXED);
+    }
+    return e >= 0 ? e != 0 : g_settings.oled_black;
+}
+
+int settings_eff_shadow_scale(void) {
+    static int cache = -2;
+    int e = __atomic_load_n(&cache, __ATOMIC_RELAXED);
+    if (e == -2) {
+        const char *v = getenv("LARECOMP_SHADOW_SCALE");
+        e = v && *v ? (atoi(v) == 2 ? 2 : 1) : -1;
+        __atomic_store_n(&cache, e, __ATOMIC_RELAXED);
+    }
+    return e >= 0 ? e : (g_settings.shadow_scale == 2 ? 2 : 1);
+}
+
+bool settings_eff_lod_bias_ultra(void) {
+    static int cache = -2;
+    int e = __atomic_load_n(&cache, __ATOMIC_RELAXED);
+    if (e == -2) {
+        e = eff_env_flag("LARECOMP_LOD_BIAS_ULTRA");
+        __atomic_store_n(&cache, e, __ATOMIC_RELAXED);
+    }
+    return e >= 0 ? e != 0 : g_settings.lod_bias_ultra;
+}

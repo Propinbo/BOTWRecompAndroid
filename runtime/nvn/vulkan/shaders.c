@@ -308,10 +308,33 @@ static const char *builtin_src(const char *name, int *stage) {
     if (!strcmp(name, "present.frag")) {
         *stage = STAGE_FRAGMENT;
         return "#version 450\n"
+               "layout(push_constant) uniform P { vec4 a; vec4 crop; } pc;\n"
                "layout(set = 0, binding = 0) uniform sampler2D t;\n"
                "layout(location = 0) in vec2 uv;\n"
                "layout(location = 0) out vec4 o;\n"
-               "void main() { o = vec4(texture(t, uv).rgb, 1.0); }\n";
+               "float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }\n"
+               "void main() {\n"
+               "  vec3 c = texture(t, uv).rgb;\n"
+               "  if (pc.a.w > 0.0) {\n"
+               "    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));\n"
+               "    float s = smoothstep(0.0, 0.10, l);\n"
+               "    c *= mix(1.0, mix(0.92, 1.0, s), pc.a.w);\n"
+               "  }\n"
+               "  if (pc.a.z > 0.0) {\n"
+               "    vec2 p = gl_FragCoord.xy + vec2(pc.a.y * 17.0, pc.a.y * 31.0);\n"
+               "    float n1 = ign(p), n2 = ign(p + vec2(0.7548777, 0.5698403));\n"
+               "    c = clamp(c + (n1 - n2) * pc.a.z, 0.0, 1.0);\n"
+               "  }\n"
+               "  o = vec4(c, 1.0);\n"
+               "}\n";
+    }
+    if (!strcmp(name, "scene_copy.frag")) {
+        *stage = STAGE_FRAGMENT;
+        return "#version 450\n"
+               "layout(set = 0, binding = 0) uniform sampler2D t0;\n"
+               "layout(push_constant) uniform P { vec4 a; vec4 b; } pc;\n"
+               "layout(location = 0) out vec4 o;\n"
+               "void main() { o = textureLod(t0, gl_FragCoord.xy * pc.a.xy, 0.0); }\n";
     }
     if (!strcmp(name, "present_a.frag")) {  // (debug pass dumps: alpha kept)
         *stage = STAGE_FRAGMENT;
@@ -357,12 +380,13 @@ static const char *builtin_src(const char *name, int *stage) {
                "const float steps[5] = float[](1.0, 1.5, 2.0, 4.0, 12.0);\n"
                "void main() {\n"
                "  highp vec2 px = pc.a.xy, uv = gl_FragCoord.xy * px;\n"
-               "  vec3 cM = at(uv);\n"
+               "  vec4 cM4 = textureLod(t0, uv, 0.0);\n"
+               "  vec3 cM = cM4.rgb;\n"
                "  float lM = lu(cM), lN = la(uv + vec2(0.0, -px.y)), lS = la(uv + vec2(0.0, px.y));\n"
                "  float lE = la(uv + vec2(px.x, 0.0)), lW = la(uv + vec2(-px.x, 0.0));\n"
                "  float mx = max(lM, max(max(lN, lS), max(lE, lW))), mn = min(lM, min(min(lN, lS), min(lE, lW)));\n"
                "  float range = mx - mn;\n"
-               "  if (range < max(0.0625, mx * 0.125)) { o = vec4(cM, 1.0); return; }\n"
+               "  if (range < max(0.0625, mx * 0.125)) { o = cM4; return; }\n"
                "  float lNW = la(uv - px), lSE = la(uv + px);\n"
                "  float lNE = la(uv + vec2(px.x, -px.y)), lSW = la(uv + vec2(-px.x, px.y));\n"
                "  float sub = (2.0 * (lN + lS + lE + lW) + lNW + lNE + lSW + lSE) / 12.0;\n"
@@ -391,7 +415,7 @@ static const char *builtin_src(const char *name, int *stage) {
                "  bool sgn = pDist <= nDist ? pD >= 0.0 : nD >= 0.0;\n"
                "  float edgeBlend = sgn == (lM - edgeL >= 0.0) ? 0.0 : float(0.5 - shortest / (pDist + nDist));\n"
                "  float f = max(subBlend, edgeBlend);\n"
-               "  o = vec4(at(uv + (isH ? vec2(0.0, stepLen * f) : vec2(stepLen * f, 0.0))), 1.0);\n"
+               "  o = vec4(at(uv + (isH ? vec2(0.0, stepLen * f) : vec2(stepLen * f, 0.0))), cM4.a);\n"
                "}\n";
     }
     if (!strcmp(name, "fxaa.frag")) {
@@ -406,12 +430,13 @@ static const char *builtin_src(const char *name, int *stage) {
                "const float steps[10] = float[](1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0);\n"
                "void main() {\n"
                "  vec2 px = pc.a.xy, uv = gl_FragCoord.xy * px;\n"
-               "  vec3 cM = at(uv);\n"
+               "  vec4 cM4 = textureLod(t0, uv, 0.0);\n"
+               "  vec3 cM = cM4.rgb;\n"
                "  float lM = lu(cM), lN = la(uv + vec2(0.0, -px.y)), lS = la(uv + vec2(0.0, px.y));\n"
                "  float lE = la(uv + vec2(px.x, 0.0)), lW = la(uv + vec2(-px.x, 0.0));\n"
                "  float mx = max(lM, max(max(lN, lS), max(lE, lW))), mn = min(lM, min(min(lN, lS), min(lE, lW)));\n"
                "  float range = mx - mn;\n"
-               "  if (range < max(0.0312, mx * 0.125)) { o = vec4(cM, 1.0); return; }\n"
+               "  if (range < max(0.0312, mx * 0.125)) { o = cM4; return; }\n"
                "  float lNW = la(uv - px), lSE = la(uv + px);\n"
                "  float lNE = la(uv + vec2(px.x, -px.y)), lSW = la(uv + vec2(-px.x, px.y));\n"
                "  float sub = (2.0 * (lN + lS + lE + lW) + lNW + lNE + lSW + lSE) / 12.0;\n"
@@ -439,7 +464,7 @@ static const char *builtin_src(const char *name, int *stage) {
                "  bool sgn = pDist <= nDist ? pD >= 0.0 : nD >= 0.0;\n"
                "  float edgeBlend = sgn == (lM - edgeL >= 0.0) ? 0.0 : 0.5 - shortest / (pDist + nDist);\n"
                "  float f = max(subBlend, edgeBlend);\n"
-               "  o = vec4(at(uv + (isH ? vec2(0.0, stepLen * f) : vec2(stepLen * f, 0.0))), 1.0);\n"
+               "  o = vec4(at(uv + (isH ? vec2(0.0, stepLen * f) : vec2(stepLen * f, 0.0))), cM4.a);\n"
                "}\n";
     }
     // SMAA 1x (third_party/smaa, runtime/nvn/smaa_data.c): the reference SMAA.hlsl in its GLSL mode, High preset,
@@ -485,7 +510,7 @@ static const char *builtin_src(const char *name, int *stage) {
                 "  vec2 uv = gl_FragCoord.xy * SMAA_RT_METRICS.xy;\n"
                 "  vec4 off;\n"
                 "  SMAANeighborhoodBlendingVS(uv, off);\n"
-                "  o = vec4(SMAANeighborhoodBlendingPS(uv, off, t0, t1).rgb, 1.0);\n"
+                "  o = vec4(SMAANeighborhoodBlendingPS(uv, off, t0, t1).rgb, textureLod(t0, uv, 0.0).a);\n"
                 "}\n"};
             size_t n = strlen(head) + strlen(smaa_hlsl_src) + strlen(mains[k]) + 1;
             src[k] = malloc(n);

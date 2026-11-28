@@ -47,7 +47,7 @@ typedef struct {
     VkPipelineCache pcache;
     VkSemaphore timeline;      // value = last completed submission number
     VkCommandPool pool;        // render thread only
-    bool custom_border, divisor, host_import, shader_int64;
+    bool custom_border, divisor, host_import, shader_int64, aniso;
     bool lsfg_features, null_descriptors;  // (frame generation, lsfg/: what its shaders need, device.c)
     bool dyn_render;              // VK_KHR_dynamic_rendering in use; without it, classic render passes (rpcompat.c)
     bool sync2;                   // synchronization2 in use; without it, Vulkan 1.0 barriers (device.c sync1_*)
@@ -107,7 +107,7 @@ void vk_readback_ready(uint64_t size);  // after the copy's submission is done, 
 VkDescriptorSet vk_alloc_set(VkDescriptorSetLayout layout);
 
 // ---- textures (textures.c)
-enum { RS_NONE = 0, RS_SCENE = 1, RS_OUT = 2 };  // render-target scale groups (textures.c)
+enum { RS_NONE = 0, RS_SCENE = 1, RS_OUT = 2, RS_SHADOW = 3 };  // render-target scale groups (textures.c)
 typedef struct TexBackend {
     VkImage image;
     VmaAllocation mem;
@@ -151,6 +151,7 @@ uint8_t vk_texture_scale_group(NvnTexture *t);
 void vk_make_scalable_like(NvnTexture *t, NvnTexture *like);  // (a pass's attachment the size of a scaled one)
 void renderer_get_scene_scale(float *sx, float *sy);
 void renderer_set_scene_scale(float sx, float sy);
+void renderer_set_shadow_scale(float s);
 // View of t (optionally through an NVN texture view) for rendering or sampling.
 VkImageView vk_view(NvnTexture *t, const NvnTextureView *v, bool has_view, bool render, int want_textype);
 VkImageView vk_image_view(TexBackend *b, VkImageViewType type, VkFormat fmt, uint32_t lv0, uint32_t nlv, uint32_t ly0,
