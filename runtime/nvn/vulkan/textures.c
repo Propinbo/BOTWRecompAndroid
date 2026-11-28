@@ -1059,7 +1059,8 @@ static void upload_pending(TexBackend *b) {
     if (!scaled && h > b->height) h = b->height;
 #ifdef __ANDROID__
     if (b->image) {
-        if (scaled || (w == b->width && h == b->height)) vk_mali_rp_forget_image(b->image);
+        if ((scaled || (w == b->width && h == b->height)) && b->levels <= 1 && b->layers <= 1)
+            vk_mali_rp_forget_image(b->image);
         else vk_mali_rp_flush_clears_for(b->image);
     }
 #endif

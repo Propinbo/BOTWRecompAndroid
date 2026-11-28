@@ -2616,18 +2616,6 @@ static void mali_fs_meta_reset(void) {
     memset(g_mali_fs_meta, 0, sizeof g_mali_fs_meta);
 }
 
-static bool mali_is_srgb_format(VkFormat f) {
-    return f == VK_FORMAT_R8G8B8A8_SRGB || f == VK_FORMAT_B8G8R8A8_SRGB ||
-           f == VK_FORMAT_A8B8G8R8_SRGB_PACK32 || f == VK_FORMAT_R8_SRGB ||
-           f == VK_FORMAT_R8G8_SRGB;
-}
-
-static float mali_linear_to_srgb(float c) {
-    if (c <= 0.0f) return 0.0f;
-    if (c >= 1.0f) return 1.0f;
-    return c <= 0.0031308f ? c * 12.92f : 1.055f * powf(c, 1.0f / 2.4f) - 0.055f;
-}
-
 static void mali_dclear_materialize(const MaliDeferredClear *e) {
     if (!e || !e->image) return;
     if (e->samples <= 1 && (!e->has_color || e->view_format == e->image_format)) {
@@ -2637,12 +2625,8 @@ static void mali_dclear_materialize(const MaliDeferredClear *e) {
         }
         VkCommandBuffer cb = vk_cmd();
         if (e->has_color) {
-            VkClearColorValue cc = e->color;
-            if (mali_is_srgb_format(e->image_format)) {
-                for (int i = 0; i < 3; i++) cc.float32[i] = mali_linear_to_srgb(cc.float32[i]);
-            }
             VkImageSubresourceRange rg = {VK_IMAGE_ASPECT_COLOR_BIT, e->mip_level, 1, e->array_layer, 1};
-            vkCmdClearColorImage(cb, e->image, VK_IMAGE_LAYOUT_GENERAL, &cc, 1, &rg);
+            vkCmdClearColorImage(cb, e->image, VK_IMAGE_LAYOUT_GENERAL, &e->color, 1, &rg);
             return;
         }
         VkImageSubresourceRange rg = {(e->has_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : 0u) |
@@ -4814,7 +4798,9 @@ static void pipe_evict(void) {
             p->pipe = VK_NULL_HANDLE;
             atomic_store(&p->state, 0);
             p->evicted = true;
+#ifdef __ANDROID__
             p->prewarmed = false;
+#endif
             atomic_fetch_sub(&live_gpipes, 1);  // (built again: counted again)
             live--, gone++;
         }

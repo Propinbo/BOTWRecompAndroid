@@ -126,7 +126,6 @@ static uint64_t plat_now_ns(void) { return mock_now_ns; }
 static uint64_t renderer_present_count(void) { return mock_frame; }
 static uint64_t vk_pending_seq(void) { return mock_pend_seq; }
 static int pipe_keep(void) { return mock_pipe_keep; }
-static uint64_t SDL_GetTicksNS(void) { return mock_now_ns; }
 
 static uint64_t hash_words(uint64_t h, const void *p, size_t n) {
     const uint8_t *b = p;
