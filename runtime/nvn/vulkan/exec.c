@@ -1298,11 +1298,19 @@ static int new_chunk(uint64_t size) {
                                   .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT};
     static int ring_cached = -1;
     if (ring_cached < 0) { const char *e = getenv("LARECOMP_VK_RING_CACHED"); ring_cached = e && atoi(e) != 0; }
-    if (ring_cached)
-        ai.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-    if (getenv("LARECOMP_VK_RING_SYSMEM")) ai.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;  // (test: a GPU without resizable BAR)
     VmaAllocationInfo info;
+    if (ring_cached) {
+        VmaAllocationCreateInfo cai = {.usage = ai.usage,
+                                       .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+                                       .requiredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT};
+        if (getenv("LARECOMP_VK_RING_SYSMEM")) cai.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+        if (vmaCreateBuffer(g_vk.vma, &bi, &cai, &c->buf, &c->mem, &info) == VK_SUCCESS) goto ring_ok;
+        ring_cached = 0;
+        LOG("[vk] transient ring: cached host-coherent memory unavailable, using write-combined\n");
+    }
+    if (getenv("LARECOMP_VK_RING_SYSMEM")) ai.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;  // (test: a GPU without resizable BAR)
     VK_CHECK(vmaCreateBuffer(g_vk.vma, &bi, &ai, &c->buf, &c->mem, &info));
+ring_ok:
     c->ptr = info.pMappedData;
     c->size = size;
     if (!nchunks) {  // where the ring lives: device-local (resizable BAR) or system memory read across PCIe
@@ -1677,11 +1685,14 @@ static bool enqueue_job(void (*fn)(void *), void *arg, bool idle_only) {
         return true;
     }
     pthread_once(&workers_once, start_workers);
+    if (!workers_ok) return false;
     Job *j = malloc(sizeof *j);
     if (!j) return false;
     j->fn = fn; j->arg = arg; j->next = NULL;
     pthread_mutex_lock(&jobs_lock);
-    if (jobs_head || jobs_active >= jobs_workers || atomic_load_explicit(&jobs_abort, memory_order_acquire)) {
+    int queued = 0;
+    for (Job *qj = jobs_head; qj; qj = qj->next) queued++;
+    if (queued + jobs_active >= jobs_workers || atomic_load_explicit(&jobs_abort, memory_order_acquire)) {
         pthread_mutex_unlock(&jobs_lock);
         free(j);
         return false;
@@ -2605,8 +2616,44 @@ static void mali_fs_meta_reset(void) {
     memset(g_mali_fs_meta, 0, sizeof g_mali_fs_meta);
 }
 
+static bool mali_is_srgb_format(VkFormat f) {
+    return f == VK_FORMAT_R8G8B8A8_SRGB || f == VK_FORMAT_B8G8R8A8_SRGB ||
+           f == VK_FORMAT_A8B8G8R8_SRGB_PACK32 || f == VK_FORMAT_R8_SRGB ||
+           f == VK_FORMAT_R8G8_SRGB;
+}
+
+static float mali_linear_to_srgb(float c) {
+    if (c <= 0.0f) return 0.0f;
+    if (c >= 1.0f) return 1.0f;
+    return c <= 0.0031308f ? c * 12.92f : 1.055f * powf(c, 1.0f / 2.4f) - 0.055f;
+}
+
 static void mali_dclear_materialize(const MaliDeferredClear *e) {
     if (!e || !e->image) return;
+    if (e->samples <= 1 && (!e->has_color || e->view_format == e->image_format)) {
+        if (in_pass) {
+            vk_end_pass();
+            st.rt_dirty = true;
+        }
+        VkCommandBuffer cb = vk_cmd();
+        if (e->has_color) {
+            VkClearColorValue cc = e->color;
+            if (mali_is_srgb_format(e->image_format)) {
+                for (int i = 0; i < 3; i++) cc.float32[i] = mali_linear_to_srgb(cc.float32[i]);
+            }
+            VkImageSubresourceRange rg = {VK_IMAGE_ASPECT_COLOR_BIT, e->mip_level, 1, e->array_layer, 1};
+            vkCmdClearColorImage(cb, e->image, VK_IMAGE_LAYOUT_GENERAL, &cc, 1, &rg);
+            return;
+        }
+        VkImageSubresourceRange rg = {(e->has_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : 0u) |
+                                          (e->has_stencil ? VK_IMAGE_ASPECT_STENCIL_BIT : 0u),
+                                      e->mip_level, 1, e->array_layer, 1};
+        if (rg.aspectMask) {
+            VkClearDepthStencilValue ds = {e->depth_val, e->stencil_val};
+            vkCmdClearDepthStencilImage(cb, e->image, VK_IMAGE_LAYOUT_GENERAL, &ds, 1, &rg);
+        }
+        return;
+    }
     VkImageAspectFlags aspect = e->has_color ? VK_IMAGE_ASPECT_COLOR_BIT : e->image_aspect;
     VkFormat vfmt = e->has_color ? e->view_format : e->image_format;
     VkImageView v = vk_create_temp_view(e->image, vfmt, e->mip_level, e->array_layer, aspect);
@@ -2672,6 +2719,7 @@ static void mali_dclear_materialize(const MaliDeferredClear *e) {
 }
 
 void vk_mali_rp_forget_image(VkImage img) {
+    if (g_mali_dclears.count <= 0 || !img) return;
     mali_dclear_forget_image(&g_mali_dclears, img);
     mali_dclear_publish_count();
 }
@@ -2838,6 +2886,11 @@ static bool mali_try_defer_rt_clear(int index, const float *color_raw, uint32_t 
 
     VkImageView v = vk_view(t, tv, has_v, true, TEXTYPE_2D);
     if (!v) return false;
+    // Re-check extent after vk_view() in case rs_stale(b) recreated the image at a new scale.
+    b = t->backend;
+    if (!b || !b->image || b->samples > 1 || lv >= b->levels || ly >= b->layers) return false;
+    uint32_t new_ew = level_extent(b->width, lv), new_eh = level_extent(b->height, lv);
+    if (new_ew != ew || new_eh != eh) return false;
     if (lv) vk_tex_upload_for_mips(t);
     (void)renderer_texture_first_write(t);
     (void)renderer_texture_level_fresh(t);
@@ -2896,6 +2949,8 @@ static bool mali_try_defer_clear_texture(NvnTexture *t, const NvnTextureView *tv
         return false;
     VkImageView v = vk_view(t, tv, has_v, true, TEXTYPE_2D);
     if (!v) return false;
+    b = t->backend;
+    if (!b || !b->image || b->samples > 1 || lv >= b->levels || ly >= b->layers) return false;
     if (lv) vk_tex_upload_for_mips(t);
     (void)renderer_texture_first_write(t);
     (void)renderer_texture_level_fresh(t);
@@ -3258,6 +3313,7 @@ static void begin_pass(void) {
                 continue;
             }
             vf = view_fmt && vk_format(t->format) == b->format ? vk_format(st.rt.cview[i].format) : b->format;
+            if (b->fixed_fmt && vf != b->format && vf != b->view_alt) vf = b->format;
             ew = level_extent(b->width, lv), eh = level_extent(b->height, lv);
         }
         ca[i].imageView = v;
@@ -3321,6 +3377,7 @@ static void begin_pass(void) {
     if (g_vk.mali_rp_merge_opt && g_mali_dclears.count > 0) {
         VkImage mat_imgs[9];
         int nmat = 0;
+        bool consumed = false;
         for (uint32_t i = 0; i < pass_ncolor && i < 8; i++) {
             if (!ca[i].imageView || !st.rt.color[i] || !st.rt.color[i]->backend) continue;
             VkImage img = ((TexBackend *)st.rt.color[i]->backend)->image;
@@ -3332,6 +3389,7 @@ static void begin_pass(void) {
                                           &cc, &need_mat)) {
                 ca[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
                 ca[i].clearValue.color = cc;
+                consumed = true;
             } else if (need_mat && nmat < 9) {
                 mat_imgs[nmat++] = img;
             }
@@ -3349,16 +3407,20 @@ static void begin_pass(void) {
             if (got_d) {
                 da.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
                 da.clearValue.depthStencil.depth = dval;
+                consumed = true;
             }
             if (got_s) {
                 sa.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
                 sa.clearValue.depthStencil.stencil = sval;
+                consumed = true;
             }
             if (need_mat && nmat < 9) mat_imgs[nmat++] = img;
         }
         if (nmat > 0) {
             for (int k = 0; k < nmat; k++) vk_mali_rp_flush_clears_for(mat_imgs[k]);
             cb = vk_cmd();
+        } else if (consumed) {
+            mali_dclear_publish_count();
         }
     }
 #endif
@@ -4752,6 +4814,7 @@ static void pipe_evict(void) {
             p->pipe = VK_NULL_HANDLE;
             atomic_store(&p->state, 0);
             p->evicted = true;
+            p->prewarmed = false;
             atomic_fetch_sub(&live_gpipes, 1);  // (built again: counted again)
             live--, gone++;
         }

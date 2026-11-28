@@ -118,8 +118,8 @@ static void *render_main(void *arg) {
         }
         pthread_mutex_lock(&q_lock);
         q_head++;
-        q_done = r.id;
-        if (r.type == REQ_PRESENT) q_presents--;
+        __atomic_store_n(&q_done, r.id, __ATOMIC_RELAXED);
+        if (r.type == REQ_PRESENT) __atomic_store_n(&q_presents, q_presents - 1, __ATOMIC_RELAXED);
         pthread_cond_broadcast(&q_less);
     }
     return NULL;
@@ -142,13 +142,14 @@ static uint64_t push(int type, uint64_t a, void *p) {
         vk_wd_leave(wm);
         pthread_mutex_lock(&q_lock);
     }
-    uint64_t id = ++q_tail;  // (ids 1, 2, ...: the request at index id - 1)
+    uint64_t id = q_tail + 1;
+    __atomic_store_n(&q_tail, id, __ATOMIC_RELAXED);  // (ids 1, 2, ...: the request at index id - 1)
     {
         extern void vk_tl(const char *what, uint64_t a, uint64_t b);
         vk_tl(type == REQ_EXEC ? "game: list sent" : type == REQ_PRESENT ? "game: present sent" : "game: fence sent", id, 0);
     }
     q[(id - 1) % QN] = (Req){type, a, p, id};
-    if (type == REQ_PRESENT) q_presents++;
+    if (type == REQ_PRESENT) __atomic_store_n(&q_presents, q_presents + 1, __ATOMIC_RELAXED);
     pthread_cond_signal(&q_more);
     pthread_mutex_unlock(&q_lock);
     return id;

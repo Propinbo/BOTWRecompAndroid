@@ -690,7 +690,7 @@ static void create_image(NvnTexture *t, TexBackend *b) {
         if (g_vk.turnip_fb_loop) ci.usage |= VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
 #endif
         ci.flags &= ~VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-        ci.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT, ci.pNext = NULL, b->fixed_fmt = false;
+        ci.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT, ci.pNext = NULL, b->fixed_fmt = false, b->view_alt = VK_FORMAT_UNDEFINED;
         VK_CHECK(vmaCreateImage(g_vk.vma, &ci, &ai, &b->image, &b->mem, NULL));
         depthfmt = false;
     }
@@ -1058,7 +1058,10 @@ static void upload_pending(TexBackend *b) {
     if (!scaled && w > b->width) w = b->width;
     if (!scaled && h > b->height) h = b->height;
 #ifdef __ANDROID__
-    if (b->image && (scaled || (w == b->width && h == b->height))) vk_mali_rp_forget_image(b->image);
+    if (b->image) {
+        if (scaled || (w == b->width && h == b->height)) vk_mali_rp_forget_image(b->image);
+        else vk_mali_rp_flush_clears_for(b->image);
+    }
 #endif
     VkSpan s = vk_transient_copy(px, (uint64_t)stride * h, 16);
     free(px);

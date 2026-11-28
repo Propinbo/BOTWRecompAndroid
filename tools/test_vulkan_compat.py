@@ -70,16 +70,22 @@ source += '''
 
     // Adreno 830 regression guard: keep nouboopt OFF on a830, ON only on a840..a899
     if (vk_adreno_needs_nouboopt("Adreno (TM) 830")) return 22;
+    if (vk_adreno_needs_nouboopt("Adreno830v1")) return 47;
+    if (vk_adreno_needs_nouboopt("Adreno (TM) 839")) return 48;
     if (!vk_adreno_needs_nouboopt("Adreno (TM) 840")) return 23;
+    if (!vk_adreno_needs_nouboopt("Adreno (TM) 899")) return 49;
+    if (vk_adreno_needs_nouboopt("Adreno (TM) 900")) return 50;
     if (vk_adreno_needs_nouboopt("Mali-G925")) return 24;
 
-    // Turnip-only GPL gate (strictly off on Mali/unknown, respects env override when supported)
+    // Turnip-only GPL gate (strictly off on Mali/unknown, respects valid env override when supported)
     if (!vk_gpl_want(true, 18u, true, 0)) return 25;
     if (vk_gpl_want(true, 0u, true, 0)) return 26;
     if (vk_gpl_want(true, 18u, false, 0)) return 27;
     if (vk_gpl_want(false, 18u, true, "1")) return 28;
     if (vk_gpl_want(true, 18u, true, "0")) return 29;
     if (!vk_gpl_want(true, 99u, true, "1")) return 30;
+    if (!vk_gpl_want(true, 18u, true, "abc")) return 51;
+    if (vk_gpl_want(true, 0u, true, "abc")) return 52;
 
     // VkImageFormatListCreateInfo / sRGB-UNORM twin policy (Mali AFBC + Turnip UBWC)
     if (vk_format_srgb_twin(VK_FORMAT_R8G8B8A8_UNORM) != VK_FORMAT_R8G8B8A8_SRGB) return 31;
@@ -99,6 +105,9 @@ source += '''
     if (!vk_rt_use_format_list(true, false, 1u, VK_FORMAT_UNDEFINED, false)) return 44;
     if (vk_rt_use_format_list(true, true, 8u, VK_FORMAT_UNDEFINED, true)) return 45;
     if (vk_rt_use_format_list(true, false, 0u, VK_FORMAT_R8G8B8A8_SRGB, true)) return 46;
+    if (!vk_rt_format_list_want(false, true, "abc", 0, &why)) return 53;
+    if (vk_rt_format_list_want(false, false, "abc", 0, &why)) return 54;
+    if (vk_rt_format_list_want(true, false, 0, "1", &why) != true) return 55;
     return 0;
 }
 '''
@@ -113,7 +122,7 @@ const fs = require('fs');
 WebAssembly.instantiate(fs.readFileSync(process.argv[2])).then(({instance}) => {
   const code = instance.exports.check();
   if (code) throw new Error(`Vulkan preflight check ${code} failed`);
-  console.log('16 Vulkan compatibility checks passed (production C)');
+  console.log('Vulkan compatibility checks passed (production C)');
 }).catch(e => {console.error(e); process.exit(1);});
 ''')
 subprocess.run(['node', str(out / 'run.cjs'), str(out / 'test.wasm')], check=True)

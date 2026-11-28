@@ -381,7 +381,10 @@ static void prewarm_tick(void) {
         if (live + PW_HEADROOM >= (size_t)keep || pipe_cache.count + PW_HEADROOM >= (size_t)keep) return;
     }
 
-    unsigned max_inflight = g_vk.gpl ? (jobs_workers > 1 ? jobs_workers : 1) : 1u;
+    pthread_mutex_lock(&jobs_lock);
+    unsigned nw = jobs_started ? jobs_workers : 4u;
+    pthread_mutex_unlock(&jobs_lock);
+    unsigned max_inflight = g_vk.gpl ? (nw > 1u ? nw : 1u) : 1u;
     if (max_inflight > 8) max_inflight = 8;
     if (max_inflight == 1) {
         if (pw_pending && !pw_pending->evicted && atomic_load(&pw_pending->state) == 0) return;

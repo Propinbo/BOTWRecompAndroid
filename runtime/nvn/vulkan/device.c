@@ -1005,9 +1005,10 @@ static void create_device(void) {
     LOG("[vk-cap] Mali RP store opt: %s (%s)\n", g_vk.mali_rp_store_opt ? "on" : "off", mrs_why);
     bool want_fbl = false;
     bool fbl_env_set = vk_compat_parse_env_bool(getenv("LARECOMP_TURNIP_FB_LOCAL_BARRIER"), &want_fbl);
+    bool fbl_ext_room = (n_ext + 2 <= sizeof ext / sizeof ext[0]);
     g_vk.turnip_fb_loop = want_fbl && is_turnip && g_vk.dyn_render && g_vk.sync2 &&
                           have_fbl_ext && fbl_have.attachmentFeedbackLoopLayout &&
-                          have_lr_ext && lr_have.dynamicRenderingLocalRead;
+                          have_lr_ext && lr_have.dynamicRenderingLocalRead && fbl_ext_room;
     const char *fbl_why = !fbl_env_set ? "default off (A/B)"
         : !want_fbl ? "LARECOMP_TURNIP_FB_LOCAL_BARRIER=0"
         : !is_turnip ? "non-Turnip"
@@ -1015,6 +1016,7 @@ static void create_device(void) {
         : !g_vk.sync2 ? "no sync2"
         : (!have_fbl_ext || !fbl_have.attachmentFeedbackLoopLayout) ? "no feedbackLoopLayout"
         : (!have_lr_ext || !lr_have.dynamicRenderingLocalRead) ? "no dynamicRenderingLocalRead"
+        : !fbl_ext_room ? "device extension array full"
         : "LARECOMP_TURNIP_FB_LOCAL_BARRIER=1";
     LOG("[vk-cap] Turnip feedback-loop local barrier: %s (%s)\n", g_vk.turnip_fb_loop ? "on" : "off", fbl_why);
     VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT fbl_f = {

@@ -264,6 +264,24 @@ static void test_deferred_clear_bloom_filter(void) {
     assert(mali_dclear_upsert(&t, imgs[3], VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
                               VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 128, 128, VK_SAMPLE_COUNT_1_BIT,
                               true, &cc, false, 0.0f, false, 0) == MALI_DCLEAR_OK);
+    // Same-subresource overwrite updates clear color in place without growing entry count.
+    VkClearColorValue cc2 = {.float32 = {0.25f, 0.5f, 0.75f, 1.0f}};
+    assert(mali_dclear_upsert(&t, imgs[3], VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
+                              VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 128, 128, VK_SAMPLE_COUNT_1_BIT,
+                              true, &cc2, false, 0.0f, false, 0) == MALI_DCLEAR_OK);
+    assert(t.count == 1);
+    VkClearColorValue out_cc = {0};
+    bool need_mat = false;
+    assert(mali_dclear_consume_color(&t, imgs[3], 0, 0, VK_FORMAT_R8G8B8A8_UNORM, 128, 128, &out_cc, &need_mat));
+    assert(!need_mat && out_cc.float32[0] == 0.25f && out_cc.float32[2] == 0.75f);
+    assert(t.count == 0 && t.image_bloom == 0);
+
+    // Boundary checks on vk_mali_nvn_stencil_op_writes (only ops 2..8 write stencil).
+    assert(!vk_mali_nvn_stencil_op_writes(0u));
+    assert(!vk_mali_nvn_stencil_op_writes(1u));
+    for (uint32_t op = 2u; op <= 8u; op++) assert(vk_mali_nvn_stencil_op_writes(op));
+    assert(!vk_mali_nvn_stencil_op_writes(9u));
+
     mali_dclear_reset(&t);
     assert(t.count == 0 && t.image_bloom == 0 && !mali_dclear_has_image(&t, imgs[3]));
 }

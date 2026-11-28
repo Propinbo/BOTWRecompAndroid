@@ -169,7 +169,8 @@ static inline bool vk_adreno_needs_nouboopt(const char *model) {
 
 static inline bool vk_gpl_want(bool ext_and_fast_link_ok, uint32_t driver_id, bool has_driver_props, const char *env) {
     if (!ext_and_fast_link_ok) return false;
-    if (env && *env) return vk_compat_atoi(env) != 0;
+    bool env_val = false;
+    if (vk_compat_parse_env_bool(env, &env_val)) return env_val;
     return has_driver_props && driver_id == 18u;
 }
 
@@ -189,8 +190,7 @@ static inline bool vk_rt_format_list_want(bool is_mali, bool is_turnip, const ch
                                           const char *legacy_no_mutable, const char **why_out) {
     const char *why = "default off";
     bool on = false;
-    if (env && *env) {
-        on = vk_compat_atoi(env) != 0;
+    if (vk_compat_parse_env_bool(env, &on)) {
         why = on ? "LARECOMP_VK_RT_FORMAT_LIST=1" : "LARECOMP_VK_RT_FORMAT_LIST=0";
     } else if (legacy_no_mutable && *legacy_no_mutable) {
         on = true;
