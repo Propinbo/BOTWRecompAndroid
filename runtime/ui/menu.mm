@@ -842,6 +842,9 @@ static void tab_display(void) {
     opt_toggle("OLED black-point curve", &g_settings.oled_black, false,
                "Applies a gentle near-black contrast toe to deepen shadow troughs on OLED screens without clipping detail.");
 #ifdef __ANDROID__
+    opt_toggle("10-bit color output", &g_settings.ten_bit_output, false,
+               "Uses a 10-bit swapchain and display buffer when supported by the panel for smoother sky and shadow "
+               "gradients on AMOLED screens. Applies when BOTWRecompAndroid restarts.");
     opt_toggle("Sync lag", &g_settings.sync_lag, true,
                "The game starts its next frame while the GPU still finishes the last one: a few more fps. What the game reads "
                "back from the GPU then comes a frame late, and Link's legs can sink into the ground while he stands "

@@ -68,6 +68,7 @@ typedef struct {
     VkSurfaceKHR surface;
     VkSwapchainKHR swapchain;
     VkFormat sc_format;
+    VkColorSpaceKHR sc_colorspace;
     VkExtent2D sc_extent;
     uint32_t sc_count;
     VkImage sc_images[VK_MAX_SWAP_IMAGES];
@@ -136,6 +137,8 @@ typedef struct TexBackend {
     struct BcShadow *bc_shadow;  // (bc_vf) drawn into through a view of the block's size: the blocks (textures.c)
     VkFormat view_alt;  // (a render target made without MUTABLE_FORMAT: textures.c rt_formats) the one other format its
     bool fixed_fmt;     // views may have - its sRGB / UNORM twin, or none
+    bool promoted_linear_rt;  // NVN 0x25 display RT promoted to FP16 to preserve linear lighting before present OETF
+    bool linear_srgb;         // last pass wrote linear RGB expecting hardware sRGB encoding (requires OETF at present)
     int tp;              // runtime/nvn/texpatch.c: 0 not checked yet, -1 none, else known UI texture + 1
     uint32_t tp_gen;     // texpatch_generation() it was last uploaded with
     int reg;  // slot in textures.c's live list + 1 (a reboot destroys them all)

@@ -294,14 +294,15 @@ VkDescriptorSetLayout vk_set_layout(const VkBindingInfo *b, int n, uint32_t set,
 static const char *builtin_src(const char *name, int *stage) {
     if (!strcmp(name, "present.vert")) {
         *stage = STAGE_VERTEX;
-        // pv[0].x: flip (lower-left origin), pv[1]: uv crop (origin, size). Fullscreen triangle; Vulkan NDC y points down.
+        // pv[0].x bit 0: flip (lower-left origin), pv[1]: uv crop (origin, size). Fullscreen triangle; Vulkan NDC y points down.
         return "#version 450\n"
                "layout(push_constant) uniform P { vec4 a; vec4 crop; } pc;\n"
                "layout(location = 0) out vec2 uv;\n"
                "void main() {\n"
                "  vec2 p = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);\n"
                "  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
-               "  vec2 u = vec2(p.x, pc.a.x > 0.5 ? 1.0 - p.y : p.y);\n"
+               "  bool flip = (int(pc.a.x + 0.5) & 1) != 0;\n"
+               "  vec2 u = vec2(p.x, flip ? 1.0 - p.y : p.y);\n"
                "  uv = pc.crop.xy + u * pc.crop.zw;\n"
                "}\n";
     }
@@ -313,8 +314,14 @@ static const char *builtin_src(const char *name, int *stage) {
                "layout(location = 0) in vec2 uv;\n"
                "layout(location = 0) out vec4 o;\n"
                "float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }\n"
+               "vec3 linear_to_srgb(vec3 x) {\n"
+               "  vec3 c = clamp(x, 0.0, 1.0);\n"
+               "  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));\n"
+               "}\n"
                "void main() {\n"
+               "  int flags = int(pc.a.x + 0.5);\n"
                "  vec3 c = texture(t, uv).rgb;\n"
+               "  if ((flags & 2) != 0) c = linear_to_srgb(c);\n"
                "  if (pc.a.w > 0.0) {\n"
                "    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));\n"
                "    float s = smoothstep(0.0, 0.10, l);\n"
@@ -326,6 +333,21 @@ static const char *builtin_src(const char *name, int *stage) {
                "    c = clamp(c + (n1 - n2) * pc.a.z, 0.0, 1.0);\n"
                "  }\n"
                "  o = vec4(c, 1.0);\n"
+               "}\n";
+    }
+    if (!strcmp(name, "srgb_encode.frag")) {
+        *stage = STAGE_FRAGMENT;
+        return "#version 450\n"
+               "layout(set = 0, binding = 0) uniform sampler2D t0;\n"
+               "layout(push_constant) uniform P { vec4 a; vec4 b; } pc;\n"
+               "layout(location = 0) out vec4 o;\n"
+               "vec3 linear_to_srgb(vec3 x) {\n"
+               "  vec3 c = clamp(x, 0.0, 1.0);\n"
+               "  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));\n"
+               "}\n"
+               "void main() {\n"
+               "  vec4 v = textureLod(t0, gl_FragCoord.xy * pc.a.xy, 0.0);\n"
+               "  o = vec4(linear_to_srgb(v.rgb), v.a);\n"
                "}\n";
     }
     if (!strcmp(name, "scene_copy.frag")) {

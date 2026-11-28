@@ -152,6 +152,7 @@ float settings_eff_ssao_scale(void) {
     return 1.0f;
 #endif
 }
+bool settings_eff_ten_bit_output(void) { return false; }
 int64_t plat_avail_ram_mb(void) { return 8192; }
 int64_t plat_total_ram_mb(void) { return 12288; }
 void plat_frame_work_gpu(uint64_t a, uint64_t b, uint64_t c, uint64_t d) { (void)a, (void)b, (void)c, (void)d; }

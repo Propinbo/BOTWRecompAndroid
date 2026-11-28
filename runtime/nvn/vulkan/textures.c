@@ -628,6 +628,8 @@ static void create_image(NvnTexture *t, TexBackend *b) {
     uint32_t samples = t->samples > 1 ? t->samples : 1;
     if (samples > 1) levels = 1;
     b->astc_bw = b->astc_bh = 0;
+    b->promoted_linear_rt = false;
+    b->linear_srgb = false;
     VkFormat bc_vf = VK_FORMAT_UNDEFINED;
     bool astc_used = false;
     VkFormat vf = resolve_tex_format(t, &bc_vf, &astc_used, false);
@@ -641,6 +643,22 @@ static void create_image(NvnTexture *t, TexBackend *b) {
         b->astc_srgb = t->format >= 0x87;
     }
     bool depthfmt = renderer_format_is_depth(t->format);
+#ifdef __ANDROID__
+    if (vk_display_promote_fp16_ok(
+            g_vk.sc_format, depthfmt, bc_vf, astc_used, t->flags, t->format, t->samples,
+            format_supports(VK_FORMAT_R16G16B16A16_SFLOAT,
+                            VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                            VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+                            VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT))) {
+        vf = VK_FORMAT_R16G16B16A16_SFLOAT;
+        b->promoted_linear_rt = true;
+        static bool logged_10bit_disp;
+        if (!logged_10bit_disp) {
+            logged_10bit_disp = true;
+            LOG("[vk] 10-bit display target promotion: %ux%u nvn 0x25 -> R16G16B16A16_SFLOAT (sRGB OETF in present)\n", tw, th);
+        }
+    }
+#endif
     VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     if (depthfmt) usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     else if (format_supports(vf, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
@@ -710,6 +728,8 @@ static void create_image(NvnTexture *t, TexBackend *b) {
                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         ci.flags &= ~VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
         ci.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT, ci.pNext = NULL, b->fixed_fmt = false;
+        b->promoted_linear_rt = false;
+        b->linear_srgb = false;
         VK_CHECK(vmaCreateImage(g_vk.vma, &ci, &ai, &b->image, &b->mem, NULL));
         depthfmt = false;
     }
@@ -830,6 +850,8 @@ static void destroy_image(TexBackend *b) {
     b->mem = VK_NULL_HANDLE;
     undiscard(b);
     b->uploaded = false;
+    b->promoted_linear_rt = false;
+    b->linear_srgb = false;
     b->data_hash = 0;
     b->sample_hash = 0;
     b->wgen = 0;
@@ -1040,10 +1062,12 @@ static uint64_t fnv_sample(const uint8_t *p, uint64_t n) {
 
 static pthread_mutex_t pending_lock = PTHREAD_MUTEX_INITIALIZER;
 
-// Guest texels for a scaled image (the CPU filled a render target: the title screen's save pictures): they go into a
-// guest-size image of their own, then a filtered blit brings them to the allocation's size (SavageWindRecomp's).
-static void upload_scaled(VkCommandBuffer cb, TexBackend *b, VkSpan s, VkBufferImageCopy rg, uint32_t gw, uint32_t gh) {
-    VkImageCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = b->format,
+// Guest texels for a scaled or format-promoted image (the CPU filled a render target: the title screen's save
+// pictures): they go into a guest-format/size image of their own, then a filtered blit brings them to the allocation's
+// format and size (SavageWindRecomp's).
+static void upload_scaled(VkCommandBuffer cb, TexBackend *b, VkSpan s, VkBufferImageCopy rg, uint32_t gw, uint32_t gh,
+                          VkFormat src_fmt) {
+    VkImageCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = src_fmt,
                             .extent = {gw, gh, 1}, .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT,
                             .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT};
     VmaAllocationCreateInfo ai = {.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
@@ -1060,7 +1084,7 @@ static void upload_scaled(VkCommandBuffer cb, TexBackend *b, VkSpan s, VkBufferI
     VkImageBlit bl = {.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, .srcOffsets = {{0, 0, 0}, {(int32_t)gw, (int32_t)gh, 1}},
                       .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, lv, layer, 1},
                       .dstOffsets = {{0, 0, 0}, {(int32_t)level_w(b, lv), (int32_t)level_h(b, lv), 1}}};
-    bool lin = format_supports(b->format, VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
+    bool lin = format_supports(src_fmt, VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
     vkCmdBlitImage(cb, img, VK_IMAGE_LAYOUT_GENERAL, b->image, VK_IMAGE_LAYOUT_GENERAL, 1, &bl, lin ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
     vk_full_barrier(cb);
     vk_defer_image(img, mem);
@@ -1081,7 +1105,11 @@ static void upload_pending(TexBackend *b) {
     VkBufferImageCopy rg = {.bufferOffset = s.off, .bufferRowLength = stride / 4,
                             .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, .imageExtent = {w, h, 1}};
     VkCommandBuffer cb = vk_upload_cmd();
-    if (scaled) { upload_scaled(cb, b, s, rg, w, h); return; }
+    if (scaled || b->promoted_linear_rt) {
+        upload_scaled(cb, b, s, rg, w, h, b->promoted_linear_rt ? VK_FORMAT_R8G8B8A8_UNORM : b->format);
+        if (b->promoted_linear_rt) b->linear_srgb = false;
+        return;
+    }
     vk_dl_note_upload((void *)b->image, rg.imageExtent.width, rg.imageExtent.height, rg.imageSubresource.mipLevel);
                 vkCmdCopyBufferToImage(cb, s.buf, b->image, VK_IMAGE_LAYOUT_GENERAL, 1, &rg);
 }
@@ -1303,10 +1331,12 @@ static bool upload_texture_impl(NvnTexture *t, TexBackend *b, bool for_rt_load) 
     b->uploaded = true;
     if (tracked) b->full_wgen = now;
     undiscard(b);
+    bool promoted_rgba8 = b->promoted_linear_rt && t->format == 0x25u && mf.vf == VK_FORMAT_R8G8B8A8_UNORM &&
+                          b->aspect == VK_IMAGE_ASPECT_COLOR_BIT && b->depth == 1;
 #ifdef __ANDROID__
-    if (b->format != mf.vf && !b->astc_bw && !b->bc_vf) return false;  // unsupported format: nothing sensible to copy
+    if (b->format != mf.vf && !b->astc_bw && !b->bc_vf && !promoted_rgba8) return false;  // unsupported format: nothing sensible to copy
 #else
-    if (b->format != mf.vf && !b->astc_bw) return false;  // unsupported format: nothing sensible to copy
+    if (b->format != mf.vf && !b->astc_bw && !promoted_rgba8) return false;  // unsupported format: nothing sensible to copy
 #endif
     uint64_t bench_upload_start = bench_clock();
     VkCommandBuffer cb;
@@ -1433,9 +1463,10 @@ static bool upload_texture_impl(NvnTexture *t, TexBackend *b, bool for_rt_load) 
                                     .imageExtent = {w, b->base_type == VK_IMAGE_VIEW_TYPE_1D || b->base_type == VK_IMAGE_VIEW_TYPE_1D_ARRAY ? 1 : hh,
                                                     b->depth > 1 ? d : 1}};
             if (b->aspect == (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) continue;  // packed D/S: no CPU layout
-            if (b->scalable && b->aspect == VK_IMAGE_ASPECT_COLOR_BIT && b->depth == 1 &&
-                (l.w != level_w(b, il) || l.h != level_h(b, il))) {  // (guest-size texels into a scaled allocation)
-                upload_scaled(cb, b, s, rg, l.w, l.h);
+            if (((b->scalable && (l.w != level_w(b, il) || l.h != level_h(b, il))) || promoted_rgba8) &&
+                b->aspect == VK_IMAGE_ASPECT_COLOR_BIT && b->depth == 1) {  // (guest-size/format texels into a scaled/promoted allocation)
+                upload_scaled(cb, b, s, rg, l.w, l.h, promoted_rgba8 ? VK_FORMAT_R8G8B8A8_UNORM : b->format);
+                if (promoted_rgba8) b->linear_srgb = false;
                 continue;
             }
             vk_dl_note_upload((void *)b->image, rg.imageExtent.width, rg.imageExtent.height, rg.imageSubresource.mipLevel);

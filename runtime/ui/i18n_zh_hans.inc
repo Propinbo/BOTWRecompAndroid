@@ -833,3 +833,7 @@
    "SSAO 分辨率"},
   {"Resolution multiplier for BOTW ambient occlusion and half-resolution lighting (800x450/400x225). 1.5x sharpens contact shadows with strong 40 fps headroom; 1:1 renders at full 1080p at higher GPU cost.",
    "BOTW 环境光遮蔽与半分辨率光照（800x450/400x225）的分辨率倍率。1.5x 可在保留充足 40 fps 余量的同时大幅清晰化接触阴影；1:1 则以更高 GPU 负载渲染完整 1080p。"},
+  {"10-bit color output",
+   "10 位色彩输出"},
+  {"Uses a 10-bit swapchain and display buffer when supported by the panel for smoother sky and shadow gradients on AMOLED screens. Applies when BOTWRecompAndroid restarts.",
+   "在面板支持时启用 10 位交换链与显示缓冲，令 AMOLED 屏幕上的天空与阴影过渡更平滑。重启 BOTWRecompAndroid 后生效。"},

@@ -90,6 +90,7 @@ Settings g_settings = {
     .core_turns = false,        // (an experiment for #401: kernel.c core0_init)
     .sync_lag = true,           // (a few more fps; the CPU's reads of GPU results a frame old: nvn/objects.c nvnSyncWait)
     .ssao_res = 0,              // half-res SSAO/lighting scale (0 default, 1 1.5x, 2 1:1)
+    .ten_bit_output = false,    // request 10-bit A2B10G10R10 swapchain + FP16 display RT promotion; restart to apply
     .out_lines = OUT_AUTO,      // (POCO F7 Ultra, 3200x1440, 1.8.2's Great Plateau: GPU 22.8 ms a frame at the screen's,
                                 // 18.6 at 1080 lines with a larger scene - the final image's passes over 2.2x the pixels)
 #else
@@ -275,6 +276,7 @@ void settings_reset_defaults(void) {
     g_settings.core_turns = d->core_turns;
     g_settings.files_in_place = d->files_in_place;
     g_settings.ssao_res = d->ssao_res;
+    g_settings.ten_bit_output = d->ten_bit_output;
 #endif
     pthread_mutex_unlock(&g_settings_lock);
 }
@@ -336,6 +338,7 @@ void settings_load(void) {
         else if (!strcmp(key, "files_in_place")) g_settings.files_in_place = atoi(val) != 0;
         else if (!strcmp(key, "ssao_res")) { int v = atoi(val); g_settings.ssao_res = v < 0 ? 0 : v > 2 ? 2 : v; }
         else if (!strcmp(key, "full_res_ssao")) g_settings.ssao_res = atoi(val) ? 1 : 0;
+        else if (!strcmp(key, "ten_bit_output")) g_settings.ten_bit_output = atoi(val) != 0;
         else if (!strcmp(key, "gpu_heap")) g_settings.gpu_heap = !strcmp(val, "auto") ? -1 : atoi(val) != 0;
         else if (!strcmp(key, "low_ram")) g_settings.low_ram = !strcmp(val, "auto") ? -1 : atoi(val) != 0;
         else if (!strcmp(key, "inplace_reads")) g_settings.inplace_reads = !strcmp(val, "auto") ? -1 : atoi(val) != 0;
@@ -467,10 +470,10 @@ static void settings_save_locked(void) {
                g_settings.fps_mode == 4 ? "45" : "auto");
     fprintf(f, "thermal_cap = %d\n", g_settings.thermal_cap ? 1 : 0);
     fprintf(f, "cutscenes_60 = %d\n", g_settings.event_fps_unlock);
-    fprintf(f, "shader_int32 = %d\nsync_lag = %d\nssao_res = %d\nnative_code = %d\nfiles_in_place = %d\n",
+    fprintf(f, "shader_int32 = %d\nsync_lag = %d\nssao_res = %d\nten_bit_output = %d\nnative_code = %d\nfiles_in_place = %d\n",
             g_settings.shader_int32, g_settings.sync_lag,
             g_settings.ssao_res < 0 || g_settings.ssao_res > 2 ? 0 : g_settings.ssao_res,
-            g_settings.native_code, g_settings.files_in_place);
+            g_settings.ten_bit_output ? 1 : 0, g_settings.native_code, g_settings.files_in_place);
     fprintf(f, "pipe_prewarm = %d\n", g_settings.pipe_prewarm ? 1 : 0);
     fprintf(f, "core_turns = %d\n", g_settings.core_turns ? 1 : 0);
     static const char *const tri[] = {"auto", "0", "1"};  // (-1 / 0 / 1)
@@ -664,5 +667,19 @@ float settings_eff_ssao_scale(void) {
     return g_settings.ssao_res == 2 ? 2.0f : g_settings.ssao_res == 1 ? 1.5f : 1.0f;
 #else
     return 1.0f;
+#endif
+}
+
+bool settings_eff_ten_bit_output(void) {
+#ifdef __ANDROID__
+    static int cache = -2;
+    int e = __atomic_load_n(&cache, __ATOMIC_RELAXED);
+    if (e == -2) {
+        e = eff_env_flag("LARECOMP_10BIT_OUTPUT");
+        __atomic_store_n(&cache, e, __ATOMIC_RELAXED);
+    }
+    return e >= 0 ? e != 0 : g_settings.ten_bit_output;
+#else
+    return false;
 #endif
 }

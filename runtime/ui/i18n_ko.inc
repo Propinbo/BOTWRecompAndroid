@@ -833,3 +833,7 @@
    "SSAO 해상도"},
   {"Resolution multiplier for BOTW ambient occlusion and half-resolution lighting (800x450/400x225). 1.5x sharpens contact shadows with strong 40 fps headroom; 1:1 renders at full 1080p at higher GPU cost.",
    "BOTW 앰비언트 오클루전 및 절반 해상도 조명(800x450/400x225)의 해상도 배율입니다. 1.5x는 40 fps 여유를 유지하며 접촉 그림자를 선명하게 하고, 1:1은 더 높은 GPU 부하로 전체 1080p를 렌더링합니다."},
+  {"10-bit color output",
+   "10비트 색상 출력"},
+  {"Uses a 10-bit swapchain and display buffer when supported by the panel for smoother sky and shadow gradients on AMOLED screens. Applies when BOTWRecompAndroid restarts.",
+   "패널이 지원할 때 10비트 스왑체인과 디스플레이 버퍼를 사용해 AMOLED 화면의 하늘과 그림자 계조를 매끄럽게 표시합니다. BOTWRecompAndroid를 다시 시작하면 적용됩니다."},

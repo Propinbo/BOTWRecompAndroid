@@ -92,6 +92,53 @@ source += '''
     if (vk_is_botw_ssao_quarter_target(1, 400, 225, 1, 0x25)) return 38;
     if (vk_is_botw_ssao_quarter_target(1, 800, 450, 1, 0x1)) return 39;
     if (vk_is_botw_ssao_quarter_target(1, 400, 225, 2, 0x1)) return 40;
+
+    // 10-bit SDR swapchain format selection & clean fallback
+    const VkSurfaceFormatKHR odin_fmts[] = {
+        {VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+        {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+        {VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT},
+        {VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+    };
+    VkSurfaceFormatKHR pick10 = vk_pick_swapchain_format(odin_fmts, 4, true);
+    if (pick10.format != VK_FORMAT_A2B10G10R10_UNORM_PACK32 || pick10.colorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) return 41;
+    VkSurfaceFormatKHR pick8 = vk_pick_swapchain_format(odin_fmts, 4, false);
+    if (pick8.format != VK_FORMAT_B8G8R8A8_UNORM || pick8.colorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) return 42;
+    const VkSurfaceFormatKHR no10_fmts[] = {
+        {VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+        {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+    };
+    VkSurfaceFormatKHR fb8 = vk_pick_swapchain_format(no10_fmts, 2, true);
+    if (fb8.format != VK_FORMAT_B8G8R8A8_UNORM || fb8.colorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) return 43;
+    const VkSurfaceFormatKHR rgba_only[] = {{VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR}};
+    VkSurfaceFormatKHR fb_rgba = vk_pick_swapchain_format(rgba_only, 1, true);
+    if (fb_rgba.format != VK_FORMAT_R8G8B8A8_UNORM) return 44;
+    const VkSurfaceFormatKHR undef_only[] = {{VK_FORMAT_UNDEFINED, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR}};
+    VkSurfaceFormatKHR fb_undef = vk_pick_swapchain_format(undef_only, 1, true);
+    if (fb_undef.format != VK_FORMAT_B8G8R8A8_UNORM) return 45;
+    const VkSurfaceFormatKHR hdr_only_10[] = {
+        {VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+        {VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT},
+    };
+    VkSurfaceFormatKHR no_pq = vk_pick_swapchain_format(hdr_only_10, 2, true);
+    if (no_pq.format != VK_FORMAT_R8G8B8A8_UNORM || no_pq.colorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) return 46;
+    VkSurfaceFormatKHR fb_empty = vk_pick_swapchain_format(NULL, 0, true);
+    if (fb_empty.format != VK_FORMAT_B8G8R8A8_UNORM) return 47;
+
+    // 10-bit FP16 display RT promotion & IEC 61966-2-1 OETF flag packing
+    if (!vk_format_is_srgb(VK_FORMAT_R8G8B8A8_SRGB)) return 48;
+    if (!vk_format_is_srgb(VK_FORMAT_B8G8R8A8_SRGB)) return 49;
+    if (vk_format_is_srgb(VK_FORMAT_R8G8B8A8_UNORM)) return 50;
+    if (!vk_display_promote_fp16_ok(VK_FORMAT_A2B10G10R10_UNORM_PACK32, false, VK_FORMAT_UNDEFINED, false, 1u, 0x25u, 1u, true)) return 51;
+    if (vk_display_promote_fp16_ok(VK_FORMAT_B8G8R8A8_UNORM, false, VK_FORMAT_UNDEFINED, false, 1u, 0x25u, 1u, true)) return 52;
+    if (vk_display_promote_fp16_ok(VK_FORMAT_A2B10G10R10_UNORM_PACK32, false, VK_FORMAT_UNDEFINED, false, 8u, 0x25u, 1u, true)) return 53;
+    if (vk_display_promote_fp16_ok(VK_FORMAT_A2B10G10R10_UNORM_PACK32, false, VK_FORMAT_UNDEFINED, false, 1u, 0x3du, 1u, true)) return 54;
+    if (vk_display_promote_fp16_ok(VK_FORMAT_A2B10G10R10_UNORM_PACK32, false, VK_FORMAT_UNDEFINED, false, 1u, 0x25u, 2u, true)) return 55;
+    if (vk_display_promote_fp16_ok(VK_FORMAT_A2B10G10R10_UNORM_PACK32, false, VK_FORMAT_UNDEFINED, false, 1u, 0x25u, 1u, false)) return 56;
+    if (vk_present_flags_pack(false, false) != 0.0f) return 57;
+    if (vk_present_flags_pack(true, false) != 1.0f) return 58;
+    if (vk_present_flags_pack(false, true) != 2.0f) return 59;
+    if (vk_present_flags_pack(true, true) != 3.0f) return 60;
     return 0;
 }
 '''

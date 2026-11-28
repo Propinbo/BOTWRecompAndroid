@@ -249,7 +249,10 @@ int vk_fg_frame(TexBackend *game, TexBackend **gen, uint64_t *hold_ns, uint64_t 
     if (warm) lsfg_chain_shared(F.chain, cb, count);
     for (size_t g = 0; g < ng; g++) lsfg_chain_generate(F.chain, cb, count, ng, g);
     vk_full_barrier(cb);  // (the outputs, for the presents after this)
-    for (size_t g = 0; g < ng; g++) gen[g] = &F.out_tex[g];
+    for (size_t g = 0; g < ng; g++) {
+        F.out_tex[g].linear_srgb = game->linear_srgb;
+        gen[g] = &F.out_tex[g];
+    }
     if (ng) *hold_ns = (uint64_t)(interval * 1e9 / (double)(ng + 1));
     if (!!ng != F.generating) {
         static int nlog;

@@ -1131,13 +1131,25 @@ static void create_swapchain(void) {
     if (nf > 64) nf = 64;
     vkGetPhysicalDeviceSurfaceFormatsKHR(g_vk.phys, g_vk.surface, &nf, fmts);
 #endif
-    // scanout shows the bytes the game wrote (see the raw views in the present pass): a UNORM swapchain like Metal's
-    VkSurfaceFormatKHR sf = fmts[0];
-#ifdef __ANDROID__
-    if (nf == 1 && sf.format == VK_FORMAT_UNDEFINED) sf.format = VK_FORMAT_B8G8R8A8_UNORM;
-#endif
-    for (uint32_t i = 0; i < nf; i++)
-        if (fmts[i].format == VK_FORMAT_B8G8R8A8_UNORM && fmts[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) { sf = fmts[i]; break; }
+    // scanout shows the bytes the game wrote (see the raw views in the present pass): a UNORM swapchain like Metal's,
+    // preferring 10-bit A2B10G10R10_UNORM_PACK32 + SRGB_NONLINEAR when enabled.
+    // Latch once per process because ImGui and NVN display render targets bind g_vk.sc_format at startup.
+    static int sc_want_10bit = -1;
+    int want10 = __atomic_load_n(&sc_want_10bit, __ATOMIC_RELAXED);
+    if (want10 < 0) {
+        want10 = settings_eff_ten_bit_output() ? 1 : 0;
+        __atomic_store_n(&sc_want_10bit, want10, __ATOMIC_RELAXED);
+    }
+    if (getenv("LARECOMP_VK_LIST_EXT")) {
+        static bool sc_fmts_logged;
+        if (!sc_fmts_logged) {
+            sc_fmts_logged = true;
+            LOG("[vk-cap] surface formats (%u):\n", nf);
+            for (uint32_t i = 0; i < nf; i++)
+                LOG("[vk-cap]   surface[%u]: fmt=%d cs=%d\n", i, (int)fmts[i].format, (int)fmts[i].colorSpace);
+        }
+    }
+    VkSurfaceFormatKHR sf = vk_pick_swapchain_format(fmts, nf, want10 != 0);
     uint32_t count = caps.minImageCount + 1;
     if (caps.maxImageCount && count > caps.maxImageCount) count = caps.maxImageCount;
     if (count > 8) count = 8;  // (asked for: the driver may make more, up to VK_MAX_SWAP_IMAGES)
@@ -1175,7 +1187,11 @@ static void create_swapchain(void) {
     for (uint32_t i = 0; i < g_vk.sc_count; i++) vk_rp_forget_view(g_vk.sc_views[i]), vkDestroyImageView(g_vk.dev, g_vk.sc_views[i], NULL);
     if (old) vkDestroySwapchainKHR(g_vk.dev, old, NULL);
     g_vk.sc_format = sf.format;
+    g_vk.sc_colorspace = sf.colorSpace;
     g_vk.sc_extent = ext;
+#ifdef __ANDROID__
+    if (want10) LOG("[vk] swapchain ready: fmt %d, cs %d\n", (int)sf.format, (int)sf.colorSpace);
+#endif
 #ifdef __ANDROID__
     VK_CHECK(vkGetSwapchainImagesKHR(g_vk.dev, g_vk.swapchain, &g_vk.sc_count, NULL));
     if (g_vk.sc_count > VK_MAX_SWAP_IMAGES)
@@ -1599,9 +1615,20 @@ void vk_frame_end(const char *shot_path) {
         uint32_t w = g_vk.sc_extent.width, h = g_vk.sc_extent.height;
         vk_readback_ready((uint64_t)w * h * 4);
         uint8_t *px = shot.ptr;
-        bool bgr = g_vk.sc_format == VK_FORMAT_B8G8R8A8_UNORM || g_vk.sc_format == VK_FORMAT_B8G8R8A8_SRGB;
-        for (uint64_t i = 0; bgr && i < (uint64_t)w * h; i++) { uint8_t t = px[i * 4]; px[i * 4] = px[i * 4 + 2]; px[i * 4 + 2] = t; }
-        for (uint64_t i = 0; i < (uint64_t)w * h; i++) px[i * 4 + 3] = 255;
+        if (g_vk.sc_format == VK_FORMAT_A2B10G10R10_UNORM_PACK32) {
+            for (uint64_t i = 0; i < (uint64_t)w * h; i++) {
+                uint32_t p;
+                memcpy(&p, px + i * 4, 4);
+                px[i * 4 + 0] = (uint8_t)((((p >>  0) & 0x3FFu) * 255u + 511u) / 1023u);
+                px[i * 4 + 1] = (uint8_t)((((p >> 10) & 0x3FFu) * 255u + 511u) / 1023u);
+                px[i * 4 + 2] = (uint8_t)((((p >> 20) & 0x3FFu) * 255u + 511u) / 1023u);
+                px[i * 4 + 3] = 255;
+            }
+        } else {
+            bool bgr = g_vk.sc_format == VK_FORMAT_B8G8R8A8_UNORM || g_vk.sc_format == VK_FORMAT_B8G8R8A8_SRGB;
+            for (uint64_t i = 0; bgr && i < (uint64_t)w * h; i++) { uint8_t t = px[i * 4]; px[i * 4] = px[i * 4 + 2]; px[i * 4 + 2] = t; }
+            for (uint64_t i = 0; i < (uint64_t)w * h; i++) px[i * 4 + 3] = 255;
+        }
         vk_save_png(shot_path, px, w, h);
     }
 }
@@ -1807,8 +1834,9 @@ void backend_present(NvnTexture *t) {
             }
         }
         VkCommandBuffer cb = vk_cmd();
+        float dither_amp = g_vk.sc_format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 ? (1.0f / 1023.0f) : (1.0f / 255.0f);
         float pv[8] = {renderer_origin_lower_left() ? 1.0f : 0.0f, (float)(renderer_present_count() & 63),
-                       settings_eff_oled_dither() ? (1.0f / 255.0f) : 0.0f,
+                       settings_eff_oled_dither() ? dither_amp : 0.0f,
                        settings_eff_oled_black() ? 1.0f : 0.0f, crop[0], crop[1], crop[2], crop[3]};
         memcpy(g_shot_crop, crop, sizeof crop);
 #ifdef __ANDROID__

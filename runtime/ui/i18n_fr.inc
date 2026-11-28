@@ -833,3 +833,7 @@
    "Résolution SSAO"},
   {"Resolution multiplier for BOTW ambient occlusion and half-resolution lighting (800x450/400x225). 1.5x sharpens contact shadows with strong 40 fps headroom; 1:1 renders at full 1080p at higher GPU cost.",
    "Multiplicateur de définition pour l'occlusion ambiante et l'éclairage demi-résolution de BOTW (800x450/400x225). 1.5x affine les ombres de contact tout en gardant de la marge à 40 ips ; 1:1 affiche en 1080p complet au prix d'une charge GPU accrue."},
+  {"10-bit color output",
+   "Sortie couleur 10 bits"},
+  {"Uses a 10-bit swapchain and display buffer when supported by the panel for smoother sky and shadow gradients on AMOLED screens. Applies when BOTWRecompAndroid restarts.",
+   "Utilise une swapchain et un tampon d'affichage 10 bits si l'écran le prend en charge, pour des dégradés plus fluides sur AMOLED. S'applique au redémarrage de BOTWRecompAndroid."},

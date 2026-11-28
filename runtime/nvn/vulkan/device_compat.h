@@ -166,3 +166,45 @@ static inline bool vk_is_botw_ssao_quarter_target(uint32_t target, uint32_t widt
                                                   uint32_t format) {
     return target == 1u && samples <= 1u && width == 400u && height == 225u && format == 0x1u;
 }
+
+// Select swapchain surface format: when want_10bit is enabled, prefer A2B10G10R10_UNORM_PACK32 + SRGB_NONLINEAR_KHR
+// for end-to-end 10-bit SDR output without Android HDR compositor overlay dimming; otherwise B8G8R8A8_UNORM + sRGB.
+static inline VkSurfaceFormatKHR vk_pick_swapchain_format(const VkSurfaceFormatKHR *fmts, uint32_t nf,
+                                                          bool want_10bit) {
+    VkSurfaceFormatKHR def = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+    if (!fmts || !nf) return def;
+    VkSurfaceFormatKHR sf = fmts[0];
+    if (nf == 1u && sf.format == VK_FORMAT_UNDEFINED) {
+        sf.format = VK_FORMAT_B8G8R8A8_UNORM;
+        return sf;
+    }
+    if (want_10bit) {
+        for (uint32_t i = 0; i < nf; i++)
+            if (fmts[i].format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 &&
+                fmts[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+                return fmts[i];
+    }
+    for (uint32_t i = 0; i < nf; i++)
+        if (fmts[i].format == VK_FORMAT_B8G8R8A8_UNORM &&
+            fmts[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            return fmts[i];
+    return sf;
+}
+
+static inline bool vk_format_is_srgb(VkFormat vf) {
+    return vf == VK_FORMAT_R8G8B8A8_SRGB || vf == VK_FORMAT_B8G8R8A8_SRGB ||
+           vf == VK_FORMAT_A8B8G8R8_SRGB_PACK32;
+}
+
+static inline bool vk_display_promote_fp16_ok(VkFormat sc_format, bool depthfmt, VkFormat bc_vf, bool astc_used,
+                                              uint32_t tex_flags, uint32_t nvn_fmt, uint32_t samples,
+                                              bool fp16_supported) {
+    return sc_format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 && !depthfmt && bc_vf == VK_FORMAT_UNDEFINED &&
+           !astc_used && (tex_flags & 1u) != 0u && nvn_fmt == 0x25u && samples <= 1u && fp16_supported;
+}
+
+// Pack present.vert / present.frag control bits into push_constant pc.a.x:
+// bit 0 = flip vertically (lower-left origin), bit 1 = apply IEC 61966-2-1 linear->sRGB OETF.
+static inline float vk_present_flags_pack(bool lower_left, bool linear_to_srgb) {
+    return (float)((lower_left ? 1u : 0u) | (linear_to_srgb ? 2u : 0u));
+}

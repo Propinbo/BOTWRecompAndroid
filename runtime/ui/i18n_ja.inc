@@ -833,3 +833,7 @@
    "SSAO 解像度"},
   {"Resolution multiplier for BOTW ambient occlusion and half-resolution lighting (800x450/400x225). 1.5x sharpens contact shadows with strong 40 fps headroom; 1:1 renders at full 1080p at higher GPU cost.",
    "BOTW のアンビエントオクルージョンおよび半解像度ライティング (800x450/400x225) の解像度倍率です。1.5x は 40 fps の余裕を保ちつつ接触影を鮮明化し、1:1 は高 GPU 負荷で完全な 1080p 描画を行います。"},
+  {"10-bit color output",
+   "10ビットカラー出力"},
+  {"Uses a 10-bit swapchain and display buffer when supported by the panel for smoother sky and shadow gradients on AMOLED screens. Applies when BOTWRecompAndroid restarts.",
+   "パネル対応時に 10 ビットのスワップチェーンと表示バッファーを使用し、AMOLED 画面で空や影の階調を滑らかにします。BOTWRecompAndroid の再起動後に反映されます。"},

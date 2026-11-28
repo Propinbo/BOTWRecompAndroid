@@ -27,6 +27,7 @@
 #include "shaders.h"
 #include "shader_meta_cache.h"
 #include "vk.h"
+#include "device_compat.h"
 #define CBWIN_SPAN_TYPE
 typedef VkSpan CbwinSpan;
 #include "cbwin_snap.h"
@@ -2613,6 +2614,15 @@ static void begin_pass(void) {
                 continue;
             }
             vf = view_fmt && vk_format(t->format) == b->format ? vk_format(st.rt.cview[i].format) : b->format;
+            if (b->promoted_linear_rt) {
+                b->linear_srgb = view_fmt && vk_format_is_srgb(vk_format(st.rt.cview[i].format));
+                static int nlog10;
+                if (getenv("LARECOMP_LOG_10BIT_VIEWS") && nlog10 < 16) {
+                    nlog10++;
+                    LOG("[vk-10bit] pass target %ux%u nvn %#x view=%#x -> linear_srgb=%d\n", t->width, t->height,
+                        t->format, view_fmt ? st.rt.cview[i].format : t->format, b->linear_srgb ? 1 : 0);
+                }
+            }
             ew = level_extent(b->width, lv), eh = level_extent(b->height, lv);
         }
         ca[i].imageView = v;
@@ -9213,6 +9223,34 @@ static void copy_buffer_to_texture(uint64_t src, const TexRefRec *dst) {
                                                 (uint32_t)level, array ? (uint32_t)rg[2] : 0, array ? nz : 1},
                            .imageOffset = {rg[0], rg[1], array ? 0 : rg[2]},
                            .imageExtent = {(uint32_t)rg[3], (uint32_t)rg[4], array ? 1 : nz}};
+    if (b->promoted_linear_rt && t->format == 0x25u) {
+        if (nz != 1 || b->depth != 1 || (uint32_t)level >= b->levels) return;
+        uint32_t ew = (uint32_t)rg[3], eh = (uint32_t)rg[4];
+        VkImageCreateInfo tci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D,
+                                 .format = VK_FORMAT_R8G8B8A8_UNORM, .extent = {ew, eh, 1}, .mipLevels = 1, .arrayLayers = 1,
+                                 .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+                                 .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT};
+        VmaAllocationCreateInfo tai = {.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
+        VkImage timg;
+        VmaAllocation tmem;
+        if (vmaCreateImage(g_vk.vma, &tci, &tai, &timg, &tmem, NULL) != VK_SUCCESS) return;
+        vk_image_init_layout(cb, timg, VK_IMAGE_ASPECT_COLOR_BIT);
+        VkBufferImageCopy tc = c;
+        tc.imageSubresource = (VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        tc.imageOffset = (VkOffset3D){0, 0, 0};
+        tc.imageExtent = (VkExtent3D){ew, eh, 1};
+        vkCmdCopyBufferToImage(cb, s.buf, timg, VK_IMAGE_LAYOUT_GENERAL, 1, &tc);
+        vk_full_barrier(cb);
+        VkImageBlit bl = {.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                          .srcOffsets = {{0, 0, 0}, {(int32_t)ew, (int32_t)eh, 1}},
+                          .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, (uint32_t)level, array ? (uint32_t)rg[2] : 0, 1},
+                          .dstOffsets = {{rg[0], rg[1], 0}, {rg[0] + rg[3], rg[1] + rg[4], 1}}};
+        vkCmdBlitImage(cb, timg, VK_IMAGE_LAYOUT_GENERAL, b->image, VK_IMAGE_LAYOUT_GENERAL, 1, &bl, VK_FILTER_NEAREST);
+        vk_full_barrier(cb);
+        vk_defer_image(timg, tmem);
+        b->linear_srgb = false;
+        return;
+    }
     vkCmdCopyBufferToImage(cb, s.buf, b->image, VK_IMAGE_LAYOUT_GENERAL, 1, &c);
 }
 
@@ -9236,15 +9274,18 @@ static void copy_texture_to_buffer(const TexRefRec *src, uint64_t dst) {
     if (!fi || !fi->bpb || fi->bpb == 3 || row % fi->bpb) return;
     TexBackend *b = vk_tex(t, false);
     bool depth16_pack = vk_depth16_wide(t->format, b->format);
+    bool fp16_to_rgba8 = b->promoted_linear_rt && t->format == 0x25u && level == 0 && b->layers == 1 && b->depth == 1;
+    if (b->promoted_linear_rt && t->format == 0x25u && !fp16_to_rgba8) return;
     float tsx, tsy;
     renderer_texture_scale(t, &tsx, &tsy);
     VkCommandBuffer cb = vk_cmd();
     vk_full_barrier(cb);
     VkImage srcimg = b->image;
     VmaAllocation small_mem = NULL;
-    if ((tsx != 1 || tsy != 1) && level == 0 && !renderer_format_is_depth(t->format)) {
-        // the CPU expects guest-sized texels: filter the scaled allocation down first
-        VkImageCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = b->format,
+    if (((tsx != 1 || tsy != 1) || fp16_to_rgba8) && level == 0 && !renderer_format_is_depth(t->format)) {
+        // the CPU expects guest-sized RGBA8 texels: filter/convert the scaled or promoted FP16 allocation first
+        VkFormat dst_fmt = fp16_to_rgba8 ? (b->linear_srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM) : b->format;
+        VkImageCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = dst_fmt,
                                 .extent = {t->width, t->height, 1}, .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT,
                                 .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT};
         VmaAllocationCreateInfo ai = {.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
@@ -9362,6 +9403,8 @@ static void copy_texture(const TexRefRec *src, const TexRefRec *dst, uint64_t fl
     if (naliases) s = alias_read(st_)->backend;
     VkCommandBuffer cb = vk_cmd();
     vk_full_barrier(cb);
+    if (d->promoted_linear_rt)
+        d->linear_srgb = s->promoted_linear_rt ? s->linear_srgb : vk_format_is_srgb(s->format);
     VkImageAspectFlags sa = s->aspect, da = d->aspect;
     if (s->samples > 1 && d->samples == 1 && sw == dw && sh == dh && s->format == d->format && !(sa & VK_IMAGE_ASPECT_DEPTH_BIT)) {
         VkImageResolve rv = {.srcSubresource = {sa, slv, sly, 1}, .srcOffset = {sx0, sy0, 0}, .dstSubresource = {da, dlv, dly, 1},
@@ -9520,8 +9563,9 @@ static VkPipeline post_pipeline(const char *fs, VkFormat fmt, uint32_t write_mas
 }
 
 // Post image `i` at w x h in format f (kept until the size or format changes). 0, 1: SMAA edges / weights, 2: SMAA
-// output, 3, 4: FSR EASU / RCAS (or SGSR) of the presented image; 5, 6: the same of the 3D scene (scene_upscale).
-enum { POST_IMAGES = 7 };
+// output, 3, 4: FSR EASU / RCAS (or SGSR) of the presented image; 5, 6: the same of the 3D scene (scene_upscale);
+// 7: pre-post Linear->sRGB OETF staging output when presenting an FP16 linear display target through post passes.
+enum { POST_IMAGES = 8 };
 static TexBackend *post_image(int i, uint32_t w, uint32_t h, VkFormat f) {
     static TexBackend img[POST_IMAGES];
     TexBackend *d = &img[i];
@@ -9532,10 +9576,10 @@ static TexBackend *post_image(int i, uint32_t w, uint32_t h, VkFormat f) {
         d->mem = VK_NULL_HANDLE;
     }
     if (!d->image) {
-        // (the scene's EASU output, A2B10G10R10: compressed (UBWC) on Turnip, RCAS's texelFetch of it read 16x4 blocks
+        // (the EASU output, A2B10G10R10: compressed (UBWC) on Turnip, RCAS's texelFetch of it read 16x4 blocks
         // of zeros - black dashes in the grass, about one a frame on the Adreno 830; uncompressed with a mutable
         // format, as SGSR's single pass and an RGBA8 intermediate showed none either)
-        bool plain = i == 5 && f == VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+        bool plain = (i == 3 || i == 5) && f == VK_FORMAT_A2B10G10R10_UNORM_PACK32;
         VkImageCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D,
                                 .flags = plain ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0,
                                 .format = f, .extent = {w, h, 1}, .mipLevels = 1, .arrayLayers = 1,
@@ -9647,7 +9691,8 @@ static VkImageView run_aa_pass(VkCommandBuffer cb, int aa_mode, VkImageView src_
 
 // The view the present samples: the game image, or its anti-aliased / upscaled version. ow x oh: the whole image's
 // size in the window (its crop is drawn into the viewport).
-static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, double oh_d) {
+static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, double oh_d, bool *did_srgb_out) {
+    if (did_srgb_out) *did_srgb_out = false;
     VkImageView v = raw_view(b);
     bool aa_done = scene_aa_done_frame == renderer_present_count();
     bool smaa = !aa_done && g_settings.antialias == AA_SMAA, fxaa = !aa_done && g_settings.antialias == AA_FXAA;
@@ -9674,21 +9719,30 @@ static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, 
     extern void vk_frame_suspend(void);
     extern void vk_frame_resume(void);
     vk_frame_suspend();
+    VkFormat post_fmt = (g_vk.sc_format == VK_FORMAT_A2B10G10R10_UNORM_PACK32) ? VK_FORMAT_A2B10G10R10_UNORM_PACK32
+                                                                               : VK_FORMAT_R8G8B8A8_UNORM;
+    if (b->linear_srgb) {
+        TexBackend *enc = post_image(7, b->width, b->height, post_fmt);
+        float pe[8] = {1.0f / (float)b->width, 1.0f / (float)b->height};
+        post_pass(cb, "srgb_encode.frag", &v, 1, enc, pe, false);
+        v = post_view(enc);
+        if (did_srgb_out) *did_srgb_out = true;
+    }
     if (smaa || fxaa) {
-        TexBackend *out = post_image(2, b->width, b->height, VK_FORMAT_R8G8B8A8_UNORM);
+        TexBackend *out = post_image(2, b->width, b->height, post_fmt);
         v = run_aa_pass(cb, smaa ? AA_SMAA : AA_FXAA, v, b->width, b->height, out, 0xFu, false);
     }
     if (fsr) gp_mark(cb, "present: upscale");  // ([gpuprof]: the AA pass's own row above, the upscale's here)
     if (fsr && up == UPSCALE_SGSR1) {
         float iw = (float)b->width, ih = (float)b->height;
-        TexBackend *o = post_image(3, ow, oh, VK_FORMAT_R8G8B8A8_UNORM);
+        TexBackend *o = post_image(3, ow, oh, post_fmt);
         float ps[8] = {1.0f / iw, 1.0f / ih, iw, ih, (float)ow, (float)oh};
         VkImageView si[3] = {v};
         post_pass(cb, "sgsr1.frag", si, 1, o, ps, false);
         v = post_view(o);
     } else if (fsr) {
         float iw = (float)b->width, ih = (float)b->height;
-        TexBackend *e = post_image(3, ow, oh, VK_FORMAT_R8G8B8A8_UNORM), *r = post_image(4, ow, oh, VK_FORMAT_R8G8B8A8_UNORM);
+        TexBackend *e = post_image(3, ow, oh, post_fmt), *r = post_image(4, ow, oh, post_fmt);
         float pe[8] = {iw / ow, ih / oh, 0.5f * iw / ow - 0.5f, 0.5f * ih / oh - 0.5f, iw, ih};
         VkImageView ei[3] = {v};
         post_pass(cb, "easu.frag", ei, 1, e, pe, false);
@@ -9853,7 +9907,8 @@ static bool scene_upscale(Prog *pr, CmdRec *r) {
 // Inside the window image's rendering (device.c vk_frame_begin): the game image into (vx, vy, vw, vh).
 void vk_present_draw(VkCommandBuffer cb, TexBackend *b, float vx, float vy, float vw, float vh, const float pv[8]) {
     if (!b || !b->image || (b->aspect & ~VK_IMAGE_ASPECT_COLOR_BIT)) return;
-    VkImageView src = post_process(cb, b, pv[6] > 0 ? vw / pv[6] : vw, pv[7] > 0 ? vh / pv[7] : vh);
+    bool did_srgb = false;
+    VkImageView src = post_process(cb, b, pv[6] > 0 ? vw / pv[6] : vw, pv[7] > 0 ? vh / pv[7] : vh, &did_srgb);
     VkPipeline p = present_pipeline(g_vk.sc_format);
     if (!p || !vk_rendering_active()) return;
     VkDescriptorSet ds = vk_alloc_set(present_set_layout);
@@ -9865,7 +9920,10 @@ void vk_present_draw(VkCommandBuffer cb, TexBackend *b, float vx, float vy, floa
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, present_layout, 0, 1, &ds, 0, NULL);
     VkViewport vp = {vx, vy, vw, vh, 0, 1};
     vkCmdSetViewport(cb, 0, 1, &vp);
-    vkCmdPushConstants(cb, present_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32, pv);
+    float pv_eff[8];
+    memcpy(pv_eff, pv, sizeof pv_eff);
+    pv_eff[0] = vk_present_flags_pack(pv[0] > 0.5f, b->linear_srgb && !did_srgb);
+    vkCmdPushConstants(cb, present_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32, pv_eff);
     ss_forget();  // (static-VI pipeline and another layout: draws re-bind state)
     vkCmdDraw(cb, 3, 1, 0, 0);
     VkViewport full = {0, 0, (float)g_vk.sc_extent.width, (float)g_vk.sc_extent.height, 0, 1};
@@ -9944,7 +10002,9 @@ void renderer_save_texture_tex(TexBackend *b, const char *path) {
         VkRect2D sc = {{0, 0}, {w, h}};
         vkCmdSetViewport(cb, 0, 1, &vp);
         vkCmdSetScissor(cb, 0, 1, &sc);
-        float pv[8] = {renderer_origin_lower_left() && !strstr(path, "window") ? 1.0f : 0.0f, 0, 0, 0, crop[0], crop[1], crop[2], crop[3]};
+        float pv[8] = {vk_present_flags_pack(renderer_origin_lower_left() && !strstr(path, "window"),
+                                             b->linear_srgb && strstr(path, "pass_") == NULL),
+                       0, 0, 0, crop[0], crop[1], crop[2], crop[3]};
         vkCmdPushConstants(cb, present_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32, pv);
         ss_forget();  // (static-VI pipeline and another layout: draws re-bind state)
         vkCmdDraw(cb, 3, 1, 0, 0);
