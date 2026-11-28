@@ -633,29 +633,18 @@ static void create_image(NvnTexture *t, TexBackend *b) {
         usage |= VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
 #endif
     VkImageCreateFlags flags = 0;
-    // Render targets (NVN's COMPRESSIBLE flag) without MUTABLE_FORMAT, but for their sRGB / UNORM twin named in a format
-    // list: a Mali driver doesn't compress (AFBC) an image whose views may take any format - each pass's loads and
-    // stores move it whole (from p5r-android's notes). BOTW views none in another format (title, world: logged) but the
-    // window's sRGB; a view that asks for one gets the image's own (vk_view). On Turnip it made no difference (UBWC,
-    // docs/BOTW-PORT.md), and it once broke a compressed image there (exec.c post_image): Mali only.
-    // LARECOMP_VK_RT_FORMAT_LIST=1 / 0 (LARECOMP_VK_NO_MUTABLE=1 as 1).
-    static int rt_list = -1;
-    if (rt_list < 0) {
-        const char *e = getenv("LARECOMP_VK_RT_FORMAT_LIST");
-        rt_list = e ? atoi(e) != 0 : getenv("LARECOMP_VK_NO_MUTABLE") != NULL || g_vk.props.vendorID == 0x13B5;
-        if (rt_list) LOG("[vk] render targets without mutable formats (their sRGB twin in a format list)\n");
-    }
-    VkFormat twin = vf == VK_FORMAT_R8G8B8A8_UNORM ? VK_FORMAT_R8G8B8A8_SRGB : vf == VK_FORMAT_R8G8B8A8_SRGB ? VK_FORMAT_R8G8B8A8_UNORM
-                  : vf == VK_FORMAT_B8G8R8A8_UNORM ? VK_FORMAT_B8G8R8A8_SRGB : vf == VK_FORMAT_B8G8R8A8_SRGB ? VK_FORMAT_B8G8R8A8_UNORM
-                  : vf == VK_FORMAT_A8B8G8R8_UNORM_PACK32 ? VK_FORMAT_A8B8G8R8_SRGB_PACK32
-                  : vf == VK_FORMAT_A8B8G8R8_SRGB_PACK32 ? VK_FORMAT_A8B8G8R8_UNORM_PACK32 : VK_FORMAT_UNDEFINED;
+    // Render targets (NVN's COMPRESSIBLE / DISPLAY flags) omit MUTABLE_FORMAT or list only their sRGB / UNORM twin:
+    // Mali (AFBC) and unpatched Mesa Turnip (UBWC / force_linear_tile on missing VkImageFormatListCreateInfo) both
+    // drop hardware compression when an image carries VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT without an explicit compatible
+    // format list. BOTW views none of these RTs in unrelated formats; vk_view clamps unexpected views safely.
+    VkFormat twin = vk_format_srgb_twin(vf);
     VkFormat listed[2] = {vf, twin};
     VkImageFormatListCreateInfo fl = {.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO, .viewFormatCount = 2,
                                       .pViewFormats = listed};
-    bool fixed = rt_list && !depthfmt && (t->flags & 8) && (!twin || g_vk.api >= VK_API_VERSION_1_2);
+    bool fixed = vk_rt_use_format_list(g_vk.rt_format_list, depthfmt, t->flags, twin, g_vk.image_format_list);
     b->fixed_fmt = fixed;
     b->view_alt = fixed ? twin : VK_FORMAT_UNDEFINED;
-    if (!depthfmt && (!fixed || twin))
+    if (!depthfmt && (!fixed || twin != VK_FORMAT_UNDEFINED))
         flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;  // format views (NVN texture views, raw sRGB views)
     if (type == VK_IMAGE_TYPE_2D && layers >= 6 && tw == th && samples == 1) flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
     if (type == VK_IMAGE_TYPE_3D && (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT))

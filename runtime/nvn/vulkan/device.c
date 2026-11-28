@@ -647,6 +647,15 @@ static void create_device(void) {
     bool have_fbl_ext = has_ext(ep, ne, VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME);
     bool have_lr_ext = has_ext(ep, ne, VK_KHR_DYNAMIC_RENDERING_LOCAL_READ_EXTENSION_NAME);
 #endif
+#ifdef __ANDROID__
+    uint32_t dev_api = g_vk.api;
+#else
+    uint32_t dev_api = g_vk.props.apiVersion;
+#endif
+    bool have_img_fmt_list = dev_api >= VK_API_VERSION_1_2 || has_ext(ep, ne, VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME);
+    if (dev_api < VK_API_VERSION_1_2 && have_img_fmt_list && n_ext < sizeof ext / sizeof ext[0])
+        ext[n_ext++] = VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME;
+    g_vk.image_format_list = have_img_fmt_list;
     free(ep);
 
     // features the backend relies on (all present on current desktop drivers)
@@ -995,6 +1004,14 @@ static void create_device(void) {
         lr_f.pNext = &fbl_f;
         f.pNext = &lr_f;
     }
+    const char *rfl_why = NULL;
+    g_vk.rt_format_list = vk_rt_format_list_want(g_vk.props.vendorID == 0x13B5u, is_turnip,
+                                                getenv("LARECOMP_VK_RT_FORMAT_LIST"),
+                                                getenv("LARECOMP_VK_NO_MUTABLE"), &rfl_why);
+    LOG("[vk-cap] RT format list: %s (%s)\n", g_vk.rt_format_list ? "on" : "off", rfl_why);
+#else
+    g_vk.rt_format_list = vk_rt_format_list_want(false, false, getenv("LARECOMP_VK_RT_FORMAT_LIST"),
+                                                getenv("LARECOMP_VK_NO_MUTABLE"), NULL);
 #endif
     float prio = 1.0f;
     VkDeviceQueueCreateInfo qi = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = g_vk.qfam,

@@ -134,3 +134,79 @@ static inline bool vk_dyn_render_want(bool supported, uint32_t driver_id, const 
     if (reason_out) *reason_out = "default";
     return true;
 }
+
+static inline int vk_compat_atoi(const char *s) {
+    if (!s) return 0;
+    while (*s == ' ' || *s == '\t') s++;
+    int sign = 1;
+    if (*s == '-') { sign = -1; s++; }
+    else if (*s == '+') s++;
+    int v = 0;
+    while (*s >= '0' && *s <= '9') { v = v * 10 + (*s - '0'); s++; }
+    return sign * v;
+}
+
+static inline const char *vk_compat_strstr(const char *hay, const char *needle) {
+    if (!hay || !needle) return NULL;
+    if (!*needle) return hay;
+    for (; *hay; hay++) {
+        const char *h = hay, *n = needle;
+        while (*h && *n && *h == *n) { h++; n++; }
+        if (!*n) return hay;
+    }
+    return NULL;
+}
+
+// Enable IR3_SHADER_DEBUG=nouboopt only on Adreno 840..899 (Z Fold 8 red shadow workaround);
+// Adreno 830 renders shadows cleanly without it and loses ~1.5 ms / ~1.0 W if forced.
+static inline bool vk_adreno_needs_nouboopt(const char *model) {
+    const char *a = vk_compat_strstr(model, "Adreno");
+    if (!a) return false;
+    while (*a && (*a < '0' || *a > '9')) a++;
+    int n = vk_compat_atoi(a);
+    return n >= 840 && n < 900;
+}
+
+static inline bool vk_gpl_want(bool ext_and_fast_link_ok, uint32_t driver_id, bool has_driver_props, const char *env) {
+    if (!ext_and_fast_link_ok) return false;
+    if (env && *env) return vk_compat_atoi(env) != 0;
+    return has_driver_props && driver_id == 18u;
+}
+
+static inline VkFormat vk_format_srgb_twin(VkFormat vf) {
+    switch (vf) {
+        case VK_FORMAT_R8G8B8A8_UNORM: return VK_FORMAT_R8G8B8A8_SRGB;
+        case VK_FORMAT_R8G8B8A8_SRGB:  return VK_FORMAT_R8G8B8A8_UNORM;
+        case VK_FORMAT_B8G8R8A8_UNORM: return VK_FORMAT_B8G8R8A8_SRGB;
+        case VK_FORMAT_B8G8R8A8_SRGB:  return VK_FORMAT_B8G8R8A8_UNORM;
+        case VK_FORMAT_A8B8G8R8_UNORM_PACK32: return VK_FORMAT_A8B8G8R8_SRGB_PACK32;
+        case VK_FORMAT_A8B8G8R8_SRGB_PACK32:  return VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+        default: return VK_FORMAT_UNDEFINED;
+    }
+}
+
+static inline bool vk_rt_format_list_want(bool is_mali, bool is_turnip, const char *env,
+                                          const char *legacy_no_mutable, const char **why_out) {
+    const char *why = "default off";
+    bool on = false;
+    if (env && *env) {
+        on = vk_compat_atoi(env) != 0;
+        why = on ? "LARECOMP_VK_RT_FORMAT_LIST=1" : "LARECOMP_VK_RT_FORMAT_LIST=0";
+    } else if (legacy_no_mutable && *legacy_no_mutable) {
+        on = true;
+        why = "LARECOMP_VK_NO_MUTABLE";
+    } else if (is_mali) {
+        on = true;
+        why = "automatic: Mali AFBC";
+    } else if (is_turnip) {
+        on = true;
+        why = "automatic: Turnip UBWC";
+    }
+    if (why_out) *why_out = why;
+    return on;
+}
+
+static inline bool vk_rt_use_format_list(bool rt_list, bool depthfmt, uint32_t tex_flags, VkFormat twin,
+                                         bool has_format_list) {
+    return rt_list && !depthfmt && ((tex_flags & 9u) != 0u) && (twin == VK_FORMAT_UNDEFINED || has_format_list);
+}

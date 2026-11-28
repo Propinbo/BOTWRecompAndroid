@@ -67,6 +67,38 @@ source += '''
     queue.queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
     if (vk_backend_queue_supported(&queue, VK_SUCCESS, VK_FALSE)) return 20;
     if (vk_backend_queue_supported(&queue, VK_ERROR_SURFACE_LOST_KHR, VK_TRUE)) return 21;
+
+    // Adreno 830 regression guard: keep nouboopt OFF on a830, ON only on a840..a899
+    if (vk_adreno_needs_nouboopt("Adreno (TM) 830")) return 22;
+    if (!vk_adreno_needs_nouboopt("Adreno (TM) 840")) return 23;
+    if (vk_adreno_needs_nouboopt("Mali-G925")) return 24;
+
+    // Turnip-only GPL gate (strictly off on Mali/unknown, respects env override when supported)
+    if (!vk_gpl_want(true, 18u, true, 0)) return 25;
+    if (vk_gpl_want(true, 0u, true, 0)) return 26;
+    if (vk_gpl_want(true, 18u, false, 0)) return 27;
+    if (vk_gpl_want(false, 18u, true, "1")) return 28;
+    if (vk_gpl_want(true, 18u, true, "0")) return 29;
+    if (!vk_gpl_want(true, 99u, true, "1")) return 30;
+
+    // VkImageFormatListCreateInfo / sRGB-UNORM twin policy (Mali AFBC + Turnip UBWC)
+    if (vk_format_srgb_twin(VK_FORMAT_R8G8B8A8_UNORM) != VK_FORMAT_R8G8B8A8_SRGB) return 31;
+    if (vk_format_srgb_twin(VK_FORMAT_R8G8B8A8_SRGB) != VK_FORMAT_R8G8B8A8_UNORM) return 32;
+    if (vk_format_srgb_twin(VK_FORMAT_B8G8R8A8_UNORM) != VK_FORMAT_B8G8R8A8_SRGB) return 33;
+    if (vk_format_srgb_twin(VK_FORMAT_A8B8G8R8_SRGB_PACK32) != VK_FORMAT_A8B8G8R8_UNORM_PACK32) return 34;
+    if (vk_format_srgb_twin(VK_FORMAT_B10G11R11_UFLOAT_PACK32) != VK_FORMAT_UNDEFINED) return 35;
+    const char *why = 0;
+    if (!vk_rt_format_list_want(true, false, 0, 0, &why)) return 36;
+    if (!vk_rt_format_list_want(false, true, 0, 0, &why)) return 37;
+    if (vk_rt_format_list_want(false, false, 0, 0, &why)) return 38;
+    if (!vk_rt_format_list_want(false, false, 0, "1", &why)) return 39;
+    if (vk_rt_format_list_want(true, true, "0", "1", &why)) return 40;
+    if (!vk_rt_format_list_want(false, false, "1", 0, &why)) return 41;
+    if (!vk_rt_use_format_list(true, false, 8u, VK_FORMAT_R8G8B8A8_SRGB, true)) return 42;
+    if (vk_rt_use_format_list(true, false, 8u, VK_FORMAT_R8G8B8A8_SRGB, false)) return 43;
+    if (!vk_rt_use_format_list(true, false, 1u, VK_FORMAT_UNDEFINED, false)) return 44;
+    if (vk_rt_use_format_list(true, true, 8u, VK_FORMAT_UNDEFINED, true)) return 45;
+    if (vk_rt_use_format_list(true, false, 0u, VK_FORMAT_R8G8B8A8_SRGB, true)) return 46;
     return 0;
 }
 '''

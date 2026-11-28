@@ -56,6 +56,8 @@ typedef struct {
     bool eds2;                    // extended dynamic state 2 in use; without it, depth bias and primitive restart are
                                   // pipeline state (exec.c PipeKey.prim_restart)
     bool dyn_vi;                  // VK_EXT_vertex_input_dynamic_state in use: vertex attributes/bindings set dynamically
+    bool image_format_list;       // Vulkan 1.2 core or VK_KHR_image_format_list available for VkImageFormatListCreateInfo
+    bool rt_format_list;          // Mali AFBC / Turnip UBWC: keep render targets non-mutable or paired via format list
 #ifdef __ANDROID__
     bool map_placed;              // VK_EXT_map_memory_placed: the guest heap mapped as GPU memory (exec.c vk_heap_place)
     bool mem_fd;                  // VK_KHR_external_memory_fd: the same through an exported file mapped there (vk_heap_place)
