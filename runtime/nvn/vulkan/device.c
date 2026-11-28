@@ -501,6 +501,10 @@ static void create_device(void) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
     VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT vids_have = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT};
+    VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT fbl_have = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_FEATURES_EXT};
+    VkPhysicalDeviceDynamicRenderingLocalReadFeaturesKHR lr_have = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES_KHR};
     VkPhysicalDeviceFeatures2 optional = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
 #define QUERY_OPTIONAL(name, feature) do { if (has_ext(ep, ne, name)) { \
         feature.pNext = optional.pNext; optional.pNext = &feature; } } while (0)
@@ -510,6 +514,8 @@ static void create_device(void) {
     QUERY_OPTIONAL(VK_KHR_MAINTENANCE_5_EXTENSION_NAME, maintenance5_have);
     QUERY_OPTIONAL(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME, executable_have);
     QUERY_OPTIONAL(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME, vids_have);
+    QUERY_OPTIONAL(VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME, fbl_have);
+    QUERY_OPTIONAL(VK_KHR_DYNAMIC_RENDERING_LOCAL_READ_EXTENSION_NAME, lr_have);
 #undef QUERY_OPTIONAL
     vkGetPhysicalDeviceFeatures2(g_vk.phys, &optional);
 #endif
@@ -638,6 +644,8 @@ static void create_device(void) {
     // (frame generation, lsfg/: its shaders read unbound slots - null descriptors)
     bool robustness2 = has_ext(ep, ne, VK_EXT_ROBUSTNESS_2_EXTENSION_NAME) && !env_on("LARECOMP_NO_ROBUSTNESS2");
     bool have_dyn_vi = has_ext(ep, ne, VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
+    bool have_fbl_ext = has_ext(ep, ne, VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME);
+    bool have_lr_ext = has_ext(ep, ne, VK_KHR_DYNAMIC_RENDERING_LOCAL_READ_EXTENSION_NAME);
 #endif
     free(ep);
 
@@ -960,6 +968,33 @@ static void create_device(void) {
         has_bc, has_astc_ldr, is_turnip, g_vk.api, getenv("LARECOMP_MALI_RP_STORE_OPT"), &mrs_why);
     LOG("[vk-cap] Mali RP merge opt: %s (%s)\n", g_vk.mali_rp_merge_opt ? "on" : "off", mrm_why);
     LOG("[vk-cap] Mali RP store opt: %s (%s)\n", g_vk.mali_rp_store_opt ? "on" : "off", mrs_why);
+    bool want_fbl = false;
+    bool fbl_env_set = vk_compat_parse_env_bool(getenv("LARECOMP_TURNIP_FB_LOCAL_BARRIER"), &want_fbl);
+    g_vk.turnip_fb_loop = want_fbl && is_turnip && g_vk.dyn_render && g_vk.sync2 &&
+                          have_fbl_ext && fbl_have.attachmentFeedbackLoopLayout &&
+                          have_lr_ext && lr_have.dynamicRenderingLocalRead;
+    const char *fbl_why = !fbl_env_set ? "default off (A/B)"
+        : !want_fbl ? "LARECOMP_TURNIP_FB_LOCAL_BARRIER=0"
+        : !is_turnip ? "non-Turnip"
+        : !g_vk.dyn_render ? "no dynamicRendering"
+        : !g_vk.sync2 ? "no sync2"
+        : (!have_fbl_ext || !fbl_have.attachmentFeedbackLoopLayout) ? "no feedbackLoopLayout"
+        : (!have_lr_ext || !lr_have.dynamicRenderingLocalRead) ? "no dynamicRenderingLocalRead"
+        : "LARECOMP_TURNIP_FB_LOCAL_BARRIER=1";
+    LOG("[vk-cap] Turnip feedback-loop local barrier: %s (%s)\n", g_vk.turnip_fb_loop ? "on" : "off", fbl_why);
+    VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT fbl_f = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_FEATURES_EXT,
+        .attachmentFeedbackLoopLayout = VK_TRUE};
+    VkPhysicalDeviceDynamicRenderingLocalReadFeaturesKHR lr_f = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES_KHR,
+        .dynamicRenderingLocalRead = VK_TRUE};
+    if (g_vk.turnip_fb_loop) {
+        ext[n_ext++] = VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME;
+        ext[n_ext++] = VK_KHR_DYNAMIC_RENDERING_LOCAL_READ_EXTENSION_NAME;
+        fbl_f.pNext = f.pNext;
+        lr_f.pNext = &fbl_f;
+        f.pNext = &lr_f;
+    }
 #endif
     float prio = 1.0f;
     VkDeviceQueueCreateInfo qi = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = g_vk.qfam,

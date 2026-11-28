@@ -68,6 +68,7 @@ typedef struct {
     bool noop_blend_opt;          // Turnip: disable no-op blending in pipelines to preserve LRZ (LARECOMP_VK_NOOP_BLEND_OPT)
     bool mali_rp_merge_opt;       // !BC && ASTC or Turnip: defer clears + suppress 3ms mid-pass split (LARECOMP_MALI_RP_MERGE_OPT)
     bool mali_rp_store_opt;       // (!BC && ASTC or Turnip) && VK 1.3+: lookahead STORE_OP_NONE / DONT_CARE (LARECOMP_MALI_RP_STORE_OPT)
+    bool turnip_fb_loop;          // Turnip: intra-pass feedback-loop local barrier (LARECOMP_TURNIP_FB_LOCAL_BARRIER)
     uint32_t api;                 // the device's Vulkan version as used: 1.3, or 1.1 / 1.2 with extensions (device.c)
 #endif
     // window
