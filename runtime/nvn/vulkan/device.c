@@ -1792,6 +1792,20 @@ void backend_present(NvnTexture *t) {
         renderer_set_scale((float)sx, (float)sy);
         renderer_set_scene_scale((float)os.scene_sx, (float)os.scene_sy);
         renderer_set_shadow_scale((float)settings_eff_shadow_scale());
+        {
+            float ssao_s = settings_eff_ssao_scale();
+            if (ssao_s > 1.01f) {
+                float max_hsx = (float)os.sx * 1920.0f / 800.0f;
+                float max_hsy = (float)os.sy * 1080.0f / 450.0f;
+                float hsx = fminf((float)os.scene_sx * ssao_s, max_hsx);
+                float hsy = fminf((float)os.scene_sy * ssao_s, max_hsy);
+                if (hsx > 16384.0f / 800.0f) hsx = 16384.0f / 800.0f;
+                if (hsy > 16384.0f / 450.0f) hsy = 16384.0f / 450.0f;
+                renderer_set_ssao_scale(hsx, hsy, hsx * 2.0f, hsy * 2.0f);
+            } else {
+                renderer_set_ssao_scale((float)os.scene_sx, (float)os.scene_sy, 1.0f, 1.0f);
+            }
+        }
         VkCommandBuffer cb = vk_cmd();
         float pv[8] = {renderer_origin_lower_left() ? 1.0f : 0.0f, (float)(renderer_present_count() & 63),
                        settings_eff_oled_dither() ? (1.0f / 255.0f) : 0.0f,

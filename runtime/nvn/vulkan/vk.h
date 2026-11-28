@@ -107,7 +107,7 @@ void vk_readback_ready(uint64_t size);  // after the copy's submission is done, 
 VkDescriptorSet vk_alloc_set(VkDescriptorSetLayout layout);
 
 // ---- textures (textures.c)
-enum { RS_NONE = 0, RS_SCENE = 1, RS_OUT = 2, RS_SHADOW = 3 };  // render-target scale groups (textures.c)
+enum { RS_NONE = 0, RS_SCENE = 1, RS_OUT = 2, RS_SHADOW = 3, RS_HALF = 4, RS_QUARTER_SSAO = 5 };  // render-target scale groups (textures.c)
 typedef struct TexBackend {
     VkImage image;
     VmaAllocation mem;
@@ -152,6 +152,7 @@ void vk_make_scalable_like(NvnTexture *t, NvnTexture *like);  // (a pass's attac
 void renderer_get_scene_scale(float *sx, float *sy);
 void renderer_set_scene_scale(float sx, float sy);
 void renderer_set_shadow_scale(float s);
+void renderer_set_ssao_scale(float half_sx, float half_sy, float q_sx, float q_sy);
 // View of t (optionally through an NVN texture view) for rendering or sampling.
 VkImageView vk_view(NvnTexture *t, const NvnTextureView *v, bool has_view, bool render, int want_textype);
 VkImageView vk_image_view(TexBackend *b, VkImageViewType type, VkFormat fmt, uint32_t lv0, uint32_t nlv, uint32_t ly0,

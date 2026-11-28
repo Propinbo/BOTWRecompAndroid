@@ -382,12 +382,16 @@ static void bc_decode(VkFormat bc, const uint8_t *blocks, uint32_t wb, uint32_t 
 //   RS_SCENE  the 3D scene's targets (1600x900 docked, the game's dynamic sizes down to 1280x720, their fractions):
 //             the internal resolution (Video > Internal resolution)
 //   RS_SHADOW BOTW sun shadow cascades (896x896 D16x3) and gather downsample (448x448 R16x3)
-static float g_rs[4][2] = {{1, 1}, {1, 1}, {1, 1}, {1, 1}};
+static float g_rs[6][2] = {{1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}, {1, 1}};
 void renderer_get_scale(float *sx, float *sy) { *sx = g_rs[RS_OUT][0]; *sy = g_rs[RS_OUT][1]; }
 void renderer_set_scale(float sx, float sy) { g_rs[RS_OUT][0] = sx; g_rs[RS_OUT][1] = sy; }
 void renderer_get_scene_scale(float *sx, float *sy) { *sx = g_rs[RS_SCENE][0]; *sy = g_rs[RS_SCENE][1]; }
 void renderer_set_scene_scale(float sx, float sy) { g_rs[RS_SCENE][0] = sx; g_rs[RS_SCENE][1] = sy; }
 void renderer_set_shadow_scale(float s) { g_rs[RS_SHADOW][0] = s; g_rs[RS_SHADOW][1] = s; }
+void renderer_set_ssao_scale(float half_sx, float half_sy, float q_sx, float q_sy) {
+    g_rs[RS_HALF][0] = half_sx; g_rs[RS_HALF][1] = half_sy;
+    g_rs[RS_QUARTER_SSAO][0] = q_sx; g_rs[RS_QUARTER_SSAO][1] = q_sy;
+}
 uint64_t renderer_present_count(void);
 static bool rs_stale(const TexBackend *b) {
     return b->rs_group && (b->sx != g_rs[b->rs_group][0] || b->sy != g_rs[b->rs_group][1]);
@@ -401,7 +405,11 @@ static uint8_t tex_scale_group(const NvnTexture *t) {
     static int on = -1;
     if (on < 0) on = getenv("LARECOMP_NO_SCALE") == NULL;
     if (!on) return RS_NONE;
-    if ((t->target != 1 && t->target != 4) || t->samples > 1 || !(t->flags & 9) || t->width < 32 || t->height < 16) return RS_NONE;
+    if ((t->target != 1 && t->target != 4) || t->samples > 1 || t->width < 32 || t->height < 16) return RS_NONE;
+    if ((settings_eff_ssao_scale() > 1.01f || g_rs[RS_QUARTER_SSAO][0] > 1.001f) &&
+        vk_is_botw_ssao_quarter_target(t->target, t->width, t->height, t->samples, t->format))
+        return RS_QUARTER_SSAO;
+    if (!(t->flags & 9)) return RS_NONE;
     if (vk_is_botw_shadow_target(t->target, t->width, t->height, t->layout.layers ? t->layout.layers : t->depth,
                                  t->samples, t->format))
         return RS_SHADOW;
@@ -412,6 +420,8 @@ static uint8_t tex_scale_group(const NvnTexture *t) {
         if ((t->width == 1920u >> k || t->width == (1920u + (1u << k) - 1) >> k) &&
             (t->height == 1080u >> k || t->height == (1080u + (1u << k) - 1) >> k))
             return RS_OUT;
+    if (vk_is_botw_half_scene_target(t->target, t->width, t->height, t->samples, t->flags))
+        return RS_HALF;
     return RS_SCENE;
 }
 

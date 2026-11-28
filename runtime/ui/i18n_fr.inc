@@ -829,3 +829,7 @@
    "Courbe des noirs OLED"},
   {"Applies a gentle near-black contrast toe to deepen shadow troughs on OLED screens without clipping detail.",
    "Renforce doucement les tons très sombres sur écran OLED sans écraser les détails."},
+  {"SSAO resolution",
+   "Résolution SSAO"},
+  {"Resolution multiplier for BOTW ambient occlusion and half-resolution lighting (800x450/400x225). 1.5x sharpens contact shadows with strong 40 fps headroom; 1:1 renders at full 1080p at higher GPU cost.",
+   "Multiplicateur de définition pour l'occlusion ambiante et l'éclairage demi-résolution de BOTW (800x450/400x225). 1.5x affine les ombres de contact tout en gardant de la marge à 40 ips ; 1:1 affiche en 1080p complet au prix d'une charge GPU accrue."},

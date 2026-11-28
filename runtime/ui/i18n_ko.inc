@@ -829,3 +829,7 @@
    "OLED 블랙 포인트 커브"},
   {"Applies a gentle near-black contrast toe to deepen shadow troughs on OLED screens without clipping detail.",
    "세부 표현을 해치지 않으면서 어두운 영역을 부드럽게 깊게 눌러 OLED 대비를 향상합니다."},
+  {"SSAO resolution",
+   "SSAO 해상도"},
+  {"Resolution multiplier for BOTW ambient occlusion and half-resolution lighting (800x450/400x225). 1.5x sharpens contact shadows with strong 40 fps headroom; 1:1 renders at full 1080p at higher GPU cost.",
+   "BOTW 앰비언트 오클루전 및 절반 해상도 조명(800x450/400x225)의 해상도 배율입니다. 1.5x는 40 fps 여유를 유지하며 접촉 그림자를 선명하게 하고, 1:1은 더 높은 GPU 부하로 전체 1080p를 렌더링합니다."},

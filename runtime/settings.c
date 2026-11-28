@@ -89,6 +89,7 @@ Settings g_settings = {
     .pipe_prewarm = false,      // (an experiment: vulkan/pipeline_prewarm.inc)
     .core_turns = false,        // (an experiment for #401: kernel.c core0_init)
     .sync_lag = true,           // (a few more fps; the CPU's reads of GPU results a frame old: nvn/objects.c nvnSyncWait)
+    .ssao_res = 0,              // half-res SSAO/lighting scale (0 default, 1 1.5x, 2 1:1)
     .out_lines = OUT_AUTO,      // (POCO F7 Ultra, 3200x1440, 1.8.2's Great Plateau: GPU 22.8 ms a frame at the screen's,
                                 // 18.6 at 1080 lines with a larger scene - the final image's passes over 2.2x the pixels)
 #else
@@ -273,6 +274,7 @@ void settings_reset_defaults(void) {
     g_settings.pipe_prewarm = d->pipe_prewarm;
     g_settings.core_turns = d->core_turns;
     g_settings.files_in_place = d->files_in_place;
+    g_settings.ssao_res = d->ssao_res;
 #endif
     pthread_mutex_unlock(&g_settings_lock);
 }
@@ -332,6 +334,8 @@ void settings_load(void) {
         else if (!strcmp(key, "pipe_prewarm")) g_settings.pipe_prewarm = atoi(val) != 0;
         else if (!strcmp(key, "core_turns")) g_settings.core_turns = atoi(val) != 0;
         else if (!strcmp(key, "files_in_place")) g_settings.files_in_place = atoi(val) != 0;
+        else if (!strcmp(key, "ssao_res")) { int v = atoi(val); g_settings.ssao_res = v < 0 ? 0 : v > 2 ? 2 : v; }
+        else if (!strcmp(key, "full_res_ssao")) g_settings.ssao_res = atoi(val) ? 1 : 0;
         else if (!strcmp(key, "gpu_heap")) g_settings.gpu_heap = !strcmp(val, "auto") ? -1 : atoi(val) != 0;
         else if (!strcmp(key, "low_ram")) g_settings.low_ram = !strcmp(val, "auto") ? -1 : atoi(val) != 0;
         else if (!strcmp(key, "inplace_reads")) g_settings.inplace_reads = !strcmp(val, "auto") ? -1 : atoi(val) != 0;
@@ -463,8 +467,10 @@ static void settings_save_locked(void) {
                g_settings.fps_mode == 4 ? "45" : "auto");
     fprintf(f, "thermal_cap = %d\n", g_settings.thermal_cap ? 1 : 0);
     fprintf(f, "cutscenes_60 = %d\n", g_settings.event_fps_unlock);
-    fprintf(f, "shader_int32 = %d\nsync_lag = %d\nnative_code = %d\nfiles_in_place = %d\n", g_settings.shader_int32,
-            g_settings.sync_lag, g_settings.native_code, g_settings.files_in_place);
+    fprintf(f, "shader_int32 = %d\nsync_lag = %d\nssao_res = %d\nnative_code = %d\nfiles_in_place = %d\n",
+            g_settings.shader_int32, g_settings.sync_lag,
+            g_settings.ssao_res < 0 || g_settings.ssao_res > 2 ? 0 : g_settings.ssao_res,
+            g_settings.native_code, g_settings.files_in_place);
     fprintf(f, "pipe_prewarm = %d\n", g_settings.pipe_prewarm ? 1 : 0);
     fprintf(f, "core_turns = %d\n", g_settings.core_turns ? 1 : 0);
     static const char *const tri[] = {"auto", "0", "1"};  // (-1 / 0 / 1)
@@ -626,4 +632,37 @@ bool settings_eff_lod_bias_ultra(void) {
         __atomic_store_n(&cache, e, __ATOMIC_RELAXED);
     }
     return e >= 0 ? e != 0 : g_settings.lod_bias_ultra;
+}
+
+float settings_eff_ssao_scale(void) {
+#ifdef __ANDROID__
+    static uint32_t env_s_bits;
+    static int env_on = -2;
+    int on_cached = __atomic_load_n(&env_on, __ATOMIC_ACQUIRE);
+    float s_cached;
+    if (on_cached == -2) {
+        const char *fv = getenv("LARECOMP_FULL_RES_SSAO");
+        int on_val = fv && *fv ? atoi(fv) : -1;
+        const char *sv = getenv("LARECOMP_SSAO_SCALE");
+        float s_val = 0.0f;
+        if (sv && *sv) {
+            float v = (float)atof(sv);
+            s_val = (v >= 1.0f && v <= 2.0f) ? v : 1.0f;
+        }
+        uint32_t s_bits = 0;
+        memcpy(&s_bits, &s_val, sizeof s_bits);
+        __atomic_store_n(&env_s_bits, s_bits, __ATOMIC_RELAXED);
+        __atomic_store_n(&env_on, on_val, __ATOMIC_RELEASE);
+        on_cached = on_val;
+        s_cached = s_val;
+    } else {
+        uint32_t s_bits = __atomic_load_n(&env_s_bits, __ATOMIC_RELAXED);
+        memcpy(&s_cached, &s_bits, sizeof s_cached);
+    }
+    if (s_cached >= 1.0f) return s_cached;
+    if (on_cached >= 0) return on_cached >= 2 ? 2.0f : on_cached == 1 ? 1.5f : 1.0f;
+    return g_settings.ssao_res == 2 ? 2.0f : g_settings.ssao_res == 1 ? 1.5f : 1.0f;
+#else
+    return 1.0f;
+#endif
 }

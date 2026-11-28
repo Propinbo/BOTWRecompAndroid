@@ -829,3 +829,7 @@
    "OLED 黒レベルカーブ"},
   {"Applies a gentle near-black contrast toe to deepen shadow troughs on OLED screens without clipping detail.",
    "細部を潰さずに暗部の階調を滑らかに引き締め、OLED でのコントラストを高めます。"},
+  {"SSAO resolution",
+   "SSAO 解像度"},
+  {"Resolution multiplier for BOTW ambient occlusion and half-resolution lighting (800x450/400x225). 1.5x sharpens contact shadows with strong 40 fps headroom; 1:1 renders at full 1080p at higher GPU cost.",
+   "BOTW のアンビエントオクルージョンおよび半解像度ライティング (800x450/400x225) の解像度倍率です。1.5x は 40 fps の余裕を保ちつつ接触影を鮮明化し、1:1 は高 GPU 負荷で完全な 1080p 描画を行います。"},

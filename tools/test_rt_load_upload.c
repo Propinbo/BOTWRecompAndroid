@@ -145,6 +145,13 @@ bool settings_eff_oled_dither(void) { return g_settings.oled_dither; }
 bool settings_eff_oled_black(void) { return g_settings.oled_black; }
 int settings_eff_shadow_scale(void) { return g_settings.shadow_scale > 0 ? g_settings.shadow_scale : 1; }
 bool settings_eff_lod_bias_ultra(void) { return g_settings.lod_bias_ultra; }
+float settings_eff_ssao_scale(void) {
+#ifdef __ANDROID__
+    return g_settings.ssao_res == 2 ? 2.0f : g_settings.ssao_res == 1 ? 1.5f : 1.0f;
+#else
+    return 1.0f;
+#endif
+}
 int64_t plat_avail_ram_mb(void) { return 8192; }
 int64_t plat_total_ram_mb(void) { return 12288; }
 void plat_frame_work_gpu(uint64_t a, uint64_t b, uint64_t c, uint64_t d) { (void)a, (void)b, (void)c, (void)d; }

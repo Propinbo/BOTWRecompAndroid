@@ -829,3 +829,7 @@
    "OLED 黑階曲線"},
   {"Applies a gentle near-black contrast toe to deepen shadow troughs on OLED screens without clipping detail.",
    "柔和加深近黑階調而不遺失暗部細節，提升 OLED 螢幕對比度。"},
+  {"SSAO resolution",
+   "SSAO 解析度"},
+  {"Resolution multiplier for BOTW ambient occlusion and half-resolution lighting (800x450/400x225). 1.5x sharpens contact shadows with strong 40 fps headroom; 1:1 renders at full 1080p at higher GPU cost.",
+   "BOTW 環境光遮蔽與半解析度光照（800x450/400x225）的解析度倍率。1.5x 可在保留充足 40 fps 餘量的同時大幅清晰化接觸陰影；1:1 則以更高 GPU 負載算繪完整 1080p。"},

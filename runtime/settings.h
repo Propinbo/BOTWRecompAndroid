@@ -116,6 +116,7 @@ typedef struct {
                            // (hle/input.c): worn sticks that drift. 0: the game's own only
     int vibration;         // a controller's rumble from the game's vibration (hle/input.c), % (0: off; 100 by default)
     bool vibration_phone;  // the phone's own motor where no controller has one (hle/input.c; off by default)
+    int ssao_res;          // Android: half-res SSAO/lighting scale (0 default, 1 1.5x, 2 1:1)
 #endif
     int language;        // LANG_AUTO or an index into g_language_codes: the game's text language
     bool aspect_asked;   // the start screen's one-time "authentic 16:9 or unlocked?" question was answered
@@ -153,3 +154,4 @@ bool settings_eff_oled_dither(void);
 bool settings_eff_oled_black(void);
 int settings_eff_shadow_scale(void);
 bool settings_eff_lod_bias_ultra(void);
+float settings_eff_ssao_scale(void);

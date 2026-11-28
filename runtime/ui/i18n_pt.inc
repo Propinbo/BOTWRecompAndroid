@@ -846,3 +846,7 @@
    "Curva de preto OLED"},
   {"Applies a gentle near-black contrast toe to deepen shadow troughs on OLED screens without clipping detail.",
    "Aprofunda suavemente tons próximos ao preto em telas OLED sem perder detalhes nas sombras."},
+  {"SSAO resolution",
+   "Resolução SSAO"},
+  {"Resolution multiplier for BOTW ambient occlusion and half-resolution lighting (800x450/400x225). 1.5x sharpens contact shadows with strong 40 fps headroom; 1:1 renders at full 1080p at higher GPU cost.",
+   "Multiplicador de resolução para oclusão ambiental e iluminação de meia resolução de BOTW (800x450/400x225). 1.5x melhora as sombras de contato mantendo boa folga em 40 fps; 1:1 renderiza em 1080p total com maior carga na GPU."},

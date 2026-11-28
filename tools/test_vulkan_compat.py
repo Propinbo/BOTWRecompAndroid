@@ -78,6 +78,20 @@ source += '''
     if (!vk_is_botw_shadow_target(4, 896, 896, 3, 1, 0x32)) return 26;
     if (!vk_is_botw_shadow_target(4, 448, 448, 3, 1, 0x6)) return 27;
     if (vk_is_botw_shadow_target(4, 1920, 1080, 1, 1, 0x3d)) return 28;
+
+    // BOTW 800x450 half-scene & 400x225 quarter-res SSAO target detection
+    if (!vk_is_botw_half_scene_target(1, 800, 450, 1, 8)) return 29;
+    if (!vk_is_botw_half_scene_target(4, 800, 450, 1, 8)) return 30;
+    if (vk_is_botw_half_scene_target(1, 800, 450, 1, 9)) return 31;
+    if (vk_is_botw_half_scene_target(1, 800, 450, 2, 8)) return 32;
+    if (vk_is_botw_half_scene_target(1, 640, 360, 1, 8)) return 33;
+    if (vk_is_botw_half_scene_target(1, 960, 540, 1, 8)) return 34;
+    if (vk_is_botw_half_scene_target(1, 1600, 900, 1, 8)) return 35;
+    if (!vk_is_botw_ssao_quarter_target(1, 400, 225, 1, 0x1)) return 36;
+    if (vk_is_botw_ssao_quarter_target(4, 400, 225, 1, 0x1)) return 37;
+    if (vk_is_botw_ssao_quarter_target(1, 400, 225, 1, 0x25)) return 38;
+    if (vk_is_botw_ssao_quarter_target(1, 800, 450, 1, 0x1)) return 39;
+    if (vk_is_botw_ssao_quarter_target(1, 400, 225, 2, 0x1)) return 40;
     return 0;
 }
 '''

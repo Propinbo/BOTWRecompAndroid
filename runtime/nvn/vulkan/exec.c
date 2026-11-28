@@ -4959,6 +4959,28 @@ static bool up_patch_frag(uint64_t addr, uint64_t size, VkDescriptorBufferInfo *
     return found;
 }
 
+static struct { uint32_t tw, th, aw, ah; } ssao_blur_fix;  // (SSAO / half-res 2-tap and 3-tap blur passes)
+
+static bool ssao_blur_patch(uint64_t addr, uint64_t size, VkDescriptorBufferInfo *out) {
+    static float buf[0x10000 / 4];
+    if (!ssao_blur_fix.tw || !ssao_blur_fix.th || size < 24 || size > sizeof buf) return false;
+    const float *g = (const float *)(uintptr_t)addr;
+    float tx = 1.0f / (float)ssao_blur_fix.tw, ty = 1.0f / (float)ssao_blur_fix.th;
+    if (fabsf(g[4] - tx) > tx * 1e-4f || fabsf(g[5] - ty) > ty * 1e-4f) return false;
+    static int nlog;
+    uint64_t nw = size / 4;
+    memcpy(buf, g, nw * 4);
+    buf[4] = 1.0f / (float)ssao_blur_fix.aw;
+    buf[5] = 1.0f / (float)ssao_blur_fix.ah;
+    if (nlog < 8) {
+        nlog++;
+        LOG("[ssao-blur] %ux%u -> %ux%u: vertex step %g %g -> %g %g\n", ssao_blur_fix.tw, ssao_blur_fix.th,
+            ssao_blur_fix.aw, ssao_blur_fix.ah, tx, ty, buf[4], buf[5]);
+    }
+    *out = ubo_span(vk_transient_copy(buf, nw * 4, 256), nw * 4);
+    return true;
+}
+
 // nn::ui2d: a pane (its vertex constants f, cb3, at least 0x230 bytes) at the layout's middle in x whose rectangle is
 // as wide as the 1280-unit layout, centred - at any height and y (a full screen's black, a band across it). The
 // rectangle drawn: cb3[33] (size, then origin), in the textured panes' vertex shaders and the window panes' alike (a
@@ -5158,6 +5180,10 @@ static VkDescriptorBufferInfo cbuf_info(int stage, ShaderInfo *si, int k, uint32
     if (up_fix.sx > 0 && (stage == 0 || stage == 1)) {  // (a scaled scene's half-size upsample: up_fix - before the
         VkDescriptorBufferInfo d;                       //  in-place reads, which would bind the game's own values)
         if (stage == 0 ? up_patch(r.addr, size, &d) : up_patch_frag(r.addr, size, &d)) return d;
+    }
+    if (ssao_blur_fix.tw > 0 && stage == 0 && idx == 0) {
+        VkDescriptorBufferInfo d;
+        if (ssao_blur_patch(r.addr, size, &d)) return d;
     }
 #ifdef __ANDROID__
     {
@@ -8668,7 +8694,24 @@ static void draw_(CmdRec *r, bool indexed) {
     uint32_t dyn[64], ndv = 0, ndf = 0;  // (the sets' dynamic uniform buffer offsets: vertex, then fragment)
     memset(cbw_patch[0].m, 0, sizeof cbw_patch[0].m);  // (cbwin_bind fills them while the sets are written)
     memset(cbw_patch[1].m, 0, sizeof cbw_patch[1].m);
+    ssao_blur_fix.tw = 0;
+    if (settings_eff_ssao_scale() > 1.01f && r->x[2] <= 6 && st.rt.ncolor == 1 && st.rt.color[0] && pr->fi->ntex == 1 &&
+        pr->fs_gather < 2) {
+        NvnTexture *rt0 = st.rt.color[0];
+        NvnTexture *t0 = shader_texture_object(1, &pr->fi->tex[0]);
+        TexBackend *rb = rt0 ? (TexBackend *)rt0->backend : NULL;
+        TexBackend *tb = t0 ? (TexBackend *)t0->backend : NULL;
+        if (rb && tb && (rb->rs_group == RS_HALF || rb->rs_group == RS_QUARTER_SSAO) &&
+            (tb->rs_group == RS_HALF || tb->rs_group == RS_QUARTER_SSAO) &&
+            t0->width && t0->height && (tb->width != t0->width || tb->height != t0->height)) {
+            ssao_blur_fix.tw = t0->width;
+            ssao_blur_fix.th = t0->height;
+            ssao_blur_fix.aw = tb->width;
+            ssao_blur_fix.ah = tb->height;
+        }
+    }
     VkDescriptorSet vset = stage_set(pr, pr->set_layout[0], 0, 0, pr->vi, NULL, NULL, 0, 0, 0, NULL, dyn, &ndv);
+    ssao_blur_fix.tw = 0;
     PROF_ADD(prof_sets);
     VkDescriptorImageInfo fii[64];
     uint64_t prof_tx_ = prof ? SDL_GetTicksNS() : 0;
@@ -8681,11 +8724,16 @@ static void draw_(CmdRec *r, bool indexed) {
     {   // a scaled scene's half-size buffers brought back by nearest depth: the texel grid and step scaled (up_fix)
         static int off = -1;
         if (off < 0) off = getenv("LARECOMP_NO_UPSAMPLE_FIX") != NULL;
-        bool scaled = !off && st.rt.ncolor && st.rt.color[0] && (pass_sx > 1.001f || pass_sy > 1.001f);
-        int gs = scaled ? pr->fs_gather - 2 : -1;
-        NvnTexture *gt = gs >= 0 && fabsf(tex_sc[1][gs][0] - pass_sx) < 0.01f * pass_sx &&
-                         fabsf(tex_sc[1][gs][1] - pass_sy) < 0.01f * pass_sy ? shader_texture_object(1, &pr->fi->tex[gs]) : NULL;
-        TexBackend *gb = gt ? gt->backend : NULL;
+        int gs = !off && st.rt.ncolor && st.rt.color[0] ? pr->fs_gather - 2 : -1;
+        NvnTexture *gt = gs >= 0 ? shader_texture_object(1, &pr->fi->tex[gs]) : NULL;
+        TexBackend *gb = gt ? (TexBackend *)gt->backend : NULL;
+        bool same_scale = (pass_sx > 1.001f || pass_sy > 1.001f) && gs >= 0 &&
+                          fabsf(tex_sc[1][gs][0] - pass_sx) < 0.01f * pass_sx &&
+                          fabsf(tex_sc[1][gs][1] - pass_sy) < 0.01f * pass_sy;
+        bool half_ssao = gb && gb->rs_group == RS_HALF && gs >= 0 &&
+                         tex_sc[1][gs][0] >= pass_sx * 0.99f && tex_sc[1][gs][1] >= pass_sy * 0.99f &&
+                         (tex_sc[1][gs][0] > 1.001f || tex_sc[1][gs][1] > 1.001f);
+        if (!same_scale && !half_ssao) gt = NULL, gb = NULL;
         if (gb && gt->width && gt->height) {
             up_fix.gw = st.rt.color[0]->width, up_fix.gh = st.rt.color[0]->height;
             up_fix.sx = (float)gb->width / (float)gt->width, up_fix.sy = (float)gb->height / (float)gt->height;

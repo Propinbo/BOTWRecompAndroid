@@ -829,3 +829,7 @@
    "Кривая чёрного OLED"},
   {"Applies a gentle near-black contrast toe to deepen shadow troughs on OLED screens without clipping detail.",
    "Мягко углубляет околочёрные полутона теней для контраста на OLED-экранах без потери деталей."},
+  {"SSAO resolution",
+   "Разрешение SSAO"},
+  {"Resolution multiplier for BOTW ambient occlusion and half-resolution lighting (800x450/400x225). 1.5x sharpens contact shadows with strong 40 fps headroom; 1:1 renders at full 1080p at higher GPU cost.",
+   "Множитель разрешения для глобального затенения и полуразмерного освещения BOTW (800x450/400x225). 1.5x заметно улучшает чёткость контактных теней с запасом для 40 кадр/с; 1:1 даёт полное 1080p ценой большей нагрузки на GPU."},

@@ -829,3 +829,7 @@
    "OLED-zwartpuntcurve"},
   {"Applies a gentle near-black contrast toe to deepen shadow troughs on OLED screens without clipping detail.",
    "Verdiept donkere schaduwen subtiel voor OLED-schermen zonder detailverlies."},
+  {"SSAO resolution",
+   "SSAO-resolutie"},
+  {"Resolution multiplier for BOTW ambient occlusion and half-resolution lighting (800x450/400x225). 1.5x sharpens contact shadows with strong 40 fps headroom; 1:1 renders at full 1080p at higher GPU cost.",
+   "Resolutiefactor voor BOTW omgevingsocclusie en belichting op halve resolutie (800x450/400x225). 1.5x verscherpt contactschaduwen met ruime 40 fps-marge; 1:1 rendert op volledig 1080p tegen hogere GPU-belasting."},

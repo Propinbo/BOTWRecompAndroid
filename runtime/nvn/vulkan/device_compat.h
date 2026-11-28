@@ -152,3 +152,17 @@ static inline bool vk_is_botw_shadow_target(uint32_t target, uint32_t width, uin
     return (width == 896 && height == 896 && format == 0x32) ||
            (width == 448 && height == 448 && format == 0x6);
 }
+
+// Identify BOTW half-resolution (800x450) render targets used for ambient occlusion, linear depth, and lighting.
+// Exact 800x450 compressible non-display 2D / 2D-array targets keep bloom (640x360) and HUD (960x540) untouched.
+static inline bool vk_is_botw_half_scene_target(uint32_t target, uint32_t width, uint32_t height, uint32_t samples,
+                                                uint32_t flags) {
+    return (target == 1u || target == 4u) && samples <= 1u && (flags & 8u) != 0u && (flags & 1u) == 0u &&
+           width == 800u && height == 450u;
+}
+
+// Identify BOTW quarter-resolution (400x225 f0x1) SSAO blur scratch targets (allocated without COMPRESSIBLE flags).
+static inline bool vk_is_botw_ssao_quarter_target(uint32_t target, uint32_t width, uint32_t height, uint32_t samples,
+                                                  uint32_t format) {
+    return target == 1u && samples <= 1u && width == 400u && height == 225u && format == 0x1u;
+}
