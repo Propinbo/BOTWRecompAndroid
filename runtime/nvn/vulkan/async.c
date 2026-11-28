@@ -30,14 +30,15 @@ enum { REQ_EXEC, REQ_PRESENT, REQ_FENCE, REQ_CALL };
 typedef struct { int type; uint64_t a; void *p; uint64_t id; } Req;
 
 #define QN 4096  // requests in flight (a frame has a few dozen)
-static Req q[QN];
-static uint64_t q_head, q_tail;   // q_tail: next id to queue (ids start at 1), q_head: next to run
-static uint64_t q_done;           // the last id the render thread finished
-static int q_presents;            // PRESENT requests queued and not finished (the game's lead)
-static pthread_mutex_t q_lock = PTHREAD_MUTEX_INITIALIZER;
+// Separate producer (game thread) and consumer (render thread) hot cache lines.
+static _Alignas(64) Req q[QN];
+static _Alignas(64) uint64_t q_head, q_done;  // consumer-owned write cursor & last completed id
+static _Alignas(64) uint64_t q_tail;          // producer-owned write cursor
+static _Alignas(64) int q_presents;           // PRESENT requests queued and not finished (the game's lead)
+static _Alignas(64) pthread_mutex_t q_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t q_more = PTHREAD_COND_INITIALIZER, q_less = PTHREAD_COND_INITIALIZER;
-static pthread_mutex_t p_lock = PTHREAD_MUTEX_INITIALIZER;  // producers: an id, its list's fences and its push together
-pthread_t g_vk_render_thread;  // (also read by device.c renderer_present_count, many times a draw)
+static _Alignas(64) pthread_mutex_t p_lock = PTHREAD_MUTEX_INITIALIZER;  // producers: an id, its list's fences and its push together
+_Alignas(64) pthread_t g_vk_render_thread;  // (also read by device.c renderer_present_count, many times a draw)
 bool g_vk_render_started;
 static int on = -1;
 
@@ -46,7 +47,8 @@ static int on = -1;
 static int ahead = 1;
 
 // The render thread's work for its last frame (requests run between two presents, ns): the frame pacer's other half
-static uint64_t frame_work, last_frame_work, frame_cpu, last_frame_cpu;
+static _Alignas(64) uint64_t frame_work, frame_cpu;             // render-thread accumulators
+static _Alignas(64) uint64_t last_frame_work, last_frame_cpu;   // published atomics
 uint64_t vk_async_frame_work_ns(void) { return __atomic_load_n(&last_frame_work, __ATOMIC_RELAXED); }
 uint64_t vk_async_frame_cpu_ns(void) { return __atomic_load_n(&last_frame_cpu, __ATOMIC_RELAXED); }
 

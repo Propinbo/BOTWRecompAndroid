@@ -2334,15 +2334,8 @@ void ui_window_init(void) {
         }
         if (lrz < 0) lrz = !model[0] || vk_adreno_8xx(model);
         {   // #32: on the Adreno 840 and up (Mesa's a8xx, the Turnip Gen8 drivers from V30), shadowed ground turns red -
-            // ir3 moving a shader's uniform buffer into its constants reads a draw's constants stale. With that off: no
-            // tint and the same ~40 fps (a Z Fold 8). An IR3_SHADER_DEBUG from the driver variables wins.
-            const char *a = strstr(model, "Adreno");
-            int n = 0;
-            if (a) {
-                while (*a && (*a < '0' || *a > '9')) a++;
-                n = atoi(a);
-            }
-            if (n >= 840 && n < 900 && !getenv("IR3_SHADER_DEBUG")) {
+            // ir3 moving a shader's uniform buffer into its constants reads a draw's constants stale. Keep OFF on Adreno 830.
+            if (vk_adreno_needs_nouboopt(model) && !getenv("IR3_SHADER_DEBUG")) {
                 setenv("IR3_SHADER_DEBUG", "nouboopt", 1);
                 LOG("[vk] %s: IR3_SHADER_DEBUG=nouboopt (shadows drawn red, #32)\n", model);
             }
